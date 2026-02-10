@@ -1,7 +1,10 @@
 import { serve } from "@hono/node-server";
 import app from "./app.js";
+import { loadCredentials } from "./services/auth.js";
 
 const port = Number(process.env.PORT ?? 8080);
+
+await loadCredentials();
 
 // biome-ignore lint/suspicious/noConsole: intentional startup log
 console.log(`LLM Gateway starting on http://localhost:${port}`);
