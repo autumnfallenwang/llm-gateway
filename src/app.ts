@@ -3,8 +3,10 @@ import { OpenAPIHono } from "@hono/zod-openapi";
 import { cors } from "hono/cors";
 import { chatCompletionRoute } from "./routes/chat";
 import { modelsRoute } from "./routes/models";
+import { validateModelsRoute } from "./routes/validate";
 import { createCompletion } from "./services/completion";
 import { listModels, resolveModel } from "./services/registry";
+import { readValidationReport, validateAllModels } from "./services/validation";
 
 const app = new OpenAPIHono({
   defaultHook: (result, c) => {
@@ -81,8 +83,37 @@ app.openapi(chatCompletionRoute, async (c) => {
 });
 
 // Models list
-app.openapi(modelsRoute, (c) => {
-  return c.json({ object: "list" as const, data: listModels() }, 200);
+app.openapi(modelsRoute, async (c) => {
+  const allModels = listModels();
+  const report = await readValidationReport();
+
+  if (!report) {
+    return c.json({ object: "list" as const, data: allModels }, 200);
+  }
+
+  const filtered = allModels.filter((m) => report.models[m.id]?.status === "ok");
+  return c.json({ object: "list" as const, data: filtered }, 200);
+});
+
+// Model validation
+app.openapi(validateModelsRoute, async (c) => {
+  try {
+    const report = await validateAllModels();
+    return c.json(report, 200);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Validation failed";
+    return c.json(
+      {
+        error: {
+          message: `Validation error: ${message}`,
+          type: "server_error",
+          param: null,
+          code: null,
+        },
+      },
+      500,
+    );
+  }
 });
 
 // OpenAPI spec
