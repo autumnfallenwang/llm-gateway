@@ -13,7 +13,7 @@ export const ChatCompletionRequestSchema = z.object({
   stream: z.boolean().optional().default(false),
 });
 
-const ChoiceSchema = z.object({
+const CHOICE_SCHEMA = z.object({
   index: z.number().int(),
   message: z.object({
     role: z.literal("assistant"),
@@ -22,7 +22,7 @@ const ChoiceSchema = z.object({
   finish_reason: z.string(),
 });
 
-const UsageSchema = z.object({
+const USAGE_SCHEMA = z.object({
   prompt_tokens: z.number().int(),
   completion_tokens: z.number().int(),
   total_tokens: z.number().int(),
@@ -33,6 +33,6 @@ export const ChatCompletionResponseSchema = z.object({
   object: z.literal("chat.completion"),
   created: z.number().int(),
   model: z.string(),
-  choices: z.array(ChoiceSchema),
-  usage: UsageSchema,
+  choices: z.array(CHOICE_SCHEMA),
+  usage: USAGE_SCHEMA,
 });

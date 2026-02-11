@@ -10,6 +10,32 @@ export const chatCompletionRoute = createRoute({
       content: {
         "application/json": {
           schema: ChatCompletionRequestSchema,
+          examples: {
+            ollama: {
+              summary: "Ollama — qwen3:30b",
+              value: {
+                model: "qwen3:30b",
+                messages: [{ role: "user", content: "Explain black holes in two sentences." }],
+                max_tokens: 128,
+              },
+            },
+            anthropic: {
+              summary: "Anthropic — Claude Haiku 4.5",
+              value: {
+                model: "claude-haiku-4-5",
+                messages: [{ role: "user", content: "Explain black holes in two sentences." }],
+                max_tokens: 128,
+              },
+            },
+            codex: {
+              summary: "Codex — GPT-5.1",
+              value: {
+                model: "gpt-5.1",
+                messages: [{ role: "user", content: "Explain black holes in two sentences." }],
+                max_tokens: 128,
+              },
+            },
+          },
         },
       },
       required: true,

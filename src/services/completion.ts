@@ -53,6 +53,11 @@ function buildContext(body: ChatCompletionRequest, resolved: ResolvedModel): Con
     }
   }
 
+  // Codex API requires instructions (system prompt) to be present
+  if (!systemPrompt && resolved.provider === "codex") {
+    systemPrompt = "You are a helpful assistant.";
+  }
+
   return { systemPrompt, messages };
 }
 
