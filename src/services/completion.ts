@@ -3,6 +3,7 @@ import {
   type Context,
   complete,
   type Message,
+  stream,
   type Usage,
 } from "@mariozechner/pi-ai";
 import type { ChatCompletionRequest, ChatCompletionResponse } from "../routes/chat.js";
@@ -106,4 +107,40 @@ export async function createCompletion(
   const options = buildOptions(body, resolved);
   const result = await complete(resolved.model, context, options);
   return formatResponse(result, body.model);
+}
+
+export async function* createStreamingCompletion(
+  resolved: ResolvedModel,
+  body: ChatCompletionRequest,
+): AsyncGenerator<string> {
+  const context = buildContext(body, resolved);
+  const options = buildOptions(body, resolved);
+  const eventStream = stream(resolved.model, context, options);
+
+  const id = `chatcmpl-${Date.now()}`;
+  const created = Math.floor(Date.now() / 1000);
+
+  function chunk(delta: Record<string, string>, finishReason: string | null): string {
+    return JSON.stringify({
+      id,
+      object: "chat.completion.chunk",
+      created,
+      model: body.model,
+      choices: [{ index: 0, delta, finish_reason: finishReason }],
+    });
+  }
+
+  // First chunk: role announcement
+  yield chunk({ role: "assistant" }, null);
+
+  for await (const event of eventStream) {
+    if (event.type === "text_delta") {
+      yield chunk({ content: event.delta }, null);
+    } else if (event.type === "done") {
+      const finishReason = STOP_REASON_MAP[event.reason] ?? "stop";
+      yield chunk({}, finishReason);
+    } else if (event.type === "error") {
+      throw new Error(event.error.errorMessage ?? "Stream error");
+    }
+  }
 }

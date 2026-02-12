@@ -1,26 +1,53 @@
 import { describe, expect, it, vi } from "vitest";
 
+const MOCK_ASSISTANT_MESSAGE = {
+  role: "assistant",
+  content: [{ type: "text", text: "Mock response" }],
+  api: "openai-completions",
+  provider: "ollama",
+  model: "test-model",
+  usage: {
+    input: 5,
+    output: 10,
+    cacheRead: 0,
+    cacheWrite: 0,
+    totalTokens: 15,
+    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+  },
+  stopReason: "stop",
+  timestamp: 1700000000000,
+};
+
+function createMockEventStream() {
+  const events = [
+    { type: "text_delta", contentIndex: 0, delta: "Mock ", partial: MOCK_ASSISTANT_MESSAGE },
+    { type: "text_delta", contentIndex: 0, delta: "response", partial: MOCK_ASSISTANT_MESSAGE },
+    { type: "done", reason: "stop", message: MOCK_ASSISTANT_MESSAGE },
+  ];
+  return {
+    async *[Symbol.asyncIterator]() {
+      for (const event of events) {
+        yield event;
+      }
+    },
+    result: () => Promise.resolve(MOCK_ASSISTANT_MESSAGE),
+  };
+}
+
 vi.mock("@mariozechner/pi-ai", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@mariozechner/pi-ai")>();
   return {
     ...actual,
-    complete: vi.fn().mockResolvedValue({
-      role: "assistant",
-      content: [{ type: "text", text: "Mock response" }],
-      api: "openai-completions",
-      provider: "ollama",
-      model: "test-model",
-      usage: {
-        input: 5,
-        output: 10,
-        cacheRead: 0,
-        cacheWrite: 0,
-        totalTokens: 15,
-        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
-      },
-      stopReason: "stop",
-      timestamp: 1700000000000,
-    }),
+    complete: vi.fn().mockResolvedValue(MOCK_ASSISTANT_MESSAGE),
+    stream: vi.fn().mockImplementation(() => createMockEventStream()),
+  };
+});
+
+vi.mock("../src/services/registry", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../src/services/registry")>();
+  return {
+    ...actual,
+    resolveModel: vi.fn(actual.resolveModel),
   };
 });
 
@@ -94,15 +121,43 @@ describe("POST /v1/chat/completions", () => {
     expect(json.error.param).toBe("temperature");
   });
 
-  it("rejects stream=true", async () => {
+  it("stream=true returns SSE response", async () => {
+    // Mock resolveModel to return a valid model for this test
+    const { resolveModel } = await import("../src/services/registry");
+    vi.mocked(resolveModel).mockReturnValueOnce({
+      model: {
+        id: "test",
+        name: "test",
+        api: "openai-completions",
+        provider: "ollama",
+        baseUrl: "",
+        reasoning: false,
+        input: ["text"],
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+        contextWindow: 4096,
+        maxTokens: 4096,
+      },
+      provider: "ollama",
+    });
+
     const res = await post("/v1/chat/completions", {
       ...VALID_BODY,
       stream: true,
     });
-    expect(res.status).toBe(400);
-    const json = await res.json();
-    expect(json.error.message).toContain("Streaming is not supported");
-    expect(json.error.param).toBe("stream");
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toContain("text/event-stream");
+
+    const text = await res.text();
+    const lines = text.split("\n").filter((l) => l.startsWith("data: "));
+    expect(lines.length).toBeGreaterThanOrEqual(3); // role + text chunks + finish + [DONE]
+
+    // First data line should have role
+    const first = JSON.parse(lines[0].replace("data: ", ""));
+    expect(first.object).toBe("chat.completion.chunk");
+    expect(first.choices[0].delta.role).toBe("assistant");
+
+    // Last data line should be [DONE]
+    expect(lines[lines.length - 1]).toBe("data: [DONE]");
   });
 
   it("returns 404 for unknown model", async () => {

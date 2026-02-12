@@ -113,6 +113,109 @@ describe("completions", () => {
   });
 });
 
+// ── Streaming ────────────────────────────────────────────────────────────
+
+function parseSSE(text: string) {
+  return text
+    .split("\n")
+    .filter((line) => line.startsWith("data: "))
+    .map((line) => line.slice("data: ".length));
+}
+
+function expectChunkShape(json: Record<string, unknown>) {
+  expect(json.id).toEqual(expect.any(String));
+  expect(json.object).toBe("chat.completion.chunk");
+  expect(json.created).toEqual(expect.any(Number));
+  expect(json.model).toEqual(expect.any(String));
+
+  const choices = json.choices as {
+    index: number;
+    delta: Record<string, string>;
+    finish_reason: string | null;
+  }[];
+  expect(choices).toHaveLength(1);
+  expect(choices[0].index).toBe(0);
+}
+
+describe("streaming", () => {
+  it("ollama streaming completion", { timeout: 60_000 }, async () => {
+    const res = await post("/v1/chat/completions", {
+      model: "qwen3:30b",
+      messages: [{ role: "user", content: "Say hello in one word." }],
+      max_tokens: 32,
+      stream: true,
+    });
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toContain("text/event-stream");
+
+    const text = await res.text();
+    const dataLines = parseSSE(text);
+    expect(dataLines.length).toBeGreaterThanOrEqual(3);
+
+    // Last line is [DONE]
+    expect(dataLines[dataLines.length - 1]).toBe("[DONE]");
+
+    // First chunk has role
+    const first = JSON.parse(dataLines[0]);
+    expectChunkShape(first);
+    expect(first.choices[0].delta.role).toBe("assistant");
+
+    // Middle chunks have content
+    const middle = JSON.parse(dataLines[1]);
+    expectChunkShape(middle);
+    expect(typeof middle.choices[0].delta.content).toBe("string");
+
+    // Second-to-last chunk has finish_reason
+    const last = JSON.parse(dataLines[dataLines.length - 2]);
+    expectChunkShape(last);
+    expect(last.choices[0].finish_reason).toEqual(expect.any(String));
+
+    // All chunks share same id
+    const ids = dataLines.filter((d) => d !== "[DONE]").map((d) => JSON.parse(d).id);
+    expect(new Set(ids).size).toBe(1);
+  });
+
+  it("anthropic streaming completion", { timeout: 60_000 }, async () => {
+    const res = await post("/v1/chat/completions", {
+      model: "claude-haiku-4-5",
+      messages: [{ role: "user", content: "Say hello in one word." }],
+      max_tokens: 32,
+      stream: true,
+    });
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toContain("text/event-stream");
+
+    const text = await res.text();
+    const dataLines = parseSSE(text);
+    expect(dataLines.length).toBeGreaterThanOrEqual(3);
+    expect(dataLines[dataLines.length - 1]).toBe("[DONE]");
+
+    const first = JSON.parse(dataLines[0]);
+    expectChunkShape(first);
+    expect(first.choices[0].delta.role).toBe("assistant");
+  });
+
+  it("codex streaming completion", { timeout: 60_000 }, async () => {
+    const res = await post("/v1/chat/completions", {
+      model: "gpt-5.1",
+      messages: [{ role: "user", content: "Say hello in one word." }],
+      max_tokens: 32,
+      stream: true,
+    });
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toContain("text/event-stream");
+
+    const text = await res.text();
+    const dataLines = parseSSE(text);
+    expect(dataLines.length).toBeGreaterThanOrEqual(3);
+    expect(dataLines[dataLines.length - 1]).toBe("[DONE]");
+
+    const first = JSON.parse(dataLines[0]);
+    expectChunkShape(first);
+    expect(first.choices[0].delta.role).toBe("assistant");
+  });
+});
+
 // ── Validation ───────────────────────────────────────────────────────────
 
 describe("validation", () => {
@@ -177,15 +280,15 @@ describe("error handling", () => {
     expect(json.error.type).toBe("invalid_request_error");
   });
 
-  it("stream=true returns 400", async () => {
+  it("stream=true with unknown model returns 404", async () => {
     const res = await post("/v1/chat/completions", {
-      model: "qwen3:30b",
+      model: "nonexistent-model-xyz",
       messages: [{ role: "user", content: "Hi" }],
       stream: true,
     });
-    expect(res.status).toBe(400);
+    expect(res.status).toBe(404);
     const json = await res.json();
     expect(json.error.type).toBe("invalid_request_error");
-    expect(json.error.param).toBe("stream");
+    expect(json.error.code).toBe("model_not_found");
   });
 });

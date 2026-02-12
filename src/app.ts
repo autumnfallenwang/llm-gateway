@@ -1,10 +1,11 @@
 import { swaggerUI } from "@hono/swagger-ui";
 import { OpenAPIHono } from "@hono/zod-openapi";
 import { cors } from "hono/cors";
+import { streamSSE } from "hono/streaming";
 import { chatCompletionRoute } from "./routes/chat";
 import { modelsRoute } from "./routes/models";
 import { validateModelsRoute } from "./routes/validate";
-import { createCompletion } from "./services/completion";
+import { createCompletion, createStreamingCompletion } from "./services/completion";
 import { listModels, resolveModel } from "./services/registry";
 import { readValidationReport, validateAllModels } from "./services/validation";
 
@@ -34,20 +35,6 @@ app.use("/*", cors());
 app.openapi(chatCompletionRoute, async (c) => {
   const body = c.req.valid("json");
 
-  if (body.stream) {
-    return c.json(
-      {
-        error: {
-          message: "Streaming is not supported yet",
-          type: "invalid_request_error",
-          param: "stream",
-          code: null,
-        },
-      },
-      400,
-    );
-  }
-
   const resolved = resolveModel(body.model);
   if (!resolved) {
     return c.json(
@@ -61,6 +48,29 @@ app.openapi(chatCompletionRoute, async (c) => {
       },
       404,
     );
+  }
+
+  if (body.stream) {
+    return streamSSE(c, async (sseStream) => {
+      try {
+        for await (const data of createStreamingCompletion(resolved, body)) {
+          await sseStream.writeSSE({ data });
+        }
+        await sseStream.writeSSE({ data: "[DONE]" });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Unknown backend error";
+        await sseStream.writeSSE({
+          data: JSON.stringify({
+            error: {
+              message: `Backend error: ${message}`,
+              type: "server_error",
+              param: null,
+              code: null,
+            },
+          }),
+        });
+      }
+    });
   }
 
   try {
