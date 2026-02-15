@@ -160,10 +160,11 @@ describe("streaming", () => {
     expectChunkShape(first);
     expect(first.choices[0].delta.role).toBe("assistant");
 
-    // Middle chunks have content
+    // Middle chunks have content or reasoning
     const middle = JSON.parse(dataLines[1]);
     expectChunkShape(middle);
-    expect(typeof middle.choices[0].delta.content).toBe("string");
+    const delta = middle.choices[0].delta;
+    expect(typeof delta.content === "string" || typeof delta.reasoning === "string").toBe(true);
 
     // Second-to-last chunk has finish_reason
     const last = JSON.parse(dataLines[dataLines.length - 2]);

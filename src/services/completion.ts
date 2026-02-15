@@ -79,6 +79,25 @@ function formatResponse(result: AssistantMessage, model: string): ChatCompletion
     .map((c) => c.text)
     .join("");
 
+  const toolCalls = result.content
+    .filter((c) => c.type === "toolCall")
+    .map((c) => ({
+      id: (c as { id: string }).id,
+      type: "function" as const,
+      function: {
+        name: (c as { name: string }).name,
+        arguments: JSON.stringify((c as { arguments: unknown }).arguments),
+      },
+    }));
+
+  const message: Record<string, unknown> = {
+    role: "assistant",
+    content: toolCalls.length > 0 && !textContent ? null : textContent,
+  };
+  if (toolCalls.length > 0) {
+    message.tool_calls = toolCalls;
+  }
+
   return {
     id: `chatcmpl-${Date.now()}`,
     object: "chat.completion",
@@ -87,7 +106,7 @@ function formatResponse(result: AssistantMessage, model: string): ChatCompletion
     choices: [
       {
         index: 0,
-        message: { role: "assistant", content: textContent },
+        message: message as { role: "assistant"; content: string | null },
         finish_reason: STOP_REASON_MAP[result.stopReason] ?? "stop",
       },
     ],
@@ -120,7 +139,7 @@ export async function* createStreamingCompletion(
   const id = `chatcmpl-${Date.now()}`;
   const created = Math.floor(Date.now() / 1000);
 
-  function chunk(delta: Record<string, string>, finishReason: string | null): string {
+  function chunk(delta: Record<string, unknown>, finishReason: string | null): string {
     return JSON.stringify({
       id,
       object: "chat.completion.chunk",
@@ -133,9 +152,43 @@ export async function* createStreamingCompletion(
   // First chunk: role announcement
   yield chunk({ role: "assistant" }, null);
 
+  let toolCallIndex = -1;
+
   for await (const event of eventStream) {
     if (event.type === "text_delta") {
       yield chunk({ content: event.delta }, null);
+    } else if (event.type === "thinking_delta") {
+      yield chunk({ reasoning: (event as { delta: string }).delta }, null);
+    } else if (event.type === "toolcall_start") {
+      toolCallIndex++;
+      const partial = (event as { partial?: { content?: { id?: string; name?: string }[] }; contentIndex?: number }).partial;
+      const contentIndex = (event as { contentIndex?: number }).contentIndex ?? 0;
+      const tc = partial?.content?.[contentIndex] as { id?: string; name?: string } | undefined;
+      yield chunk(
+        {
+          tool_calls: [
+            {
+              index: toolCallIndex,
+              id: tc?.id ?? "",
+              type: "function",
+              function: { name: tc?.name ?? "", arguments: "" },
+            },
+          ],
+        },
+        null,
+      );
+    } else if (event.type === "toolcall_delta") {
+      yield chunk(
+        {
+          tool_calls: [
+            {
+              index: toolCallIndex,
+              function: { arguments: (event as { delta: string }).delta },
+            },
+          ],
+        },
+        null,
+      );
     } else if (event.type === "done") {
       const finishReason = STOP_REASON_MAP[event.reason] ?? "stop";
       yield chunk({}, finishReason);

@@ -101,39 +101,39 @@ Notes:
 
 ## Comparison: OpenAI Spec vs Ollama Support vs Gateway Priority
 
-| Parameter | OpenAI | Ollama | pi-ai | Gateway Priority |
-|---|---|---|---|---|
-| `model` | Required | ✅ Supported | ✅ Via Model object | Must have |
-| `messages` | Required | ✅ Supported | ✅ Via Context | Must have |
-| `temperature` | Optional (default 1) | ✅ Supported | ✅ StreamOptions | Must have |
-| `max_tokens` | Optional (deprecated) | ✅ Supported | ✅ maxTokens | Must have |
-| `max_completion_tokens` | Optional (new) | ❌ Not supported | ✅ maxTokens | Must have (map to max_tokens) |
-| `stream` | Optional (default false) | ✅ Supported | ✅ Streaming API | Must have |
-| `top_p` | Optional (default 1) | ✅ Supported | ❌ Not exposed | Should have |
-| `stop` | Optional | ✅ Supported | ❌ Not exposed | Should have |
-| `stream_options` | Optional | ✅ Supported | ❌ Not exposed | Should have |
-| `frequency_penalty` | Optional (default 0) | ✅ Supported | ❌ Not exposed | Should have |
-| `presence_penalty` | Optional (default 0) | ✅ Supported | ❌ Not exposed | Should have |
-| `tools` | Optional | ✅ Supported | ✅ Via Context.tools | Nice to have |
-| `tool_choice` | Optional | ❌ Not supported | ✅ toolChoice | Nice to have |
-| `response_format` | Optional | ✅ Supported (JSON mode) | ❌ Not exposed | Nice to have |
-| `seed` | Optional (deprecated) | ✅ Supported | ❌ Not exposed | Nice to have |
-| `reasoning_effort` | Optional (default medium) | ❌ Not supported | ✅ reasoning | Nice to have |
-| `n` | Optional (default 1) | ❌ Not supported | ❌ Not supported | Ignore |
-| `logprobs` | Optional | ❌ Not supported | ❌ Not supported | Ignore |
-| `top_logprobs` | Optional | ❌ Not supported | ❌ Not supported | Ignore |
-| `logit_bias` | Optional | ❌ Not supported | ❌ Not supported | Ignore |
-| `parallel_tool_calls` | Optional (default true) | ❌ Not supported | ❌ Not supported | Ignore |
-| `user` | Optional (deprecated) | ❌ Not supported | ❌ Not supported | Ignore |
-| `audio` / `modalities` | Optional | ❌ Not supported | ❌ Not supported | Ignore |
-| `web_search_options` | Optional | ❌ Not supported | ❌ Not supported | Ignore |
-| `prediction` | Optional | ❌ Not supported | ❌ Not supported | Ignore |
-| `metadata` | Optional | ❌ Not supported | ❌ Not supported | Ignore |
-| `store` | Optional | ❌ Not supported | ❌ Not supported | Ignore |
-| `service_tier` | Optional | ❌ Not supported | ❌ Not supported | Ignore |
-| `safety_identifier` | Optional | ❌ Not supported | ❌ Not supported | Ignore |
-| `prompt_cache_key` | Optional | ❌ Not supported | ❌ Not supported | Ignore |
-| `verbosity` | Optional | ❌ Not supported | ❌ Not supported | Ignore |
+| Parameter | OpenAI | Ollama | pi-ai | Gateway Priority | Gateway |
+|---|---|---|---|---|---|
+| `model` | Required | ✅ Supported | ✅ Via Model object | Must have | ✅ Supported |
+| `messages` | Required | ✅ Supported | ✅ Via Context | Must have | ✅ Supported |
+| `temperature` | Optional (default 1) | ✅ Supported | ✅ StreamOptions | Must have | ✅ Supported |
+| `max_tokens` | Optional (deprecated) | ✅ Supported | ✅ maxTokens | Must have | ✅ Supported |
+| `max_completion_tokens` | Optional (new) | ❌ Not supported | ✅ maxTokens | Must have (map to max_tokens) | ✅ Supported (mapped to `max_tokens`) |
+| `stream` | Optional (default false) | ✅ Supported | ✅ Streaming API | Must have | ✅ Supported |
+| `top_p` | Optional (default 1) | ✅ Supported | ❌ Not exposed | Should have | Ignored |
+| `stop` | Optional | ✅ Supported | ❌ Not exposed | Should have | Ignored |
+| `stream_options` | Optional | ✅ Supported | ❌ Not exposed | Should have | Ignored |
+| `frequency_penalty` | Optional (default 0) | ✅ Supported | ❌ Not exposed | Should have | Ignored |
+| `presence_penalty` | Optional (default 0) | ✅ Supported | ❌ Not exposed | Should have | Ignored |
+| `tools` | Optional | ✅ Supported | ✅ Via Context.tools | Nice to have | Ignored |
+| `tool_choice` | Optional | ❌ Not supported | ✅ toolChoice | Nice to have | Ignored |
+| `response_format` | Optional | ✅ Supported (JSON mode) | ❌ Not exposed | Nice to have | Ignored |
+| `seed` | Optional (deprecated) | ✅ Supported | ❌ Not exposed | Nice to have | Ignored |
+| `reasoning_effort` | Optional (default medium) | ❌ Not supported | ✅ reasoning | Nice to have | Ignored |
+| `n` | Optional (default 1) | ❌ Not supported | ❌ Not supported | Ignore | Ignored |
+| `logprobs` | Optional | ❌ Not supported | ❌ Not supported | Ignore | Ignored |
+| `top_logprobs` | Optional | ❌ Not supported | ❌ Not supported | Ignore | Ignored |
+| `logit_bias` | Optional | ❌ Not supported | ❌ Not supported | Ignore | Ignored |
+| `parallel_tool_calls` | Optional (default true) | ❌ Not supported | ❌ Not supported | Ignore | Ignored |
+| `user` | Optional (deprecated) | ❌ Not supported | ❌ Not supported | Ignore | Ignored |
+| `audio` / `modalities` | Optional | ❌ Not supported | ❌ Not supported | Ignore | Ignored |
+| `web_search_options` | Optional | ❌ Not supported | ❌ Not supported | Ignore | Ignored |
+| `prediction` | Optional | ❌ Not supported | ❌ Not supported | Ignore | Ignored |
+| `metadata` | Optional | ❌ Not supported | ❌ Not supported | Ignore | Ignored |
+| `store` | Optional | ❌ Not supported | ❌ Not supported | Ignore | Ignored |
+| `service_tier` | Optional | ❌ Not supported | ❌ Not supported | Ignore | Ignored |
+| `safety_identifier` | Optional | ❌ Not supported | ❌ Not supported | Ignore | Ignored |
+| `prompt_cache_key` | Optional | ❌ Not supported | ❌ Not supported | Ignore | Ignored |
+| `verbosity` | Optional | ❌ Not supported | ❌ Not supported | Ignore | Ignored |
 
 ---
 
@@ -141,28 +141,28 @@ Notes:
 
 ### Non-streaming Response
 
-| Field | OpenAI | Ollama | pi-ai (AssistantMessage) |
-|---|---|---|---|
-| `id` | `"chatcmpl-xxx"` | ✅ `"chatcmpl-xxx"` | ❌ Not provided (gateway must generate) |
-| `object` | `"chat.completion"` | ✅ `"chat.completion"` | ❌ Not provided (gateway must add) |
-| `created` | Unix timestamp (seconds) | ✅ Unix timestamp | ✅ `timestamp` (milliseconds, need to convert) |
-| `model` | Model ID | ✅ Model ID | ✅ `model` |
-| `choices` | Array | ✅ Array | ❌ No choices wrapper (single result) |
-| `choices[].index` | integer | ✅ integer | ❌ Not provided (always 0) |
-| `choices[].message.role` | `"assistant"` | ✅ `"assistant"` | ✅ `role: "assistant"` |
-| `choices[].message.content` | string | ✅ string | ✅ `content[].text` (need to join text blocks) |
-| `choices[].message.refusal` | string or null | ❌ Not present | ❌ Not provided |
-| `choices[].message.annotations` | array | ❌ Not present | ❌ Not provided |
-| `choices[].message.tool_calls` | array | ✅ When tools used | ✅ `content[].type === "toolCall"` (need to convert) |
-| `choices[].logprobs` | object or null | ❌ Not present | ❌ Not provided |
-| `choices[].finish_reason` | string | ✅ `"stop"`, `"length"` | ✅ `stopReason` (need to map: `"stop"`→`"stop"`, `"length"`→`"length"`, `"toolUse"`→`"tool_calls"`, `"error"`→`"content_filter"`) |
-| `usage.prompt_tokens` | integer | ✅ integer | ✅ `usage.input` |
-| `usage.completion_tokens` | integer | ✅ integer | ✅ `usage.output` |
-| `usage.total_tokens` | integer | ✅ integer | ✅ `usage.totalTokens` |
-| `usage.prompt_tokens_details` | object | ❌ Not present | ⚠️ Partial: `usage.cacheRead`, `usage.cacheWrite` (can build details object) |
-| `usage.completion_tokens_details` | object | ❌ Not present | ❌ Not provided |
-| `service_tier` | string | ❌ Not present | ❌ Not provided |
-| `system_fingerprint` | string | ✅ `"fp_ollama"` | ❌ Not provided |
+| Field | OpenAI | Ollama | pi-ai (AssistantMessage) | Gateway |
+|---|---|---|---|---|
+| `id` | `"chatcmpl-xxx"` | ✅ `"chatcmpl-xxx"` | ❌ Not provided (gateway must generate) | ✅ Present |
+| `object` | `"chat.completion"` | ✅ `"chat.completion"` | ❌ Not provided (gateway must add) | ✅ Present |
+| `created` | Unix timestamp (seconds) | ✅ Unix timestamp | ✅ `timestamp` (milliseconds, need to convert) | ✅ Present |
+| `model` | Model ID | ✅ Model ID | ✅ `model` | ✅ Present |
+| `choices` | Array | ✅ Array | ❌ No choices wrapper (single result) | ✅ Present |
+| `choices[].index` | integer | ✅ integer | ❌ Not provided (always 0) | ✅ Present |
+| `choices[].message.role` | `"assistant"` | ✅ `"assistant"` | ✅ `role: "assistant"` | ✅ Present |
+| `choices[].message.content` | string | ✅ string | ✅ `content[].text` (need to join text blocks) | ✅ Present |
+| `choices[].message.refusal` | string or null | ❌ Not present | ❌ Not provided | ❌ Not present |
+| `choices[].message.annotations` | array | ❌ Not present | ❌ Not provided | ❌ Not present |
+| `choices[].message.tool_calls` | array | ✅ When tools used | ✅ `content[].type === "toolCall"` (need to convert) | ✅ Present |
+| `choices[].logprobs` | object or null | ❌ Not present | ❌ Not provided | ❌ Not present |
+| `choices[].finish_reason` | string | ✅ `"stop"`, `"length"` | ✅ `stopReason` (need to map: `"stop"`→`"stop"`, `"length"`→`"length"`, `"toolUse"`→`"tool_calls"`, `"error"`→`"content_filter"`) | ✅ Present |
+| `usage.prompt_tokens` | integer | ✅ integer | ✅ `usage.input` | ✅ Present |
+| `usage.completion_tokens` | integer | ✅ integer | ✅ `usage.output` | ✅ Present |
+| `usage.total_tokens` | integer | ✅ integer | ✅ `usage.totalTokens` | ✅ Present |
+| `usage.prompt_tokens_details` | object | ❌ Not present | ⚠️ Partial: `usage.cacheRead`, `usage.cacheWrite` (can build details object) | ❌ Not present |
+| `usage.completion_tokens_details` | object | ❌ Not present | ❌ Not provided | ❌ Not present |
+| `service_tier` | string | ❌ Not present | ❌ Not provided | ❌ Not present |
+| `system_fingerprint` | string | ✅ `"fp_ollama"` | ❌ Not provided | ❌ Not present |
 
 ### pi-ai AssistantMessage fields → OpenAI mapping
 
@@ -198,15 +198,15 @@ Notes:
 
 ### Streaming Response
 
-| Field | OpenAI | Ollama | pi-ai (AssistantMessageEvent) |
-|---|---|---|---|
-| `object` | `"chat.completion.chunk"` | ✅ `"chat.completion.chunk"` | ❌ Not provided (gateway must add) |
-| `choices[].delta.role` | `"assistant"` (first chunk) | ✅ | ✅ `type: "start"` event |
-| `choices[].delta.content` | string (token) | ✅ | ✅ `type: "text_delta"`, `delta` field |
-| `choices[].delta.tool_calls` | array | ✅ When tools used | ✅ `type: "toolcall_delta"` / `"toolcall_end"` |
-| `choices[].delta.reasoning` | string (reasoning models) | ✅ | ✅ `type: "thinking_delta"`, `delta` field |
-| `choices[].finish_reason` | string (last chunk) | ✅ | ✅ `type: "done"`, `reason` field |
-| `data: [DONE]` | End of stream | ✅ | ✅ Stream `.end()` |
+| Field | OpenAI | Ollama | pi-ai (AssistantMessageEvent) | Gateway |
+|---|---|---|---|---|
+| `object` | `"chat.completion.chunk"` | ✅ `"chat.completion.chunk"` | ❌ Not provided (gateway must add) | ✅ Present |
+| `choices[].delta.role` | `"assistant"` (first chunk) | ✅ | ✅ `type: "start"` event | ✅ Present |
+| `choices[].delta.content` | string (token) | ✅ | ✅ `type: "text_delta"`, `delta` field | ✅ Present |
+| `choices[].delta.tool_calls` | array | ✅ When tools used | ✅ `type: "toolcall_delta"` / `"toolcall_end"` | ✅ Present |
+| `choices[].delta.reasoning` | string (reasoning models) | ✅ | ✅ `type: "thinking_delta"`, `delta` field | ✅ Present |
+| `choices[].finish_reason` | string (last chunk) | ✅ | ✅ `type: "done"`, `reason` field | ✅ Present |
+| `data: [DONE]` | End of stream | ✅ | ✅ Stream `.end()` | ✅ Present |
 
 ### pi-ai stream events → OpenAI SSE mapping
 
@@ -214,7 +214,7 @@ Notes:
 |---|---|
 | `{ type: "start" }` | `data: {"choices":[{"delta":{"role":"assistant"}}]}` |
 | `{ type: "text_delta", delta: "Hello" }` | `data: {"choices":[{"delta":{"content":"Hello"}}]}` |
-| `{ type: "thinking_delta", delta: "..." }` | ❌ Drop (or pass as custom field) |
+| `{ type: "thinking_delta", delta: "..." }` | `data: {"choices":[{"delta":{"reasoning":"..."}}]}` |
 | `{ type: "toolcall_start" }` | `data: {"choices":[{"delta":{"tool_calls":[{"id":"...","function":{"name":"..."}}]}}]}` |
 | `{ type: "toolcall_delta", delta: "..." }` | `data: {"choices":[{"delta":{"tool_calls":[{"function":{"arguments":"..."}}]}}]}` |
 | `{ type: "done", reason: "stop" }` | `data: {"choices":[{"delta":{},"finish_reason":"stop"}]}` then `data: [DONE]` |
