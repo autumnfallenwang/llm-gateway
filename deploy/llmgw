@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+PROJECT_DIR="$HOME/agentic/llm-gateway"
+COMPOSE_FILE="$PROJECT_DIR/deploy/compose.yaml"
+VERSION=$(node -p "require('$PROJECT_DIR/package.json').version")
+
+case "${1:-help}" in
+  start)
+    docker compose -f "$COMPOSE_FILE" up -d --build
+    echo "llm-gateway v$VERSION running on http://localhost:51277"
+    ;;
+  stop)
+    docker compose -f "$COMPOSE_FILE" down
+    ;;
+  restart)
+    docker compose -f "$COMPOSE_FILE" restart
+    ;;
+  logs)
+    docker compose -f "$COMPOSE_FILE" logs -f
+    ;;
+  status)
+    docker compose -f "$COMPOSE_FILE" ps
+    ;;
+  rebuild)
+    docker compose -f "$COMPOSE_FILE" up -d --build --force-recreate
+    echo "llm-gateway v$VERSION rebuilt and running on http://localhost:51277"
+    ;;
+  version|-v|--version)
+    echo "llmgw v$VERSION"
+    ;;
+  *)
+    echo "llmgw v$VERSION"
+    echo "Usage: llmgw {start|stop|restart|logs|status|rebuild|version}"
+    ;;
+esac
