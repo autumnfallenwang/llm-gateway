@@ -1,10 +1,19 @@
 import { createRoute, type z } from "@hono/zod-openapi";
-import { ChatCompletionRequestSchema, ChatCompletionResponseSchema } from "../schemas/chat";
+import {
+  ChatCompletionChunkSchema,
+  ChatCompletionRequestSchema,
+  ChatCompletionResponseSchema,
+} from "../schemas/chat";
 import { ErrorResponseSchema } from "../schemas/error";
 
 export const chatCompletionRoute = createRoute({
   method: "post",
   path: "/v1/chat/completions",
+  operationId: "createChatCompletion",
+  summary: "Create a chat completion",
+  description:
+    "Generates a model response for the given conversation. Supports Ollama, Anthropic, and Codex backends. Set stream=true for Server-Sent Events streaming.",
+  tags: ["Chat"],
   request: {
     body: {
       content: {
@@ -35,6 +44,33 @@ export const chatCompletionRoute = createRoute({
                 max_tokens: 128,
               },
             },
+            "ollama-stream": {
+              summary: "Ollama streaming — qwen3:30b",
+              value: {
+                model: "qwen3:30b",
+                messages: [{ role: "user", content: "Explain black holes in two sentences." }],
+                max_tokens: 128,
+                stream: true,
+              },
+            },
+            "anthropic-stream": {
+              summary: "Anthropic streaming — Claude Haiku 4.5",
+              value: {
+                model: "claude-haiku-4-5",
+                messages: [{ role: "user", content: "Explain black holes in two sentences." }],
+                max_tokens: 128,
+                stream: true,
+              },
+            },
+            "codex-stream": {
+              summary: "Codex streaming — GPT-5.1",
+              value: {
+                model: "gpt-5.1",
+                messages: [{ role: "user", content: "Explain black holes in two sentences." }],
+                max_tokens: 128,
+                stream: true,
+              },
+            },
           },
         },
       },
@@ -47,8 +83,18 @@ export const chatCompletionRoute = createRoute({
         "application/json": {
           schema: ChatCompletionResponseSchema,
         },
+        "text/event-stream": {
+          schema: ChatCompletionChunkSchema,
+          example: {
+            id: "chatcmpl-1234567890",
+            object: "chat.completion.chunk",
+            created: 1234567890,
+            model: "qwen3:30b",
+            choices: [{ index: 0, delta: { content: "Hello" }, finish_reason: null }],
+          },
+        },
       },
-      description: "Chat completion response",
+      description: "Chat completion response (JSON) or SSE stream of chunks when stream=true",
     },
     400: {
       content: {

@@ -5,6 +5,11 @@ import { ValidateResponseSchema } from "../schemas/validate";
 export const validateModelsRoute = createRoute({
   method: "post",
   path: "/v1/models/validate",
+  operationId: "validateModels",
+  summary: "Validate all registered models",
+  description:
+    "Sends a test prompt to every registered model and records whether it responds successfully. Results are cached and used to filter the GET /v1/models response.",
+  tags: ["Models"],
   responses: {
     200: {
       content: {

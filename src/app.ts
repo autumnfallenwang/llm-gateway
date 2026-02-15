@@ -134,6 +134,11 @@ app.doc("/openapi.json", {
     version: "0.1.0",
     description: "Self-hosted OpenAI-compatible API gateway for multiple LLM backends",
   },
+  servers: [{ url: "http://localhost:8080", description: "Local development server" }],
+  tags: [
+    { name: "Chat", description: "Chat completion endpoints" },
+    { name: "Models", description: "Model listing and validation" },
+  ],
 });
 
 // Swagger UI
