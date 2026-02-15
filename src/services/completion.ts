@@ -6,6 +6,7 @@ import {
   stream,
   type Usage,
 } from "@mariozechner/pi-ai";
+import { DEFAULT_SYSTEM_PROMPT } from "../config.js";
 import type { ChatCompletionRequest, ChatCompletionResponse } from "../routes/chat.js";
 import type { ResolvedModel } from "./registry.js";
 
@@ -56,7 +57,7 @@ function buildContext(body: ChatCompletionRequest, resolved: ResolvedModel): Con
 
   // Codex API requires instructions (system prompt) to be present
   if (!systemPrompt && resolved.provider === "codex") {
-    systemPrompt = "You are a helpful assistant.";
+    systemPrompt = DEFAULT_SYSTEM_PROMPT;
   }
 
   return { systemPrompt, messages };
@@ -161,7 +162,9 @@ export async function* createStreamingCompletion(
       yield chunk({ reasoning: (event as { delta: string }).delta }, null);
     } else if (event.type === "toolcall_start") {
       toolCallIndex++;
-      const partial = (event as { partial?: { content?: { id?: string; name?: string }[] }; contentIndex?: number }).partial;
+      const partial = (
+        event as { partial?: { content?: { id?: string; name?: string }[] }; contentIndex?: number }
+      ).partial;
       const contentIndex = (event as { contentIndex?: number }).contentIndex ?? 0;
       const tc = partial?.content?.[contentIndex] as { id?: string; name?: string } | undefined;
       yield chunk(

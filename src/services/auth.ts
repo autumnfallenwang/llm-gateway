@@ -1,6 +1,5 @@
 import { readFile } from "node:fs/promises";
-import { homedir } from "node:os";
-import { join } from "node:path";
+import { ANTHROPIC_CREDENTIALS_PATH, CODEX_CREDENTIALS_PATH } from "../config.js";
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -59,9 +58,8 @@ function decodeJwtExp(jwt: string): number | undefined {
 // ── Public API ──────────────────────────────────────────────────────────────
 
 export async function loadCredentials(config?: AuthConfig): Promise<void> {
-  const anthropicPath =
-    config?.anthropicCredentialsPath ?? join(homedir(), ".claude", ".credentials.json");
-  const codexPath = config?.codexCredentialsPath ?? join(homedir(), ".codex", "auth.json");
+  const anthropicPath = config?.anthropicCredentialsPath ?? ANTHROPIC_CREDENTIALS_PATH;
+  const codexPath = config?.codexCredentialsPath ?? CODEX_CREDENTIALS_PATH;
 
   // Reset state
   anthropicAccessToken = undefined;

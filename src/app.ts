@@ -2,6 +2,7 @@ import { swaggerUI } from "@hono/swagger-ui";
 import { OpenAPIHono } from "@hono/zod-openapi";
 import { cors } from "hono/cors";
 import { streamSSE } from "hono/streaming";
+import { APP_DESCRIPTION, APP_NAME, APP_VERSION, LLM_GATEWAY_PORT } from "./config";
 import { chatCompletionRoute } from "./routes/chat";
 import { modelsRoute } from "./routes/models";
 import { validateModelsRoute } from "./routes/validate";
@@ -131,10 +132,10 @@ app.doc("/openapi.json", {
   openapi: "3.1.0",
   info: {
     title: "LLM Gateway",
-    version: "0.1.0",
-    description: "Self-hosted OpenAI-compatible API gateway for multiple LLM backends",
+    version: APP_VERSION,
+    description: APP_DESCRIPTION,
   },
-  servers: [{ url: "http://localhost:8080", description: "Local development server" }],
+  servers: [{ url: `http://localhost:${LLM_GATEWAY_PORT}`, description: "Local development server" }],
   tags: [
     { name: "Chat", description: "Chat completion endpoints" },
     { name: "Models", description: "Model listing and validation" },
@@ -145,6 +146,6 @@ app.doc("/openapi.json", {
 app.get("/docs", swaggerUI({ url: "/openapi.json" }));
 
 // Health check
-app.get("/", (c) => c.json({ status: "ok", name: "llm-gateway", version: "0.1.0" }));
+app.get("/", (c) => c.json({ status: "ok", name: APP_NAME, version: APP_VERSION }));
 
 export default app;

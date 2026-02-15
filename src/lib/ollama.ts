@@ -1,4 +1,10 @@
 import type { Model } from "@mariozechner/pi-ai";
+import {
+  OLLAMA_BASE_URL,
+  OLLAMA_DEFAULT_CONTEXT_WINDOW,
+  OLLAMA_DEFAULT_MAX_TOKENS,
+  OLLAMA_FETCH_TIMEOUT_MS,
+} from "../config.js";
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -16,10 +22,8 @@ interface OllamaModelsResponse {
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
-const DEFAULT_BASE_URL = "http://localhost:11434";
-
 export function buildOllamaModel(id: string, baseUrl?: string): Model<"openai-completions"> {
-  const base = baseUrl ?? DEFAULT_BASE_URL;
+  const base = baseUrl ?? OLLAMA_BASE_URL;
   return {
     id,
     name: id,
@@ -29,17 +33,19 @@ export function buildOllamaModel(id: string, baseUrl?: string): Model<"openai-co
     reasoning: false,
     input: ["text"],
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-    contextWindow: 131072,
-    maxTokens: 4096,
+    contextWindow: OLLAMA_DEFAULT_CONTEXT_WINDOW,
+    maxTokens: OLLAMA_DEFAULT_MAX_TOKENS,
   };
 }
 
 // ── Public API ──────────────────────────────────────────────────────────────
 
 export async function fetchOllamaModels(baseUrl?: string): Promise<Model<"openai-completions">[]> {
-  const base = baseUrl ?? DEFAULT_BASE_URL;
+  const base = baseUrl ?? OLLAMA_BASE_URL;
   try {
-    const res = await fetch(`${base}/v1/models`, { signal: AbortSignal.timeout(2000) });
+    const res = await fetch(`${base}/v1/models`, {
+      signal: AbortSignal.timeout(OLLAMA_FETCH_TIMEOUT_MS),
+    });
     if (!res.ok) {
       // biome-ignore lint/suspicious/noConsole: intentional startup log
       console.warn(`[ollama] Unexpected status ${res.status} from ${base}/v1/models`);

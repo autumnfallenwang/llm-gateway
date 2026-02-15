@@ -1,7 +1,13 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { homedir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname } from "node:path";
 import { complete } from "@mariozechner/pi-ai";
+import {
+  DEFAULT_SYSTEM_PROMPT,
+  VALIDATION_CONCURRENCY,
+  VALIDATION_FILE_PATH,
+  VALIDATION_MAX_TOKENS,
+  VALIDATION_TIMEOUT_MS,
+} from "../config.js";
 import type { ModelValidationResult, ValidateResponse } from "../schemas/validate.js";
 import { listModels, type ResolvedModel, resolveModel } from "./registry.js";
 
@@ -12,12 +18,6 @@ export interface ValidationConfig {
   concurrency?: number;
   perModelTimeoutMs?: number;
 }
-
-// ── Constants ───────────────────────────────────────────────────────────────
-
-const DEFAULT_PATH = join(homedir(), ".llm-gateway", "models.json");
-const DEFAULT_CONCURRENCY = 3;
-const DEFAULT_TIMEOUT_MS = 60_000;
 
 // ── Core functions ──────────────────────────────────────────────────────────
 
@@ -30,7 +30,7 @@ export async function validateSingleModel(
     const result = await complete(
       resolved.model,
       {
-        systemPrompt: "You are a helpful assistant.",
+        systemPrompt: DEFAULT_SYSTEM_PROMPT,
         messages: [
           {
             role: "user",
@@ -40,7 +40,7 @@ export async function validateSingleModel(
         ],
       },
       {
-        maxTokens: 32,
+        maxTokens: VALIDATION_MAX_TOKENS,
         apiKey: resolved.apiKey ?? "ollama",
         signal: AbortSignal.timeout(timeoutMs),
       },
@@ -87,9 +87,9 @@ async function runWithConcurrency<T>(tasks: (() => Promise<T>)[], limit: number)
 }
 
 export async function validateAllModels(config?: ValidationConfig): Promise<ValidateResponse> {
-  const filePath = config?.validationFilePath ?? DEFAULT_PATH;
-  const concurrency = config?.concurrency ?? DEFAULT_CONCURRENCY;
-  const timeoutMs = config?.perModelTimeoutMs ?? DEFAULT_TIMEOUT_MS;
+  const filePath = config?.validationFilePath ?? VALIDATION_FILE_PATH;
+  const concurrency = config?.concurrency ?? VALIDATION_CONCURRENCY;
+  const timeoutMs = config?.perModelTimeoutMs ?? VALIDATION_TIMEOUT_MS;
 
   const allModels = listModels();
   const models: Record<string, ModelValidationResult> = {};
@@ -139,7 +139,7 @@ export async function validateAllModels(config?: ValidationConfig): Promise<Vali
 export async function readValidationReport(
   config?: ValidationConfig,
 ): Promise<ValidateResponse | null> {
-  const filePath = config?.validationFilePath ?? DEFAULT_PATH;
+  const filePath = config?.validationFilePath ?? VALIDATION_FILE_PATH;
   try {
     const raw = await readFile(filePath, "utf-8");
     return JSON.parse(raw) as ValidateResponse;
