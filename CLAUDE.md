@@ -8,10 +8,36 @@ Hono + Zod + @hono/zod-openapi + Vitest + Biome + tsx
 
 ## Commands
 
-- `npm run dev` - start dev server (port 8080)
+- `npm run dev` - start dev server with hot-reload (port 51277)
 - `npm test` - run tests
 - `npm run lint` - lint check
 - `npm run lint:fix` - auto-fix lint
+
+## Deploy
+
+Docker-based deployment via `deploy/` directory. The `llmgw` CLI is symlinked to `~/.local/bin/` for global access.
+
+- `llmgw start` - build image + start container
+- `llmgw stop` - stop container
+- `llmgw restart` - restart container
+- `llmgw logs` - tail container logs
+- `llmgw status` - show running state
+- `llmgw rebuild` - force full rebuild + restart
+- `llmgw version` - show version from package.json
+
+## Config
+
+Centralized in `src/config.ts`. Key env var overrides:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `LLM_GATEWAY_PORT` | `51277` | Server port |
+| `OLLAMA_BASE_URL` | `http://localhost:11434` | Ollama API base URL |
+| `ANTHROPIC_CREDENTIALS_PATH` | `~/.claude/.credentials.json` | Anthropic auth file |
+| `CODEX_CREDENTIALS_PATH` | `~/.codex/auth.json` | Codex auth file |
+| `VALIDATION_FILE_PATH` | `~/.llm-gateway/models.json` | Validation cache |
+| `VALIDATION_CONCURRENCY` | `3` | Parallel model validation limit |
+| `VALIDATION_TIMEOUT_MS` | `60000` | Per-model validation timeout |
 
 ## Docs
 
