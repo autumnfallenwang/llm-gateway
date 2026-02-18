@@ -2,6 +2,7 @@ import {
   type AssistantMessage,
   type Context,
   complete,
+  type ImageContent,
   type Message,
   stream,
   type TextContent,
@@ -10,6 +11,8 @@ import {
 import { DEFAULT_SYSTEM_PROMPT } from "../config.js";
 import type { ChatCompletionRequest, ChatCompletionResponse } from "../routes/chat.js";
 import type { ContentPart } from "../schemas/chat.js";
+import { loadImage } from "./image/load.js";
+import { preprocessImage } from "./image/preprocess.js";
 import type { ResolvedModel } from "./registry.js";
 
 const STOP_REASON_MAP: Record<string, string> = {
@@ -35,7 +38,23 @@ function extractTextContent(content: string | ContentPart[]): string {
     .join("");
 }
 
-function buildContext(body: ChatCompletionRequest, resolved: ResolvedModel): Context {
+async function processImagePart(
+  url: string,
+  detail?: "auto" | "low" | "high",
+): Promise<ImageContent> {
+  const loaded = await loadImage(url);
+  const processed = await preprocessImage(loaded, detail);
+  return {
+    type: "image",
+    data: processed.buffer.toString("base64"),
+    mimeType: processed.mime,
+  };
+}
+
+async function buildContext(
+  body: ChatCompletionRequest,
+  resolved: ResolvedModel,
+): Promise<Context> {
   let systemPrompt: string | undefined;
   const messages: Message[] = [];
 
@@ -46,13 +65,18 @@ function buildContext(body: ChatCompletionRequest, resolved: ResolvedModel): Con
     }
 
     if (msg.role === "user") {
-      let content: string | TextContent[];
+      let content: string | (TextContent | ImageContent)[];
       if (typeof msg.content === "string") {
         content = msg.content;
       } else {
-        content = msg.content
-          .filter((p): p is { type: "text"; text: string } => p.type === "text")
-          .map((p) => ({ type: "text" as const, text: p.text }));
+        content = await Promise.all(
+          msg.content.map(async (p) => {
+            if (p.type === "text") {
+              return { type: "text" as const, text: p.text } satisfies TextContent;
+            }
+            return await processImagePart(p.image_url.url, p.image_url.detail);
+          }),
+        );
       }
       messages.push({
         role: "user",
@@ -141,7 +165,7 @@ export async function createCompletion(
   resolved: ResolvedModel,
   body: ChatCompletionRequest,
 ): Promise<ChatCompletionResponse> {
-  const context = buildContext(body, resolved);
+  const context = await buildContext(body, resolved);
   const options = buildOptions(body, resolved);
   const result = await complete(resolved.model, context, options);
   return formatResponse(result, body.model);
@@ -151,7 +175,7 @@ export async function* createStreamingCompletion(
   resolved: ResolvedModel,
   body: ChatCompletionRequest,
 ): AsyncGenerator<string> {
-  const context = buildContext(body, resolved);
+  const context = await buildContext(body, resolved);
   const options = buildOptions(body, resolved);
   const eventStream = stream(resolved.model, context, options);
 

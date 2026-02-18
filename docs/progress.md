@@ -11,7 +11,7 @@
 | 5 | Completion service | ✅ Done | `src/services/completion.ts` — OpenAI ↔ pi-ai translation, Codex system prompt fallback |
 | 6 | Routes | ✅ Done | `src/routes/{chat,models,validate}.ts` — OpenAPI route defs with request examples |
 | 7 | App + server wiring | ✅ Done | All handlers wired: chat completions, models list (with validation filtering), model validation |
-| 8 | Tests | ✅ Done | 7 test files, 75 fast / 153 total tests |
+| 8 | Tests | ✅ Done | 8 test files, 90 fast / 168 total tests |
 | 9 | Model validation | ✅ Done | `src/services/validation.ts` — tests every model with real completion, saves to `~/.llm-gateway/models.json` |
 | 10 | Streaming support | ✅ Done | SSE streaming via `stream: true` — all three backends (Ollama, Anthropic, Codex) |
 
@@ -29,8 +29,8 @@
 - Codex provider gets default system prompt when none provided
 - 404 with `model_not_found` for unknown models, 500 with backend error details on failure
 - Streaming errors sent as SSE error events before stream closes
-- 75 unit tests passing (fast), 153 total with e2e/compatibility, 0 lint errors
-- `npm run test:fast` for dev iteration (~0.5s), `npm test` for full validation (~90s)
+- 90 unit tests passing (fast), 168 total with e2e/compatibility, 0 lint errors
+- `npm run test:fast` for dev iteration (~1.6s), `npm test` for full validation (~90s)
 
 ## Reference Docs
 
@@ -53,7 +53,7 @@ Core pipeline: accept images, preprocess, pass to pi-ai. Vision models work; non
 |---|------|--------|-------|
 | 11 | Update `MessageSchema` to accept `string \| ContentPart[]` | ✅ Done | Schema union type, `extractTextContent` helper, `buildContext` handles array content, image_url parts filtered (task 14). |
 | 12 | Image loader: resolve inputs to buffers | ✅ Done | `src/services/image/load.ts` — data URI decode, HTTPS fetch (timeout, size cap, SSRF protection), MIME detection from magic bytes. 31 tests in `tests/image-load.test.ts`. |
-| 13 | Image preprocessor with `sharp` | | Resize, compress, EXIF fix, HEIC→JPEG, alpha detection, grid search for size limits, `detail` param support |
+| 13 | Image preprocessor with `sharp` | ✅ Done | `src/services/image/preprocess.ts` — resize, compress, EXIF fix, HEIC→JPEG, WebP conversion, alpha-aware PNG/JPEG grid search, `detail` param support. 15 tests in `tests/image-preprocess.test.ts`. |
 | 14 | Integrate pipeline into completion route | | Parse content parts → load → preprocess → convert to pi-ai `ImageContent` → pass to `buildContext` |
 | 15 | Tests for image pipeline | | Unit tests for loader, preprocessor, content parsing; integration test for full flow |
 
@@ -78,7 +78,7 @@ Fix Ollama models hardcoded to `input: ["text"]`.
 
 ## What's Next
 
-**Task 13: Image preprocessor with `sharp`** — resize, compress, format conversion (HEIC→JPEG), EXIF orientation fix, and `detail` parameter support. Depends on the image loader (task 12, done).
+**Task 14: Integrate pipeline into completion route** — wire up content part parsing → image loading → preprocessing → pi-ai `ImageContent` conversion in `buildContext`. Depends on loader (task 12) and preprocessor (task 13), both done.
 
 ## Previous Milestones
 

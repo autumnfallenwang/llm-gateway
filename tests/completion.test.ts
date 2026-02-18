@@ -2,13 +2,29 @@ import type { AssistantMessage, Context } from "@mariozechner/pi-ai";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const completeMock = vi.fn();
+const loadImageMock = vi.fn();
+const preprocessImageMock = vi.fn();
 
 vi.mock("@mariozechner/pi-ai", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@mariozechner/pi-ai")>();
   return { ...actual, complete: completeMock };
 });
 
-// Import after mock is set up
+vi.mock("../src/services/image/load", () => ({
+  loadImage: loadImageMock,
+  ImageLoadError: class ImageLoadError extends Error {
+    constructor(message: string) {
+      super(message);
+      this.name = "ImageLoadError";
+    }
+  },
+}));
+
+vi.mock("../src/services/image/preprocess", () => ({
+  preprocessImage: preprocessImageMock,
+}));
+
+// Import after mocks are set up
 const { createCompletion } = await import("../src/services/completion");
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -51,6 +67,16 @@ function makeAssistantMessage(overrides?: Partial<AssistantMessage>): AssistantM
     timestamp: 1700000000000,
     ...overrides,
   };
+}
+
+function setupImageMocks() {
+  loadImageMock.mockResolvedValue({ buffer: Buffer.from("fake"), mime: "image/jpeg" });
+  preprocessImageMock.mockResolvedValue({
+    buffer: Buffer.from("processed"),
+    mime: "image/jpeg",
+    width: 800,
+    height: 600,
+  });
 }
 
 afterEach(() => {
@@ -271,7 +297,8 @@ describe("createCompletion", () => {
     expect(context.messages[1].content).toEqual([{ type: "text", text: "Hello there" }]);
   });
 
-  it("filters out image_url parts from user message content", async () => {
+  it("processes image_url parts into pi-ai ImageContent", async () => {
+    setupImageMocks();
     completeMock.mockResolvedValue(makeAssistantMessage());
 
     await createCompletion(makeResolved(), {
@@ -289,10 +316,15 @@ describe("createCompletion", () => {
     });
 
     const [, context]: [unknown, Context] = completeMock.mock.calls[0];
-    expect(context.messages[0].content).toEqual([{ type: "text", text: "What is this?" }]);
+    expect(context.messages[0].content).toEqual([
+      { type: "text", text: "What is this?" },
+      { type: "image", data: Buffer.from("processed").toString("base64"), mimeType: "image/jpeg" },
+    ]);
+    expect(loadImageMock).toHaveBeenCalledWith("https://example.com/image.png");
   });
 
   it("handles multi-turn with mixed string and array content", async () => {
+    setupImageMocks();
     completeMock.mockResolvedValue(makeAssistantMessage());
 
     await createCompletion(makeResolved(), {
@@ -315,11 +347,120 @@ describe("createCompletion", () => {
     const [, context]: [unknown, Context] = completeMock.mock.calls[0];
     expect(context.systemPrompt).toBe("Be helpful");
     expect(context.messages).toHaveLength(3);
-    // First user message: array content, image filtered
-    expect(context.messages[0].content).toEqual([{ type: "text", text: "Look at this" }]);
+    // First user message: text + processed image
+    expect(context.messages[0].content).toEqual([
+      { type: "text", text: "Look at this" },
+      { type: "image", data: Buffer.from("processed").toString("base64"), mimeType: "image/jpeg" },
+    ]);
     // Assistant message: string extracted
     expect(context.messages[1].content).toEqual([{ type: "text", text: "I see an image" }]);
     // Second user message: plain string
     expect(context.messages[2].content).toBe("Describe it more");
+  });
+
+  it("passes detail parameter to preprocessImage", async () => {
+    setupImageMocks();
+    completeMock.mockResolvedValue(makeAssistantMessage());
+
+    await createCompletion(makeResolved(), {
+      model: "test-model",
+      messages: [
+        {
+          role: "user",
+          content: [
+            {
+              type: "image_url",
+              image_url: { url: "https://example.com/img.png", detail: "high" },
+            },
+          ],
+        },
+      ],
+      stream: false,
+    });
+
+    expect(preprocessImageMock).toHaveBeenCalledWith(
+      { buffer: Buffer.from("fake"), mime: "image/jpeg" },
+      "high",
+    );
+  });
+
+  it("processes multiple images per message", async () => {
+    setupImageMocks();
+    completeMock.mockResolvedValue(makeAssistantMessage());
+
+    await createCompletion(makeResolved(), {
+      model: "test-model",
+      messages: [
+        {
+          role: "user",
+          content: [
+            { type: "text", text: "Compare these" },
+            { type: "image_url", image_url: { url: "https://example.com/a.png" } },
+            { type: "image_url", image_url: { url: "https://example.com/b.png" } },
+          ],
+        },
+      ],
+      stream: false,
+    });
+
+    const [, context]: [unknown, Context] = completeMock.mock.calls[0];
+    expect(context.messages[0].content).toHaveLength(3);
+    expect((context.messages[0].content as unknown[])[0]).toEqual({
+      type: "text",
+      text: "Compare these",
+    });
+    expect((context.messages[0].content as unknown[])[1]).toEqual({
+      type: "image",
+      data: Buffer.from("processed").toString("base64"),
+      mimeType: "image/jpeg",
+    });
+    expect((context.messages[0].content as unknown[])[2]).toEqual({
+      type: "image",
+      data: Buffer.from("processed").toString("base64"),
+      mimeType: "image/jpeg",
+    });
+    expect(loadImageMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("text-only array content does not trigger image processing", async () => {
+    completeMock.mockResolvedValue(makeAssistantMessage());
+
+    await createCompletion(makeResolved(), {
+      model: "test-model",
+      messages: [
+        {
+          role: "user",
+          content: [
+            { type: "text", text: "Hello " },
+            { type: "text", text: "world" },
+          ],
+        },
+      ],
+      stream: false,
+    });
+
+    expect(loadImageMock).not.toHaveBeenCalled();
+    expect(preprocessImageMock).not.toHaveBeenCalled();
+  });
+
+  it("throws ImageLoadError when image loading fails", async () => {
+    const { ImageLoadError } = await import("../src/services/image/load");
+    loadImageMock.mockRejectedValue(
+      new ImageLoadError("Failed to fetch image URL: HTTP 404 Not Found"),
+    );
+    completeMock.mockResolvedValue(makeAssistantMessage());
+
+    await expect(
+      createCompletion(makeResolved(), {
+        model: "test-model",
+        messages: [
+          {
+            role: "user",
+            content: [{ type: "image_url", image_url: { url: "https://example.com/missing.png" } }],
+          },
+        ],
+        stream: false,
+      }),
+    ).rejects.toThrow("Failed to fetch image URL: HTTP 404 Not Found");
   });
 });

@@ -7,6 +7,7 @@ import { chatCompletionRoute } from "./routes/chat";
 import { modelsRoute } from "./routes/models";
 import { validateModelsRoute } from "./routes/validate";
 import { createCompletion, createStreamingCompletion } from "./services/completion";
+import { ImageLoadError } from "./services/image/load";
 import { listModels, resolveModel } from "./services/registry";
 import { readValidationReport, validateAllModels } from "./services/validation";
 
@@ -59,6 +60,19 @@ app.openapi(chatCompletionRoute, async (c) => {
         }
         await sseStream.writeSSE({ data: "[DONE]" });
       } catch (err) {
+        if (err instanceof ImageLoadError) {
+          await sseStream.writeSSE({
+            data: JSON.stringify({
+              error: {
+                message: err.message,
+                type: "invalid_request_error",
+                param: "messages",
+                code: null,
+              },
+            }),
+          });
+          return;
+        }
         const message = err instanceof Error ? err.message : "Unknown backend error";
         await sseStream.writeSSE({
           data: JSON.stringify({
@@ -78,6 +92,19 @@ app.openapi(chatCompletionRoute, async (c) => {
     const response = await createCompletion(resolved, body);
     return c.json(response, 200);
   } catch (err) {
+    if (err instanceof ImageLoadError) {
+      return c.json(
+        {
+          error: {
+            message: err.message,
+            type: "invalid_request_error",
+            param: "messages",
+            code: null,
+          },
+        },
+        400,
+      );
+    }
     const message = err instanceof Error ? err.message : "Unknown backend error";
     return c.json(
       {
