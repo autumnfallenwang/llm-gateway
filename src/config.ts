@@ -18,6 +18,7 @@ export const APP_DESCRIPTION =
 
 export const OLLAMA_BASE_URL = env.OLLAMA_BASE_URL ?? "http://localhost:11434";
 export const OLLAMA_FETCH_TIMEOUT_MS = Number(env.OLLAMA_FETCH_TIMEOUT_MS ?? 2000);
+export const OLLAMA_SHOW_TIMEOUT_MS = Number(env.OLLAMA_SHOW_TIMEOUT_MS ?? 2000);
 export const OLLAMA_DEFAULT_CONTEXT_WINDOW = 131072;
 export const OLLAMA_DEFAULT_MAX_TOKENS = 4096;
 

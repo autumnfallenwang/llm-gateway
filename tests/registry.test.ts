@@ -11,7 +11,26 @@ import { listModels, loadRegistry, resolveModel } from "../src/services/registry
 const OLLAMA_MODELS = [
   { id: "llama3:latest", object: "model", created: 1700000000, owned_by: "library" },
   { id: "codellama:7b", object: "model", created: 1700000001, owned_by: "library" },
+  { id: "llava:latest", object: "model", created: 1700000002, owned_by: "library" },
 ];
+
+const SHOW_CAPABILITIES: Record<
+  string,
+  { capabilities?: string[]; model_info?: Record<string, unknown> }
+> = {
+  "llama3:latest": {
+    capabilities: ["completion"],
+    model_info: { "llama3.context_length": 8192 },
+  },
+  "codellama:7b": {
+    capabilities: ["completion"],
+    model_info: { "codellama.context_length": 16384 },
+  },
+  "llava:latest": {
+    capabilities: ["completion", "vision"],
+    model_info: { "llava.context_length": 4096 },
+  },
+};
 
 let ollamaServer: Server;
 let ollamaPort: number;
@@ -21,6 +40,22 @@ beforeAll(async () => {
     if (req.url === "/v1/models") {
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ object: "list", data: OLLAMA_MODELS }));
+    } else if (req.method === "POST" && req.url === "/api/show") {
+      let body = "";
+      req.on("data", (chunk: Buffer) => {
+        body += chunk.toString();
+      });
+      req.on("end", () => {
+        const { name } = JSON.parse(body) as { name: string };
+        const caps = SHOW_CAPABILITIES[name];
+        if (caps) {
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify(caps));
+        } else {
+          res.writeHead(404);
+          res.end();
+        }
+      });
     } else {
       res.writeHead(404);
       res.end();
@@ -144,6 +179,42 @@ describe("loadRegistry", () => {
     const models = listModels();
     const codexIds = models.filter((m) => m.owned_by === "openai-codex");
     expect(codexIds).toHaveLength(0);
+  });
+
+  it("detects vision-capable Ollama model", async () => {
+    await loadCredentials({
+      anthropicCredentialsPath: anthropicPath(),
+      codexCredentialsPath: codexPath(),
+    });
+    await loadRegistry({ ollamaBaseUrl: `http://localhost:${ollamaPort}` });
+
+    const resolved = resolveModel("llava:latest");
+    expect(resolved).toBeDefined();
+    expect(resolved!.model.input).toEqual(["text", "image"]);
+  });
+
+  it("keeps non-vision Ollama model as text-only", async () => {
+    await loadCredentials({
+      anthropicCredentialsPath: anthropicPath(),
+      codexCredentialsPath: codexPath(),
+    });
+    await loadRegistry({ ollamaBaseUrl: `http://localhost:${ollamaPort}` });
+
+    const resolved = resolveModel("llama3:latest");
+    expect(resolved).toBeDefined();
+    expect(resolved!.model.input).toEqual(["text"]);
+  });
+
+  it("uses context_length from /api/show", async () => {
+    await loadCredentials({
+      anthropicCredentialsPath: anthropicPath(),
+      codexCredentialsPath: codexPath(),
+    });
+    await loadRegistry({ ollamaBaseUrl: `http://localhost:${ollamaPort}` });
+
+    const resolved = resolveModel("llava:latest");
+    expect(resolved).toBeDefined();
+    expect(resolved!.model.contextWindow).toBe(4096);
   });
 
   it("handles Ollama not running gracefully", async () => {

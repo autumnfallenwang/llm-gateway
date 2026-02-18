@@ -58,29 +58,22 @@ Core pipeline: accept images, preprocess, pass to pi-ai. Vision models work; non
 | 13 | Image preprocessor with `sharp` | ✅ Done | `src/services/image/preprocess.ts` — resize, compress, EXIF fix, HEIC→JPEG, WebP conversion, alpha-aware PNG/JPEG grid search, `detail` param support. 15 tests in `tests/image-preprocess.test.ts`. |
 | 14 | Integrate pipeline into completion route | ✅ Done | `buildContext` async, `processImagePart` helper, `Promise.all` preserves order, `ImageLoadError` → 400 in both streaming/non-streaming. 5 new tests in `completion.test.ts`. |
 
-### Phase 2.2 — Vision Fallback
+### Phase 2.2 — Vision Fallback + Ollama Vision Detection
 
-When target model doesn't support images, describe via a vision model first.
+When target model doesn't support images, describe via a vision model first. Fix Ollama models hardcoded to `input: ["text"]` — critical because pi-ai strips images when `model.input` lacks `"image"`, breaking both direct vision and the fallback chain for Ollama-only setups.
 
 | # | Task | Status | Notes |
 |---|------|--------|-------|
 | 15 | Fallback model config | ✅ Done | Family-first + general fallback. Per-family vision model (ollama→`llava`, anthropic→`claude-haiku-4-5`, openai→`gpt-4o-mini`) then general chain. All env-var overridable. Config in `src/config.ts`. |
 | 16 | Vision fallback service | ✅ Done | `src/services/image/fallback.ts` — `applyVisionFallback()` intercepts non-vision models, describes images via family-first + general chain fallback, replaces image parts with text. `VisionFallbackError` → 502 in both streaming/non-streaming. Integrated into `createCompletion` + `createStreamingCompletion`. |
 | 17 | Unit tests for vision fallback | ✅ Done | `tests/vision-fallback.test.ts` — 20 tests covering skip paths, fallback model selection (family-first + general chain), image description & replacement, truncation, error handling. |
-| 18 | E2E tests for image pipeline | | Real image processing (HTTPS URL + data URI) across all three provider families, with vision fallback behavior. Unit coverage already done (31 load, 15 preprocess, 17 completion). |
-
-### Phase 2.3 — Ollama Vision Detection
-
-Fix Ollama models hardcoded to `input: ["text"]`.
-
-| # | Task | Status | Notes |
-|---|------|--------|-------|
-| 19 | Detect Ollama vision models | | Name heuristic or `/api/show` endpoint, set `input: ["text", "image"]` in `buildOllamaModel` |
-| 20 | Tests for Ollama vision detection | | Unit + e2e for vision-capable Ollama models |
+| 19 | Detect Ollama vision models | ✅ Done | `fetchModelCapabilities()` calls `/api/show` per model, detects `"vision"` capability, extracts `context_length` from `model_info`. `buildOllamaModel` sets `input: ["text", "image"]` for vision models. |
+| 20 | Tests for Ollama vision detection | ✅ Done | `tests/ollama.test.ts` — 16 tests (fetchModelCapabilities, extractContextLength, buildOllamaModel). 3 new integration tests in `tests/registry.test.ts`. |
+| 18 | E2E tests for image pipeline | | Real image processing (HTTPS URL + data URI) across all three provider families, including Ollama vision models. Final integration validation. |
 
 ## What's Next
 
-**Task 18: E2E tests for image pipeline** — real image processing across all three provider families with vision fallback behavior.
+**Task 18: E2E tests for image pipeline** — real image processing across all three provider families, including Ollama vision models. Final integration validation.
 
 ## Previous Milestones
 
