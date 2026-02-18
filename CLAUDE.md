@@ -9,9 +9,16 @@ Hono + Zod + @hono/zod-openapi + Vitest + Biome + tsx
 ## Commands
 
 - `npm run dev` - start dev server with hot-reload (port 51277)
-- `npm test` - run tests (scoped to `tests/` via vitest.config.ts)
+- `npm run test:fast` - unit tests only, excludes e2e/compatibility (~0.5s)
+- `npm test` - full suite including e2e/compatibility (~90s)
 - `npm run lint` - lint check
 - `npm run lint:fix` - auto-fix lint
+
+### When to use which test command
+
+- **During development** (`/commit`, `/check`, iterating on code): use `test:fast`
+- **Completing a feature** (`/dev-task`, pre-merge validation): use `npm test` (full suite)
+- **Debugging a specific test**: use `npx vitest run tests/<file>`
 
 ## Deploy
 

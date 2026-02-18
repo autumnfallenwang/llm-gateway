@@ -32,6 +32,6 @@ Pick up the next task from the development plan and implement it.
 
 9. Create/modify files according to the approved plan.
 10. Run `npx biome check --write` on new files to fix formatting.
-11. Run `npx vitest run` to verify all tests pass.
+11. Run `npm test` to verify all tests pass (full suite including e2e).
 12. Run `npx biome check src/ tests/` to verify 0 lint errors.
 13. Update `docs/progress.md` with the new task status.
