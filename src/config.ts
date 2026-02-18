@@ -36,6 +36,10 @@ export const VALIDATION_CONCURRENCY = Number(env.VALIDATION_CONCURRENCY ?? 3);
 export const VALIDATION_TIMEOUT_MS = Number(env.VALIDATION_TIMEOUT_MS ?? 60_000);
 export const VALIDATION_MAX_TOKENS = 32;
 
+// ── Image Loading ─────────────────────────────────────────────────────────
+export const IMAGE_FETCH_TIMEOUT_MS = Number(env.IMAGE_FETCH_TIMEOUT_MS ?? 30_000);
+export const IMAGE_FETCH_MAX_BYTES = Number(env.IMAGE_FETCH_MAX_BYTES ?? 20 * 1024 * 1024); // 20 MB
+
 // ── Defaults ───────────────────────────────────────────────────────────────
 
 export const DEFAULT_SYSTEM_PROMPT = "You are a helpful assistant.";
