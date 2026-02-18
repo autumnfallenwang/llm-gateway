@@ -40,6 +40,11 @@ export const VALIDATION_MAX_TOKENS = 32;
 export const IMAGE_FETCH_TIMEOUT_MS = Number(env.IMAGE_FETCH_TIMEOUT_MS ?? 30_000);
 export const IMAGE_FETCH_MAX_BYTES = Number(env.IMAGE_FETCH_MAX_BYTES ?? 20 * 1024 * 1024); // 20 MB
 
+// ── Image Preprocessing ───────────────────────────────────────────────────
+export const IMAGE_MAX_DIMENSION_PX = Number(env.IMAGE_MAX_DIMENSION_PX ?? 2048);
+export const IMAGE_MAX_BYTES = Number(env.IMAGE_MAX_BYTES ?? 5 * 1024 * 1024); // 5 MB (Anthropic limit)
+export const IMAGE_LOW_DETAIL_MAX_PX = 512;
+
 // ── Defaults ───────────────────────────────────────────────────────────────
 
 export const DEFAULT_SYSTEM_PROMPT = "You are a helpful assistant.";

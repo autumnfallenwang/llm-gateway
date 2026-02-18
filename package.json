@@ -19,6 +19,7 @@
     "@hono/zod-openapi": "^1.2.1",
     "@mariozechner/pi-ai": "^0.52.9",
     "hono": "^4.11.9",
+    "sharp": "^0.34.5",
     "zod": "^4.3.6"
   },
   "devDependencies": {
