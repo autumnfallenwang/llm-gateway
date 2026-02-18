@@ -45,6 +45,12 @@ Centralized in `src/config.ts`. Key env var overrides:
 | `VALIDATION_FILE_PATH` | `~/.llm-gateway/models.json` | Validation cache |
 | `VALIDATION_CONCURRENCY` | `3` | Parallel model validation limit |
 | `VALIDATION_TIMEOUT_MS` | `60000` | Per-model validation timeout |
+| `VISION_FALLBACK_OLLAMA` | `llava` | Ollama family vision fallback model |
+| `VISION_FALLBACK_ANTHROPIC` | `claude-haiku-4-5` | Anthropic family vision fallback model |
+| `VISION_FALLBACK_OPENAI` | `gpt-4o-mini` | OpenAI family vision fallback model |
+| `VISION_FALLBACK_GENERAL` | `llava,claude-haiku-4-5,gpt-4o-mini` | General fallback chain (comma-separated) |
+| `VISION_FALLBACK_MAX_DESCRIPTION_CHARS` | `1000` | Max chars for vision description |
+| `VISION_FALLBACK_TIMEOUT_MS` | `30000` | Vision fallback model timeout |
 
 ## Docs
 

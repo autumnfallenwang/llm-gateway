@@ -64,8 +64,8 @@ When target model doesn't support images, describe via a vision model first.
 
 | # | Task | Status | Notes |
 |---|------|--------|-------|
-| 15 | Vision fallback service | | Check `model.input.includes("image")`, select fallback vision model, describe image as text |
-| 16 | Fallback model config | | Priority: config override → auto-detect by available API keys. Default chain: `gpt-4o-mini` → `claude-haiku-4-5` |
+| 15 | Fallback model config | ✅ Done | Family-first + general fallback. Per-family vision model (ollama→`llava`, anthropic→`claude-haiku-4-5`, openai→`gpt-4o-mini`) then general chain. All env-var overridable. Config in `src/config.ts`. |
+| 16 | Vision fallback service | | Check `model.input.includes("image")`, select fallback vision model from config, describe image as text, replace image parts with description |
 | 17 | Unit tests for vision fallback | | Mock vision model response, verify text replacement, verify skip when model supports vision |
 | 18 | E2E tests for image pipeline | | Real image processing (HTTPS URL + data URI) across all three provider families, with vision fallback behavior. Unit coverage already done (31 load, 15 preprocess, 17 completion). |
 
@@ -80,7 +80,7 @@ Fix Ollama models hardcoded to `input: ["text"]`.
 
 ## What's Next
 
-**Task 15: Vision fallback service** — when the target model doesn't support images (`!model.input.includes("image")`), automatically describe images via a vision-capable model and substitute text. Phase 2.1 (image pipeline) is complete; Phase 2.2 (vision fallback) is next.
+**Task 16: Vision fallback service** — when the target model doesn't support images (`!model.input.includes("image")`), automatically describe images via a vision-capable model and substitute text. Fallback config (task 15) is done — family-first + general fallback policy, env-var overridable. Next: implement the fallback service logic.
 
 ## Previous Milestones
 

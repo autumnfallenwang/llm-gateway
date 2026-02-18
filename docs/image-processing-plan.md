@@ -315,10 +315,11 @@ When the target model doesn't support images, route through an intermediate visi
 
 **Processing:**
 
-1. **Select vision model** (configurable, with fallback chain):
-   - Primary: check gateway config for preferred vision model
-   - Auto-detect: find a vision-capable model from available providers
-   - Default fallback order: `gpt-4o-mini` → `claude-haiku-4-5` → `gemini-2.0-flash`
+1. **Select vision model** (family-first + general fallback):
+   - **Family match**: pick the vision model for the target model's provider family (same-provider affinity, lower latency, consistent billing)
+   - **General fallback**: if the family model is unavailable, try models from a general fallback chain
+   - Default family models: ollama → `llava`, anthropic → `claude-haiku-4-5`, openai → `gpt-4o-mini`
+   - Default general chain: `llava` → `claude-haiku-4-5` → `gpt-4o-mini`
 
 2. **Build vision request:**
    - Use the user's original text as the vision prompt (not a generic "Describe the image")
@@ -342,25 +343,28 @@ When the target model doesn't support images, route through an intermediate visi
 
 6. **Return standard OpenAI response** (the client doesn't know a vision model was used)
 
-**Configuration:**
+**Configuration** (in `src/config.ts`, all env-var overridable):
 
 ```typescript
-// Gateway config for vision fallback
-{
-  image: {
-    fallback: {
-      enabled: true,
-      models: [
-        "gpt-4o-mini",        // primary
-        "claude-haiku-4-5",   // first fallback
-        "gemini-2.0-flash"    // second fallback
-      ],
-      maxDescriptionChars: 1000,  // cap description length
-      timeoutMs: 30000            // vision model timeout
-    }
-  }
-}
+// Per-family preferred vision model (same-provider affinity)
+VISION_FALLBACK_FAMILY: Record<string, string> = {
+  ollama: "llava",           // VISION_FALLBACK_OLLAMA
+  anthropic: "claude-haiku-4-5",  // VISION_FALLBACK_ANTHROPIC
+  openai: "gpt-4o-mini",    // VISION_FALLBACK_OPENAI
+};
+
+// General fallback chain if family model unavailable
+// VISION_FALLBACK_GENERAL (comma-separated)
+VISION_FALLBACK_GENERAL: string[] = ["llava", "claude-haiku-4-5", "gpt-4o-mini"];
+
+VISION_FALLBACK_MAX_DESCRIPTION_CHARS = 1000;  // VISION_FALLBACK_MAX_DESCRIPTION_CHARS
+VISION_FALLBACK_TIMEOUT_MS = 30_000;           // VISION_FALLBACK_TIMEOUT_MS
 ```
+
+**Selection logic:**
+1. Look up `VISION_FALLBACK_FAMILY[targetModel.provider]` → try that model first
+2. If unavailable, iterate `VISION_FALLBACK_GENERAL` → first available wins
+3. If nothing available → return 502 error
 
 ---
 

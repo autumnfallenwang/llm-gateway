@@ -45,6 +45,25 @@ export const IMAGE_MAX_DIMENSION_PX = Number(env.IMAGE_MAX_DIMENSION_PX ?? 2048)
 export const IMAGE_MAX_BYTES = Number(env.IMAGE_MAX_BYTES ?? 5 * 1024 * 1024); // 5 MB (Anthropic limit)
 export const IMAGE_LOW_DETAIL_MAX_PX = 512;
 
+// ── Vision Fallback ──────────────────────────────────────────────────────
+
+/** Per-family preferred vision model (same-provider affinity) */
+export const VISION_FALLBACK_FAMILY: Record<string, string> = {
+  ollama: env.VISION_FALLBACK_OLLAMA ?? "llava",
+  anthropic: env.VISION_FALLBACK_ANTHROPIC ?? "claude-haiku-4-5",
+  openai: env.VISION_FALLBACK_OPENAI ?? "gpt-4o-mini",
+};
+
+/** General fallback chain if family model unavailable (comma-separated env override) */
+export const VISION_FALLBACK_GENERAL: string[] = env.VISION_FALLBACK_GENERAL
+  ? env.VISION_FALLBACK_GENERAL.split(",").map((s) => s.trim())
+  : ["llava", "claude-haiku-4-5", "gpt-4o-mini"];
+
+export const VISION_FALLBACK_MAX_DESCRIPTION_CHARS = Number(
+  env.VISION_FALLBACK_MAX_DESCRIPTION_CHARS ?? 1000,
+);
+export const VISION_FALLBACK_TIMEOUT_MS = Number(env.VISION_FALLBACK_TIMEOUT_MS ?? 30_000);
+
 // ── Defaults ───────────────────────────────────────────────────────────────
 
 export const DEFAULT_SYSTEM_PROMPT = "You are a helpful assistant.";
