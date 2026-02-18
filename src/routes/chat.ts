@@ -71,6 +71,90 @@ export const chatCompletionRoute = createRoute({
                 stream: true,
               },
             },
+            "ollama-image": {
+              summary: "Ollama vision — llava + image URL",
+              value: {
+                model: "llava:latest",
+                messages: [
+                  {
+                    role: "user",
+                    content: [
+                      { type: "text", text: "Describe this image briefly." },
+                      {
+                        type: "image_url",
+                        image_url: {
+                          url: "https://upload.wikimedia.org/wikipedia/commons/thumb/4/47/PNG_transparency_demonstration_1.png/280px-PNG_transparency_demonstration_1.png",
+                        },
+                      },
+                    ],
+                  },
+                ],
+                max_tokens: 128,
+              },
+            },
+            "ollama-image-fallback": {
+              summary: "Ollama fallback — qwen3:30b (text-only) + image",
+              value: {
+                model: "qwen3:30b",
+                messages: [
+                  {
+                    role: "user",
+                    content: [
+                      { type: "text", text: "Describe this image briefly." },
+                      {
+                        type: "image_url",
+                        image_url: {
+                          url: "https://upload.wikimedia.org/wikipedia/commons/thumb/4/47/PNG_transparency_demonstration_1.png/280px-PNG_transparency_demonstration_1.png",
+                        },
+                      },
+                    ],
+                  },
+                ],
+                max_tokens: 128,
+              },
+            },
+            "anthropic-image": {
+              summary: "Anthropic vision — Claude Haiku 4.5 + image URL",
+              value: {
+                model: "claude-haiku-4-5",
+                messages: [
+                  {
+                    role: "user",
+                    content: [
+                      { type: "text", text: "Describe this image briefly." },
+                      {
+                        type: "image_url",
+                        image_url: {
+                          url: "https://upload.wikimedia.org/wikipedia/commons/thumb/4/47/PNG_transparency_demonstration_1.png/280px-PNG_transparency_demonstration_1.png",
+                        },
+                      },
+                    ],
+                  },
+                ],
+                max_tokens: 128,
+              },
+            },
+            "codex-image": {
+              summary: "Codex vision — GPT-5.1 + image URL",
+              value: {
+                model: "gpt-5.1",
+                messages: [
+                  {
+                    role: "user",
+                    content: [
+                      { type: "text", text: "Describe this image briefly." },
+                      {
+                        type: "image_url",
+                        image_url: {
+                          url: "https://upload.wikimedia.org/wikipedia/commons/thumb/4/47/PNG_transparency_demonstration_1.png/280px-PNG_transparency_demonstration_1.png",
+                        },
+                      },
+                    ],
+                  },
+                ],
+                max_tokens: 128,
+              },
+            },
           },
         },
       },
