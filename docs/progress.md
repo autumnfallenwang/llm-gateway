@@ -11,7 +11,7 @@
 | 5 | Completion service | ✅ Done | `src/services/completion.ts` — OpenAI ↔ pi-ai translation, Codex system prompt fallback |
 | 6 | Routes | ✅ Done | `src/routes/{chat,models,validate}.ts` — OpenAPI route defs with request examples |
 | 7 | App + server wiring | ✅ Done | All handlers wired: chat completions, models list (with validation filtering), model validation |
-| 8 | Tests | ✅ Done | 8 test files, 90 fast / 168 total tests |
+| 8 | Tests | ✅ Done | 8 test files, 94 fast / 172 total tests |
 | 9 | Model validation | ✅ Done | `src/services/validation.ts` — tests every model with real completion, saves to `~/.llm-gateway/models.json` |
 | 10 | Streaming support | ✅ Done | SSE streaming via `stream: true` — all three backends (Ollama, Anthropic, Codex) |
 
@@ -29,8 +29,10 @@
 - Codex provider gets default system prompt when none provided
 - 404 with `model_not_found` for unknown models, 500 with backend error details on failure
 - Streaming errors sent as SSE error events before stream closes
-- 90 unit tests passing (fast), 168 total with e2e/compatibility, 0 lint errors
-- `npm run test:fast` for dev iteration (~1.6s), `npm test` for full validation (~90s)
+- Image processing pipeline: `image_url` content parts → load (HTTPS/data URI) → preprocess (resize, compress, format convert) → pi-ai `ImageContent`
+- `ImageLoadError` returns 400 `invalid_request_error` (not 500) in both streaming and non-streaming paths
+- 94 unit tests passing (fast), 172 total with e2e/compatibility, 0 lint errors
+- `npm run test:fast` for dev iteration (~1.7s), `npm test` for full validation (~93s)
 
 ## Reference Docs
 
@@ -54,8 +56,7 @@ Core pipeline: accept images, preprocess, pass to pi-ai. Vision models work; non
 | 11 | Update `MessageSchema` to accept `string \| ContentPart[]` | ✅ Done | Schema union type, `extractTextContent` helper, `buildContext` handles array content, image_url parts filtered (task 14). |
 | 12 | Image loader: resolve inputs to buffers | ✅ Done | `src/services/image/load.ts` — data URI decode, HTTPS fetch (timeout, size cap, SSRF protection), MIME detection from magic bytes. 31 tests in `tests/image-load.test.ts`. |
 | 13 | Image preprocessor with `sharp` | ✅ Done | `src/services/image/preprocess.ts` — resize, compress, EXIF fix, HEIC→JPEG, WebP conversion, alpha-aware PNG/JPEG grid search, `detail` param support. 15 tests in `tests/image-preprocess.test.ts`. |
-| 14 | Integrate pipeline into completion route | | Parse content parts → load → preprocess → convert to pi-ai `ImageContent` → pass to `buildContext` |
-| 15 | Tests for image pipeline | | Unit tests for loader, preprocessor, content parsing; integration test for full flow |
+| 14 | Integrate pipeline into completion route | ✅ Done | `buildContext` async, `processImagePart` helper, `Promise.all` preserves order, `ImageLoadError` → 400 in both streaming/non-streaming. 5 new tests in `completion.test.ts`. |
 
 ### Phase 2.2 — Vision Fallback
 
@@ -63,9 +64,10 @@ When target model doesn't support images, describe via a vision model first.
 
 | # | Task | Status | Notes |
 |---|------|--------|-------|
-| 16 | Vision fallback service | | Check `model.input.includes("image")`, select fallback vision model, describe image as text |
-| 17 | Fallback model config | | Priority: config override → auto-detect by available API keys. Default chain: `gpt-4o-mini` → `claude-haiku-4-5` |
-| 18 | Tests for vision fallback | | Mock vision model response, verify text replacement, verify skip when model supports vision |
+| 15 | Vision fallback service | | Check `model.input.includes("image")`, select fallback vision model, describe image as text |
+| 16 | Fallback model config | | Priority: config override → auto-detect by available API keys. Default chain: `gpt-4o-mini` → `claude-haiku-4-5` |
+| 17 | Unit tests for vision fallback | | Mock vision model response, verify text replacement, verify skip when model supports vision |
+| 18 | E2E tests for image pipeline | | Real image processing (HTTPS URL + data URI) across all three provider families, with vision fallback behavior. Unit coverage already done (31 load, 15 preprocess, 17 completion). |
 
 ### Phase 2.3 — Ollama Vision Detection
 
@@ -74,11 +76,11 @@ Fix Ollama models hardcoded to `input: ["text"]`.
 | # | Task | Status | Notes |
 |---|------|--------|-------|
 | 19 | Detect Ollama vision models | | Name heuristic or `/api/show` endpoint, set `input: ["text", "image"]` in `buildOllamaModel` |
-| 20 | Tests for Ollama vision detection | | |
+| 20 | Tests for Ollama vision detection | | Unit + e2e for vision-capable Ollama models |
 
 ## What's Next
 
-**Task 14: Integrate pipeline into completion route** — wire up content part parsing → image loading → preprocessing → pi-ai `ImageContent` conversion in `buildContext`. Depends on loader (task 12) and preprocessor (task 13), both done.
+**Task 15: Vision fallback service** — when the target model doesn't support images (`!model.input.includes("image")`), automatically describe images via a vision-capable model and substitute text. Phase 2.1 (image pipeline) is complete; Phase 2.2 (vision fallback) is next.
 
 ## Previous Milestones
 
