@@ -1,8 +1,13 @@
 import { type ServerType, serve } from "@hono/node-server";
+import sharp from "sharp";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import app from "../src/app.js";
 import { loadCredentials } from "../src/services/auth.js";
 import { loadRegistry } from "../src/services/registry.js";
+
+let dataUriJpeg: string;
+const HTTPS_IMAGE_URL =
+  "https://upload.wikimedia.org/wikipedia/commons/thumb/4/47/PNG_transparency_demonstration_1.png/280px-PNG_transparency_demonstration_1.png";
 
 let server: ServerType;
 let baseUrl: string;
@@ -15,6 +20,13 @@ beforeAll(async () => {
   const addr = server.address();
   const port = typeof addr === "object" && addr ? addr.port : 0;
   baseUrl = `http://localhost:${port}`;
+
+  const redPixel = await sharp({
+    create: { width: 8, height: 8, channels: 3, background: { r: 255, g: 0, b: 0 } },
+  })
+    .jpeg()
+    .toBuffer();
+  dataUriJpeg = `data:image/jpeg;base64,${redPixel.toString("base64")}`;
 }, 30_000);
 
 afterAll(() => {
@@ -291,5 +303,138 @@ describe("error handling", () => {
     const json = await res.json();
     expect(json.error.type).toBe("invalid_request_error");
     expect(json.error.code).toBe("model_not_found");
+  });
+});
+
+// ── Image pipeline helpers ──────────────────────────────────────────────
+
+function imageMessage(url: string, text?: string) {
+  const content: { type: string; text?: string; image_url?: { url: string } }[] = [];
+  if (text) content.push({ type: "text", text });
+  content.push({ type: "image_url", image_url: { url } });
+  return { role: "user", content };
+}
+
+// ── Image: direct vision ─────────────────────────────────────────────────
+
+describe("image: direct vision", () => {
+  it("ollama vision + data URI", { timeout: 60_000 }, async () => {
+    const res = await post("/v1/chat/completions", {
+      model: "llava:latest",
+      messages: [imageMessage(dataUriJpeg, "Describe this image briefly.")],
+      max_tokens: 64,
+    });
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expectCompletionShape(json);
+  });
+
+  it("ollama vision + HTTPS URL", { timeout: 60_000 }, async () => {
+    const res = await post("/v1/chat/completions", {
+      model: "llava:latest",
+      messages: [imageMessage(HTTPS_IMAGE_URL, "Describe this image briefly.")],
+      max_tokens: 64,
+    });
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expectCompletionShape(json);
+  });
+
+  it("anthropic vision + data URI", { timeout: 60_000 }, async () => {
+    const res = await post("/v1/chat/completions", {
+      model: "claude-haiku-4-5",
+      messages: [imageMessage(dataUriJpeg, "Describe this image briefly.")],
+      max_tokens: 64,
+    });
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expectCompletionShape(json);
+  });
+
+  it("anthropic vision + HTTPS URL", { timeout: 60_000 }, async () => {
+    const res = await post("/v1/chat/completions", {
+      model: "claude-haiku-4-5",
+      messages: [imageMessage(HTTPS_IMAGE_URL, "Describe this image briefly.")],
+      max_tokens: 64,
+    });
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expectCompletionShape(json);
+  });
+
+  it("codex vision + data URI", { timeout: 60_000 }, async () => {
+    const res = await post("/v1/chat/completions", {
+      model: "gpt-5.1",
+      messages: [imageMessage(dataUriJpeg, "Describe this image briefly.")],
+      max_tokens: 64,
+    });
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expectCompletionShape(json);
+  });
+
+  it("codex vision + HTTPS URL", { timeout: 60_000 }, async () => {
+    const res = await post("/v1/chat/completions", {
+      model: "gpt-5.1",
+      messages: [imageMessage(HTTPS_IMAGE_URL, "Describe this image briefly.")],
+      max_tokens: 64,
+    });
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expectCompletionShape(json);
+  });
+});
+
+// ── Image: vision fallback ───────────────────────────────────────────────
+
+describe("image: vision fallback", () => {
+  it("ollama text-only + fallback", { timeout: 60_000 }, async () => {
+    const res = await post("/v1/chat/completions", {
+      model: "qwen3:30b",
+      messages: [imageMessage(dataUriJpeg, "Describe this image briefly.")],
+      max_tokens: 64,
+    });
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expectCompletionShape(json);
+  });
+});
+
+// ── Image: streaming ────────────────────────────────────────────────────
+
+describe("image: streaming", () => {
+  it("streaming vision + data URI", { timeout: 60_000 }, async () => {
+    const res = await post("/v1/chat/completions", {
+      model: "llava:latest",
+      messages: [imageMessage(dataUriJpeg, "Describe this image briefly.")],
+      max_tokens: 64,
+      stream: true,
+    });
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toContain("text/event-stream");
+
+    const text = await res.text();
+    const dataLines = parseSSE(text);
+    expect(dataLines.length).toBeGreaterThanOrEqual(3);
+    expect(dataLines[dataLines.length - 1]).toBe("[DONE]");
+
+    const first = JSON.parse(dataLines[0]);
+    expectChunkShape(first);
+    expect(first.choices[0].delta.role).toBe("assistant");
+  });
+});
+
+// ── Image: error handling ───────────────────────────────────────────────
+
+describe("image: error handling", () => {
+  it("invalid image data URI returns 400", { timeout: 60_000 }, async () => {
+    const res = await post("/v1/chat/completions", {
+      model: "llava:latest",
+      messages: [imageMessage("data:image/jpeg;base64,", "Describe this image briefly.")],
+      max_tokens: 64,
+    });
+    expect(res.status).toBe(400);
+    const json = await res.json();
+    expect(json.error.type).toBe("invalid_request_error");
   });
 });

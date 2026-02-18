@@ -31,7 +31,7 @@
 - Streaming errors sent as SSE error events before stream closes
 - Image processing pipeline: `image_url` content parts → load (HTTPS/data URI) → preprocess (resize, compress, format convert) → pi-ai `ImageContent`
 - `ImageLoadError` returns 400 `invalid_request_error` (not 500) in both streaming and non-streaming paths
-- 114 unit tests passing (fast), 192 total with e2e/compatibility, 0 lint errors
+- 114 unit tests passing (fast), 220 total with e2e/compatibility, 0 lint errors
 - `npm run test:fast` for dev iteration (~1.7s), `npm test` for full validation (~93s)
 
 ## Reference Docs
@@ -69,12 +69,9 @@ When target model doesn't support images, describe via a vision model first. Fix
 | 17 | Unit tests for vision fallback | ✅ Done | `tests/vision-fallback.test.ts` — 20 tests covering skip paths, fallback model selection (family-first + general chain), image description & replacement, truncation, error handling. |
 | 19 | Detect Ollama vision models | ✅ Done | `fetchModelCapabilities()` calls `/api/show` per model, detects `"vision"` capability, extracts `context_length` from `model_info`. `buildOllamaModel` sets `input: ["text", "image"]` for vision models. |
 | 20 | Tests for Ollama vision detection | ✅ Done | `tests/ollama.test.ts` — 16 tests (fetchModelCapabilities, extractContextLength, buildOllamaModel). 3 new integration tests in `tests/registry.test.ts`. |
-| 18 | E2E tests for image pipeline | | Real image processing (HTTPS URL + data URI) across all three provider families, including Ollama vision models. Final integration validation. |
-
-## What's Next
-
-**Task 18: E2E tests for image pipeline** — real image processing across all three provider families, including Ollama vision models. Final integration validation.
+| 18 | E2E tests for image pipeline | ✅ Done | 9 tests: direct vision (data URI + HTTPS URL × 3 backends), vision fallback (Ollama text-only), streaming vision, error handling (invalid data URI). |
 
 ## Previous Milestones
 
 Phase 1 backend + streaming + Docker deploy complete. See tasks 1–10 above.
+Phase 2 image processing pipeline complete. See tasks 11–20 above.
