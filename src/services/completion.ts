@@ -4,10 +4,12 @@ import {
   complete,
   type Message,
   stream,
+  type TextContent,
   type Usage,
 } from "@mariozechner/pi-ai";
 import { DEFAULT_SYSTEM_PROMPT } from "../config.js";
 import type { ChatCompletionRequest, ChatCompletionResponse } from "../routes/chat.js";
+import type { ContentPart } from "../schemas/chat.js";
 import type { ResolvedModel } from "./registry.js";
 
 const STOP_REASON_MAP: Record<string, string> = {
@@ -25,26 +27,42 @@ const EMPTY_USAGE: Usage = {
   cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
 };
 
+function extractTextContent(content: string | ContentPart[]): string {
+  if (typeof content === "string") return content;
+  return content
+    .filter((p): p is { type: "text"; text: string } => p.type === "text")
+    .map((p) => p.text)
+    .join("");
+}
+
 function buildContext(body: ChatCompletionRequest, resolved: ResolvedModel): Context {
   let systemPrompt: string | undefined;
   const messages: Message[] = [];
 
   for (const msg of body.messages) {
     if (msg.role === "system") {
-      systemPrompt ??= msg.content;
+      systemPrompt ??= extractTextContent(msg.content);
       continue;
     }
 
     if (msg.role === "user") {
+      let content: string | TextContent[];
+      if (typeof msg.content === "string") {
+        content = msg.content;
+      } else {
+        content = msg.content
+          .filter((p): p is { type: "text"; text: string } => p.type === "text")
+          .map((p) => ({ type: "text" as const, text: p.text }));
+      }
       messages.push({
         role: "user",
-        content: msg.content,
+        content,
         timestamp: Date.now(),
       });
     } else if (msg.role === "assistant") {
       messages.push({
         role: "assistant",
-        content: [{ type: "text", text: msg.content }],
+        content: [{ type: "text", text: extractTextContent(msg.content) }],
         api: resolved.model.api,
         provider: resolved.model.provider,
         model: resolved.model.id,

@@ -168,6 +168,64 @@ describe("POST /v1/chat/completions", () => {
     expect(json.error.code).toBe("model_not_found");
     expect(json.error.param).toBe("model");
   });
+
+  it("accepts content as array of text content parts", async () => {
+    const res = await post("/v1/chat/completions", {
+      model: "gpt-3.5-turbo",
+      messages: [
+        {
+          role: "user",
+          content: [{ type: "text", text: "Hello" }],
+        },
+      ],
+    });
+    // 404 = schema passed, model lookup failed (expected)
+    expect(res.status).toBe(404);
+  });
+
+  it("accepts image_url content part", async () => {
+    const res = await post("/v1/chat/completions", {
+      model: "gpt-3.5-turbo",
+      messages: [
+        {
+          role: "user",
+          content: [
+            { type: "text", text: "What is this?" },
+            {
+              type: "image_url",
+              image_url: { url: "https://example.com/img.png", detail: "auto" },
+            },
+          ],
+        },
+      ],
+    });
+    expect(res.status).toBe(404);
+  });
+
+  it("rejects empty content array", async () => {
+    const res = await post("/v1/chat/completions", {
+      model: "gpt-3.5-turbo",
+      messages: [{ role: "user", content: [] }],
+    });
+    expect(res.status).toBe(400);
+    const json = await res.json();
+    expect(json.error.type).toBe("invalid_request_error");
+  });
+
+  it("rejects invalid content part type", async () => {
+    const res = await post("/v1/chat/completions", {
+      model: "gpt-3.5-turbo",
+      messages: [
+        {
+          role: "user",
+          content: [{ type: "audio", data: "abc" }],
+        },
+      ],
+    });
+    expect(res.status).toBe(400);
+    const json = await res.json();
+    expect(json.error.type).toBe("invalid_request_error");
+  });
 });
 
 describe("GET /v1/models", () => {

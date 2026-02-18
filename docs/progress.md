@@ -37,10 +37,44 @@
 - [openai-chat-completions-spec.md](openai-chat-completions-spec.md) — request/response fields
 - [ollama-openai-compatibility-spec.md](ollama-openai-compatibility-spec.md) — Ollama compat matrix
 - [openai-error-spec.md](openai-error-spec.md) — error format + gateway error mapping
+- [openai-vision-spec.md](openai-vision-spec.md) — vision API facts, pi-ai behavior, OpenClaw fallback policy
+- [image-processing-plan.md](image-processing-plan.md) — full image processing architecture plan
 
-## What's Next
+## Phase 2: Image Processing
 
-Phase 1 backend + streaming complete. Potential next steps:
-- Additional OpenAI fields (top_p, frequency_penalty, etc.)
-- Rate limiting, request logging
-- Docker/deployment config
+Three phases, built incrementally. See [image-processing-plan.md](image-processing-plan.md) for full architecture, [openai-vision-spec.md](openai-vision-spec.md) for research facts.
+
+### Phase 2.1 — Image Preprocessing + Pass-through
+
+Core pipeline: accept images, preprocess, pass to pi-ai. Vision models work; non-vision models silently ignore (pi-ai default).
+
+| # | Task | Status | Notes |
+|---|------|--------|-------|
+| 11 | Update `MessageSchema` to accept `string \| ContentPart[]` | | `content` as union type, add `image_url` content part schema |
+| 12 | Image loader: resolve inputs to buffers | | Decode base64 data URIs, fetch HTTPS URLs (timeout, size cap, SSRF protection), MIME detection from magic bytes |
+| 13 | Image preprocessor with `sharp` | | Resize, compress, EXIF fix, HEIC→JPEG, alpha detection, grid search for size limits, `detail` param support |
+| 14 | Integrate pipeline into completion route | | Parse content parts → load → preprocess → convert to pi-ai `ImageContent` → pass to `buildContext` |
+| 15 | Tests for image pipeline | | Unit tests for loader, preprocessor, content parsing; integration test for full flow |
+
+### Phase 2.2 — Vision Fallback
+
+When target model doesn't support images, describe via a vision model first.
+
+| # | Task | Status | Notes |
+|---|------|--------|-------|
+| 16 | Vision fallback service | | Check `model.input.includes("image")`, select fallback vision model, describe image as text |
+| 17 | Fallback model config | | Priority: config override → auto-detect by available API keys. Default chain: `gpt-4o-mini` → `claude-haiku-4-5` |
+| 18 | Tests for vision fallback | | Mock vision model response, verify text replacement, verify skip when model supports vision |
+
+### Phase 2.3 — Ollama Vision Detection
+
+Fix Ollama models hardcoded to `input: ["text"]`.
+
+| # | Task | Status | Notes |
+|---|------|--------|-------|
+| 19 | Detect Ollama vision models | | Name heuristic or `/api/show` endpoint, set `input: ["text", "image"]` in `buildOllamaModel` |
+| 20 | Tests for Ollama vision detection | | |
+
+## Previous Milestones
+
+Phase 1 backend + streaming + Docker deploy complete. See tasks 1–10 above.

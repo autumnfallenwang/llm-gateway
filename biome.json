@@ -115,6 +115,7 @@
             "strictCase": false,
             "conventions": [
               { "selector": { "kind": "function" }, "formats": ["camelCase"] },
+              { "selector": { "kind": "variable" }, "match": ".*Schema", "formats": ["PascalCase"] },
               { "selector": { "kind": "variable" }, "formats": ["camelCase", "CONSTANT_CASE"] },
               { "selector": { "kind": "typeLike" }, "formats": ["PascalCase"] }
             ]

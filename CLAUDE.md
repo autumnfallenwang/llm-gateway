@@ -9,7 +9,7 @@ Hono + Zod + @hono/zod-openapi + Vitest + Biome + tsx
 ## Commands
 
 - `npm run dev` - start dev server with hot-reload (port 51277)
-- `npm test` - run tests
+- `npm test` - run tests (scoped to `tests/` via vitest.config.ts)
 - `npm run lint` - lint check
 - `npm run lint:fix` - auto-fix lint
 
@@ -45,4 +45,6 @@ Centralized in `src/config.ts`. Key env var overrides:
 - [docs/openai-chat-completions-spec.md](docs/openai-chat-completions-spec.md) - OpenAI API spec reference
 - [docs/ollama-openai-compatibility-spec.md](docs/ollama-openai-compatibility-spec.md) - Ollama compatibility analysis
 - [docs/openai-error-spec.md](docs/openai-error-spec.md) - OpenAI error response format + gateway error mapping
+- [docs/openai-vision-spec.md](docs/openai-vision-spec.md) - Vision API facts + pi-ai behavior + OpenClaw fallback policy
+- [docs/image-processing-plan.md](docs/image-processing-plan.md) - Image processing architecture plan
 - [docs/progress.md](docs/progress.md) - Current progress tracker

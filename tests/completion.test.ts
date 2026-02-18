@@ -198,4 +198,128 @@ describe("createCompletion", () => {
 
     expect(response.choices[0].message.content).toBe("");
   });
+
+  it("converts array of text content parts to pi-ai TextContent array", async () => {
+    completeMock.mockResolvedValue(makeAssistantMessage());
+
+    await createCompletion(makeResolved(), {
+      model: "test-model",
+      messages: [
+        {
+          role: "user",
+          content: [
+            { type: "text", text: "Hello " },
+            { type: "text", text: "world" },
+          ],
+        },
+      ],
+      stream: false,
+    });
+
+    const [, context]: [unknown, Context] = completeMock.mock.calls[0];
+    expect(context.messages).toHaveLength(1);
+    expect(context.messages[0].role).toBe("user");
+    expect(context.messages[0].content).toEqual([
+      { type: "text", text: "Hello " },
+      { type: "text", text: "world" },
+    ]);
+  });
+
+  it("extracts text from system message with array content", async () => {
+    completeMock.mockResolvedValue(makeAssistantMessage());
+
+    await createCompletion(makeResolved(), {
+      model: "test-model",
+      messages: [
+        {
+          role: "system",
+          content: [
+            { type: "text", text: "You are " },
+            { type: "text", text: "helpful" },
+          ],
+        },
+        { role: "user", content: "Hi" },
+      ],
+      stream: false,
+    });
+
+    const [, context]: [unknown, Context] = completeMock.mock.calls[0];
+    expect(context.systemPrompt).toBe("You are helpful");
+  });
+
+  it("extracts text from assistant message with array content", async () => {
+    completeMock.mockResolvedValue(makeAssistantMessage());
+
+    await createCompletion(makeResolved(), {
+      model: "test-model",
+      messages: [
+        { role: "user", content: "Hi" },
+        {
+          role: "assistant",
+          content: [
+            { type: "text", text: "Hello " },
+            { type: "text", text: "there" },
+          ],
+        },
+        { role: "user", content: "How are you?" },
+      ],
+      stream: false,
+    });
+
+    const [, context]: [unknown, Context] = completeMock.mock.calls[0];
+    expect(context.messages[1].role).toBe("assistant");
+    expect(context.messages[1].content).toEqual([{ type: "text", text: "Hello there" }]);
+  });
+
+  it("filters out image_url parts from user message content", async () => {
+    completeMock.mockResolvedValue(makeAssistantMessage());
+
+    await createCompletion(makeResolved(), {
+      model: "test-model",
+      messages: [
+        {
+          role: "user",
+          content: [
+            { type: "text", text: "What is this?" },
+            { type: "image_url", image_url: { url: "https://example.com/image.png" } },
+          ],
+        },
+      ],
+      stream: false,
+    });
+
+    const [, context]: [unknown, Context] = completeMock.mock.calls[0];
+    expect(context.messages[0].content).toEqual([{ type: "text", text: "What is this?" }]);
+  });
+
+  it("handles multi-turn with mixed string and array content", async () => {
+    completeMock.mockResolvedValue(makeAssistantMessage());
+
+    await createCompletion(makeResolved(), {
+      model: "test-model",
+      messages: [
+        { role: "system", content: "Be helpful" },
+        {
+          role: "user",
+          content: [
+            { type: "text", text: "Look at this" },
+            { type: "image_url", image_url: { url: "https://example.com/img.png", detail: "low" } },
+          ],
+        },
+        { role: "assistant", content: "I see an image" },
+        { role: "user", content: "Describe it more" },
+      ],
+      stream: false,
+    });
+
+    const [, context]: [unknown, Context] = completeMock.mock.calls[0];
+    expect(context.systemPrompt).toBe("Be helpful");
+    expect(context.messages).toHaveLength(3);
+    // First user message: array content, image filtered
+    expect(context.messages[0].content).toEqual([{ type: "text", text: "Look at this" }]);
+    // Assistant message: string extracted
+    expect(context.messages[1].content).toEqual([{ type: "text", text: "I see an image" }]);
+    // Second user message: plain string
+    expect(context.messages[2].content).toBe("Describe it more");
+  });
 });
