@@ -25,6 +25,7 @@ function createMockEventStream() {
     { type: "done", reason: "stop", message: MOCK_ASSISTANT_MESSAGE },
   ];
   return {
+    // biome-ignore lint/suspicious/useAwait: async needed to produce AsyncGenerator for pi-ai stream interface
     async *[Symbol.asyncIterator]() {
       for (const event of events) {
         yield event;

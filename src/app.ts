@@ -135,7 +135,9 @@ app.doc("/openapi.json", {
     version: APP_VERSION,
     description: APP_DESCRIPTION,
   },
-  servers: [{ url: `http://localhost:${LLM_GATEWAY_PORT}`, description: "Local development server" }],
+  servers: [
+    { url: `http://localhost:${LLM_GATEWAY_PORT}`, description: "Local development server" },
+  ],
   tags: [
     { name: "Chat", description: "Chat completion endpoints" },
     { name: "Models", description: "Model listing and validation" },

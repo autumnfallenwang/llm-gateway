@@ -216,9 +216,7 @@ describe("B: non-streaming response fields", () => {
 
   it("finish_reason is a valid value", () => {
     const choices = json.choices as { finish_reason: string }[];
-    expect(["stop", "length", "tool_calls", "content_filter"]).toContain(
-      choices[0].finish_reason,
-    );
+    expect(["stop", "length", "tool_calls", "content_filter"]).toContain(choices[0].finish_reason);
   });
 
   it("usage.prompt_tokens is positive integer", () => {
@@ -276,9 +274,7 @@ describe("C: streaming response fields", () => {
     expect(res.status).toBe(200);
     const text = await res.text();
     dataLines = parseSSE(text);
-    chunks = dataLines
-      .filter((d) => d !== "[DONE]")
-      .map((d) => JSON.parse(d));
+    chunks = dataLines.filter((d) => d !== "[DONE]").map((d) => JSON.parse(d));
   }, 60_000);
 
   it("at least 3 data lines", () => {
@@ -328,7 +324,9 @@ describe("C: streaming response fields", () => {
   it("reasoning appears in at least one delta chunk (thinking model)", () => {
     const hasReasoning = chunks.some((c) => {
       const choices = c.choices as { delta: { reasoning?: string } }[];
-      return typeof choices[0].delta.reasoning === "string" && choices[0].delta.reasoning.length > 0;
+      return (
+        typeof choices[0].delta.reasoning === "string" && choices[0].delta.reasoning.length > 0
+      );
     });
     expect(hasReasoning).toBe(true);
   });
