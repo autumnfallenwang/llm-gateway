@@ -11,13 +11,13 @@
 | 5 | Completion service | ✅ Done | `src/services/completion.ts` — OpenAI ↔ pi-ai translation, Codex system prompt fallback |
 | 6 | Routes | ✅ Done | `src/routes/{chat,models,validate}.ts` — OpenAPI route defs with request examples |
 | 7 | App + server wiring | ✅ Done | All handlers wired: chat completions, models list (with validation filtering), model validation |
-| 8 | Tests | ✅ Done | 48/48 passing across 5 test files (auth, registry, completion, app, e2e) |
+| 8 | Tests | ✅ Done | 7 test files, 75 fast / 153 total tests |
 | 9 | Model validation | ✅ Done | `src/services/validation.ts` — tests every model with real completion, saves to `~/.llm-gateway/models.json` |
 | 10 | Streaming support | ✅ Done | SSE streaming via `stream: true` — all three backends (Ollama, Anthropic, Codex) |
 
 ## What's Working
 
-- `npm run dev` → `:8080`, Swagger UI at `/docs`
+- `npm run dev` → `:51277`, Swagger UI at `/docs`
 - Full request validation with OpenAI-format errors (`message`, `type`, `param`, `code`)
 - `POST /v1/chat/completions` → routes to Ollama/Anthropic/Codex via pi-ai, returns OpenAI-format response
 - `POST /v1/chat/completions` with `stream: true` → SSE streaming with `chat.completion.chunk` objects, `data: [DONE]` sentinel
@@ -29,11 +29,12 @@
 - Codex provider gets default system prompt when none provided
 - 404 with `model_not_found` for unknown models, 500 with backend error details on failure
 - Streaming errors sent as SSE error events before stream closes
-- 48/48 tests, 0 lint errors
+- 75 unit tests passing (fast), 153 total with e2e/compatibility, 0 lint errors
+- `npm run test:fast` for dev iteration (~0.5s), `npm test` for full validation (~90s)
 
 ## Reference Docs
 
-- [dev-plan.md](dev-plan.md) — full Phase 1 plan
+- [dev-plan.md](dev-plan.md) — Phase 1 plan (complete)
 - [openai-chat-completions-spec.md](openai-chat-completions-spec.md) — request/response fields
 - [ollama-openai-compatibility-spec.md](ollama-openai-compatibility-spec.md) — Ollama compat matrix
 - [openai-error-spec.md](openai-error-spec.md) — error format + gateway error mapping
@@ -50,8 +51,8 @@ Core pipeline: accept images, preprocess, pass to pi-ai. Vision models work; non
 
 | # | Task | Status | Notes |
 |---|------|--------|-------|
-| 11 | Update `MessageSchema` to accept `string \| ContentPart[]` | | `content` as union type, add `image_url` content part schema |
-| 12 | Image loader: resolve inputs to buffers | | Decode base64 data URIs, fetch HTTPS URLs (timeout, size cap, SSRF protection), MIME detection from magic bytes |
+| 11 | Update `MessageSchema` to accept `string \| ContentPart[]` | ✅ Done | Schema union type, `extractTextContent` helper, `buildContext` handles array content, image_url parts filtered (task 14). |
+| 12 | Image loader: resolve inputs to buffers | ✅ Done | `src/services/image/load.ts` — data URI decode, HTTPS fetch (timeout, size cap, SSRF protection), MIME detection from magic bytes. 31 tests in `tests/image-load.test.ts`. |
 | 13 | Image preprocessor with `sharp` | | Resize, compress, EXIF fix, HEIC→JPEG, alpha detection, grid search for size limits, `detail` param support |
 | 14 | Integrate pipeline into completion route | | Parse content parts → load → preprocess → convert to pi-ai `ImageContent` → pass to `buildContext` |
 | 15 | Tests for image pipeline | | Unit tests for loader, preprocessor, content parsing; integration test for full flow |
@@ -74,6 +75,10 @@ Fix Ollama models hardcoded to `input: ["text"]`.
 |---|------|--------|-------|
 | 19 | Detect Ollama vision models | | Name heuristic or `/api/show` endpoint, set `input: ["text", "image"]` in `buildOllamaModel` |
 | 20 | Tests for Ollama vision detection | | |
+
+## What's Next
+
+**Task 13: Image preprocessor with `sharp`** — resize, compress, format conversion (HEIC→JPEG), EXIF orientation fix, and `detail` parameter support. Depends on the image loader (task 12, done).
 
 ## Previous Milestones
 
