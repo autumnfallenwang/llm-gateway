@@ -7,12 +7,12 @@ Update `docs/progress.md` to reflect the current state of the project.
 
 ## Steps
 
-1. Read `docs/progress.md` and `docs/dev-plan.md` to understand the task list and current status.
+1. Read `docs/progress.md` to understand the task list and current status.
 2. Scan the codebase to determine what actually exists and works:
    - Check which source files exist under `src/` (services, lib, routes, schemas, app, index)
-   - Run `npx vitest run` to get the current test count and pass/fail status
+   - Run `npm run test:fast` to get the current unit test count and pass/fail status
    - Run `npx biome check src/ tests/` to get the current lint error/warning count
-3. Compare what exists against the dev-plan task list. For each task, determine:
+3. Compare what exists against the task list in `docs/progress.md`. For each task, determine:
    - **Done**: all files exist, tests pass, functionality is wired up
    - **Partial**: some files exist or placeholder handlers still in place
    - **Not started**: files don't exist yet
