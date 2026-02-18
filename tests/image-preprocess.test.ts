@@ -5,7 +5,7 @@ import { preprocessImage } from "../src/services/image/preprocess";
 
 // ── Test image generators ─────────────────────────────────────────────────
 
-async function makeJpeg(width: number, height: number): Promise<Buffer> {
+function makeJpeg(width: number, height: number): Promise<Buffer> {
   return sharp({
     create: {
       width,
@@ -18,7 +18,7 @@ async function makeJpeg(width: number, height: number): Promise<Buffer> {
     .toBuffer();
 }
 
-async function makePng(width: number, height: number, opts?: { alpha?: boolean }): Promise<Buffer> {
+function makePng(width: number, height: number, opts?: { alpha?: boolean }): Promise<Buffer> {
   const channels = opts?.alpha ? 4 : 3;
   const background = channels === 4 ? { r: 0, g: 0, b: 255, alpha: 0.5 } : { r: 0, g: 0, b: 255 };
   return sharp({
@@ -28,7 +28,7 @@ async function makePng(width: number, height: number, opts?: { alpha?: boolean }
     .toBuffer();
 }
 
-async function makeWebp(width: number, height: number): Promise<Buffer> {
+function makeWebp(width: number, height: number): Promise<Buffer> {
   return sharp({
     create: {
       width,
@@ -41,7 +41,7 @@ async function makeWebp(width: number, height: number): Promise<Buffer> {
     .toBuffer();
 }
 
-async function makeGif(width: number, height: number): Promise<Buffer> {
+function makeGif(width: number, height: number): Promise<Buffer> {
   return sharp({
     create: {
       width,
