@@ -11,7 +11,7 @@
 | 5 | Completion service | ✅ Done | `src/services/completion.ts` — OpenAI ↔ pi-ai translation, Codex system prompt fallback |
 | 6 | Routes | ✅ Done | `src/routes/{chat,models,validate}.ts` — OpenAPI route defs with request examples |
 | 7 | App + server wiring | ✅ Done | All handlers wired: chat completions, models list (with validation filtering), model validation |
-| 8 | Tests | ✅ Done | 8 test files, 94 fast / 172 total tests |
+| 8 | Tests | ✅ Done | 9 test files, 114 fast / 192 total tests |
 | 9 | Model validation | ✅ Done | `src/services/validation.ts` — tests every model with real completion, saves to `~/.llm-gateway/models.json` |
 | 10 | Streaming support | ✅ Done | SSE streaming via `stream: true` — all three backends (Ollama, Anthropic, Codex) |
 
@@ -31,7 +31,7 @@
 - Streaming errors sent as SSE error events before stream closes
 - Image processing pipeline: `image_url` content parts → load (HTTPS/data URI) → preprocess (resize, compress, format convert) → pi-ai `ImageContent`
 - `ImageLoadError` returns 400 `invalid_request_error` (not 500) in both streaming and non-streaming paths
-- 94 unit tests passing (fast), 172 total with e2e/compatibility, 0 lint errors
+- 114 unit tests passing (fast), 192 total with e2e/compatibility, 0 lint errors
 - `npm run test:fast` for dev iteration (~1.7s), `npm test` for full validation (~93s)
 
 ## Reference Docs
@@ -66,7 +66,7 @@ When target model doesn't support images, describe via a vision model first.
 |---|------|--------|-------|
 | 15 | Fallback model config | ✅ Done | Family-first + general fallback. Per-family vision model (ollama→`llava`, anthropic→`claude-haiku-4-5`, openai→`gpt-4o-mini`) then general chain. All env-var overridable. Config in `src/config.ts`. |
 | 16 | Vision fallback service | ✅ Done | `src/services/image/fallback.ts` — `applyVisionFallback()` intercepts non-vision models, describes images via family-first + general chain fallback, replaces image parts with text. `VisionFallbackError` → 502 in both streaming/non-streaming. Integrated into `createCompletion` + `createStreamingCompletion`. |
-| 17 | Unit tests for vision fallback | | Mock vision model response, verify text replacement, verify skip when model supports vision |
+| 17 | Unit tests for vision fallback | ✅ Done | `tests/vision-fallback.test.ts` — 20 tests covering skip paths, fallback model selection (family-first + general chain), image description & replacement, truncation, error handling. |
 | 18 | E2E tests for image pipeline | | Real image processing (HTTPS URL + data URI) across all three provider families, with vision fallback behavior. Unit coverage already done (31 load, 15 preprocess, 17 completion). |
 
 ### Phase 2.3 — Ollama Vision Detection
@@ -80,7 +80,7 @@ Fix Ollama models hardcoded to `input: ["text"]`.
 
 ## What's Next
 
-**Task 17: Unit tests for vision fallback** — test `applyVisionFallback` with mocked vision model responses, verify text replacement, verify skip when model supports vision, verify error handling.
+**Task 18: E2E tests for image pipeline** — real image processing across all three provider families with vision fallback behavior.
 
 ## Previous Milestones
 
