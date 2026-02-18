@@ -7,6 +7,7 @@ import { chatCompletionRoute } from "./routes/chat";
 import { modelsRoute } from "./routes/models";
 import { validateModelsRoute } from "./routes/validate";
 import { createCompletion, createStreamingCompletion } from "./services/completion";
+import { VisionFallbackError } from "./services/image/fallback";
 import { ImageLoadError } from "./services/image/load";
 import { listModels, resolveModel } from "./services/registry";
 import { readValidationReport, validateAllModels } from "./services/validation";
@@ -73,6 +74,19 @@ app.openapi(chatCompletionRoute, async (c) => {
           });
           return;
         }
+        if (err instanceof VisionFallbackError) {
+          await sseStream.writeSSE({
+            data: JSON.stringify({
+              error: {
+                message: err.message,
+                type: "server_error",
+                param: null,
+                code: "vision_fallback_failed",
+              },
+            }),
+          });
+          return;
+        }
         const message = err instanceof Error ? err.message : "Unknown backend error";
         await sseStream.writeSSE({
           data: JSON.stringify({
@@ -103,6 +117,19 @@ app.openapi(chatCompletionRoute, async (c) => {
           },
         },
         400,
+      );
+    }
+    if (err instanceof VisionFallbackError) {
+      return c.json(
+        {
+          error: {
+            message: err.message,
+            type: "server_error",
+            param: null,
+            code: "vision_fallback_failed",
+          },
+        },
+        502,
       );
     }
     const message = err instanceof Error ? err.message : "Unknown backend error";

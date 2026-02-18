@@ -11,6 +11,7 @@ import {
 import { DEFAULT_SYSTEM_PROMPT } from "../config.js";
 import type { ChatCompletionRequest, ChatCompletionResponse } from "../routes/chat.js";
 import type { ContentPart } from "../schemas/chat.js";
+import { applyVisionFallback } from "./image/fallback.js";
 import { loadImage } from "./image/load.js";
 import { preprocessImage } from "./image/preprocess.js";
 import type { ResolvedModel } from "./registry.js";
@@ -165,7 +166,8 @@ export async function createCompletion(
   resolved: ResolvedModel,
   body: ChatCompletionRequest,
 ): Promise<ChatCompletionResponse> {
-  const context = await buildContext(body, resolved);
+  const effectiveBody = await applyVisionFallback(body, resolved);
+  const context = await buildContext(effectiveBody, resolved);
   const options = buildOptions(body, resolved);
   const result = await complete(resolved.model, context, options);
   return formatResponse(result, body.model);
@@ -175,7 +177,8 @@ export async function* createStreamingCompletion(
   resolved: ResolvedModel,
   body: ChatCompletionRequest,
 ): AsyncGenerator<string> {
-  const context = await buildContext(body, resolved);
+  const effectiveBody = await applyVisionFallback(body, resolved);
+  const context = await buildContext(effectiveBody, resolved);
   const options = buildOptions(body, resolved);
   const eventStream = stream(resolved.model, context, options);
 

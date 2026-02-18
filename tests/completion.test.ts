@@ -29,7 +29,7 @@ const { createCompletion } = await import("../src/services/completion");
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
-function makeResolved(overrides?: Partial<{ apiKey: string }>) {
+function makeResolved(overrides?: Partial<{ apiKey: string; input: ("text" | "image")[] }>) {
   return {
     model: {
       id: "test-model",
@@ -38,7 +38,7 @@ function makeResolved(overrides?: Partial<{ apiKey: string }>) {
       provider: "anthropic" as const,
       baseUrl: "https://api.anthropic.com",
       reasoning: false,
-      input: ["text" as const],
+      input: overrides?.input ?? (["text"] as ("text" | "image")[]),
       cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
       contextWindow: 200000,
       maxTokens: 4096,
@@ -301,7 +301,7 @@ describe("createCompletion", () => {
     setupImageMocks();
     completeMock.mockResolvedValue(makeAssistantMessage());
 
-    await createCompletion(makeResolved(), {
+    await createCompletion(makeResolved({ input: ["text", "image"] }), {
       model: "test-model",
       messages: [
         {
@@ -327,7 +327,7 @@ describe("createCompletion", () => {
     setupImageMocks();
     completeMock.mockResolvedValue(makeAssistantMessage());
 
-    await createCompletion(makeResolved(), {
+    await createCompletion(makeResolved({ input: ["text", "image"] }), {
       model: "test-model",
       messages: [
         { role: "system", content: "Be helpful" },
@@ -362,7 +362,7 @@ describe("createCompletion", () => {
     setupImageMocks();
     completeMock.mockResolvedValue(makeAssistantMessage());
 
-    await createCompletion(makeResolved(), {
+    await createCompletion(makeResolved({ input: ["text", "image"] }), {
       model: "test-model",
       messages: [
         {
@@ -388,7 +388,7 @@ describe("createCompletion", () => {
     setupImageMocks();
     completeMock.mockResolvedValue(makeAssistantMessage());
 
-    await createCompletion(makeResolved(), {
+    await createCompletion(makeResolved({ input: ["text", "image"] }), {
       model: "test-model",
       messages: [
         {
@@ -451,7 +451,7 @@ describe("createCompletion", () => {
     completeMock.mockResolvedValue(makeAssistantMessage());
 
     await expect(
-      createCompletion(makeResolved(), {
+      createCompletion(makeResolved({ input: ["text", "image"] }), {
         model: "test-model",
         messages: [
           {

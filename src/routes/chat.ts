@@ -120,6 +120,14 @@ export const chatCompletionRoute = createRoute({
       },
       description: "Backend error",
     },
+    502: {
+      content: {
+        "application/json": {
+          schema: ErrorResponseSchema,
+        },
+      },
+      description: "Vision fallback failed",
+    },
   },
 });
 

@@ -65,7 +65,7 @@ When target model doesn't support images, describe via a vision model first.
 | # | Task | Status | Notes |
 |---|------|--------|-------|
 | 15 | Fallback model config | ✅ Done | Family-first + general fallback. Per-family vision model (ollama→`llava`, anthropic→`claude-haiku-4-5`, openai→`gpt-4o-mini`) then general chain. All env-var overridable. Config in `src/config.ts`. |
-| 16 | Vision fallback service | | Check `model.input.includes("image")`, select fallback vision model from config, describe image as text, replace image parts with description |
+| 16 | Vision fallback service | ✅ Done | `src/services/image/fallback.ts` — `applyVisionFallback()` intercepts non-vision models, describes images via family-first + general chain fallback, replaces image parts with text. `VisionFallbackError` → 502 in both streaming/non-streaming. Integrated into `createCompletion` + `createStreamingCompletion`. |
 | 17 | Unit tests for vision fallback | | Mock vision model response, verify text replacement, verify skip when model supports vision |
 | 18 | E2E tests for image pipeline | | Real image processing (HTTPS URL + data URI) across all three provider families, with vision fallback behavior. Unit coverage already done (31 load, 15 preprocess, 17 completion). |
 
@@ -80,7 +80,7 @@ Fix Ollama models hardcoded to `input: ["text"]`.
 
 ## What's Next
 
-**Task 16: Vision fallback service** — when the target model doesn't support images (`!model.input.includes("image")`), automatically describe images via a vision-capable model and substitute text. Fallback config (task 15) is done — family-first + general fallback policy, env-var overridable. Next: implement the fallback service logic.
+**Task 17: Unit tests for vision fallback** — test `applyVisionFallback` with mocked vision model responses, verify text replacement, verify skip when model supports vision, verify error handling.
 
 ## Previous Milestones
 
