@@ -10,6 +10,16 @@ export const ModelObjectSchema = z.object({
   owned_by: z
     .string()
     .openapi({ description: "Model provider: 'ollama', 'anthropic', or 'codex'" }),
+  context_window: z
+    .number()
+    .int()
+    .optional()
+    .openapi({ description: "Maximum context window size in tokens" }),
+  max_tokens: z
+    .number()
+    .int()
+    .optional()
+    .openapi({ description: "Maximum output tokens per completion" }),
 });
 
 export const ModelsResponseSchema = z.object({

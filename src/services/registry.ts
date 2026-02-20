@@ -34,25 +34,38 @@ export async function loadRegistry(config?: RegistryConfig): Promise<void> {
   );
 }
 
-export function listModels(): { id: string; object: "model"; created: number; owned_by: string }[] {
+export function listModels(): {
+  id: string;
+  object: "model";
+  created: number;
+  owned_by: string;
+  context_window?: number;
+  max_tokens?: number;
+}[] {
   const all = [
     ...ollamaModels.map((m) => ({
       id: m.id,
       object: "model" as const,
       created: 0,
       owned_by: m.provider,
+      context_window: m.contextWindow,
+      max_tokens: m.maxTokens,
     })),
     ...anthropicModels.map((m) => ({
       id: m.id,
       object: "model" as const,
       created: 0,
       owned_by: m.provider,
+      context_window: m.contextWindow,
+      max_tokens: m.maxTokens,
     })),
     ...codexModels.map((m) => ({
       id: m.id,
       object: "model" as const,
       created: 0,
       owned_by: m.provider,
+      context_window: m.contextWindow,
+      max_tokens: m.maxTokens,
     })),
   ];
   return all;

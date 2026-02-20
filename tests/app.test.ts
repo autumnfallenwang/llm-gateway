@@ -47,6 +47,22 @@ vi.mock("@mariozechner/pi-ai", async (importOriginal) => {
   };
 });
 
+vi.mock("../src/lib/ollama", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../src/lib/ollama")>();
+  return {
+    ...actual,
+    fetchOllamaModels: vi.fn().mockResolvedValue([]),
+  };
+});
+
+vi.mock("../src/services/validation", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../src/services/validation")>();
+  return {
+    ...actual,
+    readValidationReport: vi.fn().mockResolvedValue(null),
+  };
+});
+
 vi.mock("../src/services/registry", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../src/services/registry")>();
   return {
@@ -239,6 +255,34 @@ describe("GET /v1/models", () => {
     const json = await res.json();
     expect(json.object).toBe("list");
     expect(Array.isArray(json.data)).toBe(true);
+  });
+
+  it("returns context_window and max_tokens for each model", async () => {
+    const { loadRegistry } = await import("../src/services/registry");
+    const { fetchOllamaModels } = await import("../src/lib/ollama");
+    vi.mocked(fetchOllamaModels).mockResolvedValueOnce([
+      {
+        id: "test-model",
+        name: "test-model",
+        api: "openai-completions",
+        provider: "ollama",
+        baseUrl: "",
+        reasoning: false,
+        input: ["text"],
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+        contextWindow: 8192,
+        maxTokens: 2048,
+      },
+    ]);
+    await loadRegistry();
+
+    const res = await app.request("/v1/models");
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    const model = json.data.find((m: { id: string }) => m.id === "test-model");
+    expect(model).toBeDefined();
+    expect(model.context_window).toBe(8192);
+    expect(model.max_tokens).toBe(2048);
   });
 });
 
