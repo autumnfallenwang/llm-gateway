@@ -467,6 +467,56 @@ describe("createCompletion", () => {
   });
 });
 
+describe("Ollama num_ctx injection", () => {
+  it("includes onPayload with num_ctx for Ollama provider", async () => {
+    completeMock.mockResolvedValue(makeAssistantMessage());
+
+    const resolved = {
+      model: {
+        id: "llama3",
+        name: "Llama 3",
+        api: "openai-chat" as const,
+        provider: "ollama" as const,
+        baseUrl: "http://localhost:11434",
+        reasoning: false,
+        input: ["text"] as ("text" | "image")[],
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+        contextWindow: 131072,
+        maxTokens: 4096,
+      },
+      provider: "ollama" as const,
+      apiKey: undefined,
+    };
+
+    await createCompletion(resolved, {
+      model: "llama3",
+      messages: [{ role: "user", content: "Hi" }],
+      stream: false,
+    });
+
+    const [, , options] = completeMock.mock.calls[0];
+    expect(options.onPayload).toBeTypeOf("function");
+
+    // Verify the callback mutates payload correctly
+    const payload: Record<string, unknown> = {};
+    options.onPayload(payload);
+    expect(payload.options).toEqual({ num_ctx: 32768 });
+  });
+
+  it("does not include onPayload for non-Ollama providers", async () => {
+    completeMock.mockResolvedValue(makeAssistantMessage());
+
+    await createCompletion(makeResolved(), {
+      model: "test-model",
+      messages: [{ role: "user", content: "Hi" }],
+      stream: false,
+    });
+
+    const [, , options] = completeMock.mock.calls[0];
+    expect(options.onPayload).toBeUndefined();
+  });
+});
+
 describe("backend error handling", () => {
   it("throws 400 BackendError for context overflow", async () => {
     isContextOverflowMock.mockReturnValue(true);

@@ -9,7 +9,7 @@ import {
   type TextContent,
   type Usage,
 } from "@mariozechner/pi-ai";
-import { DEFAULT_SYSTEM_PROMPT } from "../config.js";
+import { DEFAULT_SYSTEM_PROMPT, OLLAMA_NUM_CTX } from "../config.js";
 import { BackendError } from "../errors.js";
 import type { ChatCompletionRequest, ChatCompletionResponse } from "../routes/chat.js";
 import type { ContentPart } from "../schemas/chat.js";
@@ -132,6 +132,13 @@ function buildOptions(
   if (body.temperature !== undefined) opts.temperature = body.temperature;
   if (body.max_tokens !== undefined) opts.maxTokens = body.max_tokens;
   opts.apiKey = resolved.apiKey ?? "ollama";
+
+  if (resolved.provider === "ollama") {
+    opts.onPayload = (payload: Record<string, unknown>) => {
+      payload.options = { num_ctx: OLLAMA_NUM_CTX };
+    };
+  }
+
   return opts;
 }
 

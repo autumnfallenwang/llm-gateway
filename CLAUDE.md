@@ -40,6 +40,7 @@ Centralized in `src/config.ts`. Key env var overrides:
 |----------|---------|-------------|
 | `LLM_GATEWAY_PORT` | `51277` | Server port |
 | `OLLAMA_BASE_URL` | `http://localhost:11434` | Ollama API base URL |
+| `OLLAMA_NUM_CTX` | `32768` | Ollama runtime context window size (`num_ctx`) |
 | `ANTHROPIC_CREDENTIALS_PATH` | `~/.claude/.credentials.json` | Anthropic auth file |
 | `CODEX_CREDENTIALS_PATH` | `~/.codex/auth.json` | Codex auth file |
 | `VALIDATION_FILE_PATH` | `~/.llm-gateway/models.json` | Validation cache |
