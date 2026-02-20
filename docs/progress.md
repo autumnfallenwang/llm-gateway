@@ -71,6 +71,18 @@ When target model doesn't support images, describe via a vision model first. Fix
 | 20 | Tests for Ollama vision detection | ✅ Done | `tests/ollama.test.ts` — 16 tests (fetchModelCapabilities, extractContextLength, buildOllamaModel). 3 new integration tests in `tests/registry.test.ts`. |
 | 18 | E2E tests for image pipeline | ✅ Done | 9 tests: direct vision (data URI + HTTPS URL × 3 backends), vision fallback (Ollama text-only), streaming vision, error handling (invalid data URI). |
 
+## Phase 3: Context Window Management
+
+Research complete. See [context-window-test-results.md](context-window-test-results.md) for full test data.
+
+**Background**: LLM models have finite context windows. Anthropic/Codex reject overflows with errors; Ollama silently truncates. Our gateway currently swallows all pi-ai `stopReason: "error"` responses, and Ollama's default `num_ctx` (~4096) wastes 97%+ of model capacity. The `/v1/models` endpoint doesn't expose `contextWindow` or `maxTokens`, leaving clients blind.
+
+| # | Task | Status | Notes |
+|---|------|--------|-------|
+| 21 | Fix gateway error swallowing | Planned | `formatResponse()` maps `stopReason: "error"` → `"stop"`, hiding all pi-ai errors. Fix: check `stopReason === "error"` and classify via error chain: (1) pi-ai's `isContextOverflow()` → 400 `context_length_exceeded`, (2) our own `isRateLimited(errorMessage)` regex (`/rate.limit\|usage.limit\|429/i`) → 429 `rate_limit_exceeded`, (3) fallback → 500 `server_error`. Preserve `errorMessage` in all cases. Ollama doesn't rate limit (local). |
+| 22 | Add `OLLAMA_NUM_CTX` config | Planned | Env var in `src/config.ts`, passed as `num_ctx` in Ollama requests. Default 32768. Replaces Ollama's ~4096 default. Users tune based on GPU VRAM. 24GB GPU tested up to ~128k tokens with gpt-oss:20b. |
+| 23 | Expose `contextWindow` and `maxTokens` in `/v1/models` | Planned | Add non-standard fields to model response. Data already on every `Model` object. Anthropic/Codex: from pi-ai registry. Ollama: `contextWindow` from `/api/show`, `maxTokens` hardcoded default. Won't break OpenAI compatibility. Enables clients to manage context intelligently. |
+
 ## Previous Milestones
 
 Phase 1 backend + streaming + Docker deploy complete. See tasks 1–10 above.
