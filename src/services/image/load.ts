@@ -6,8 +6,8 @@ export interface LoadedImage {
 }
 
 export class ImageLoadError extends Error {
-  constructor(message: string) {
-    super(message);
+  constructor(message: string, options?: ErrorOptions) {
+    super(message, options);
     this.name = "ImageLoadError";
   }
 }
@@ -67,10 +67,12 @@ async function fetchUrl(url: string): Promise<LoadedImage> {
     if (err instanceof DOMException && err.name === "TimeoutError") {
       throw new ImageLoadError(
         `Image URL fetch timed out after ${Math.round(IMAGE_FETCH_TIMEOUT_MS / 1000)}s`,
+        { cause: err },
       );
     }
     throw new ImageLoadError(
       `Failed to fetch image URL: ${err instanceof Error ? err.message : String(err)}`,
+      { cause: err },
     );
   }
 
@@ -115,8 +117,8 @@ function assertNotPrivateUrl(raw: string): void {
   let parsed: URL;
   try {
     parsed = new URL(raw);
-  } catch {
-    throw new ImageLoadError("Invalid image URL in content part");
+  } catch (err) {
+    throw new ImageLoadError("Invalid image URL in content part", { cause: err });
   }
 
   if (parsed.protocol !== "https:") {

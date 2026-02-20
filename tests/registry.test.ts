@@ -190,7 +190,7 @@ describe("loadRegistry", () => {
 
     const resolved = resolveModel("llava:latest");
     expect(resolved).toBeDefined();
-    expect(resolved!.model.input).toEqual(["text", "image"]);
+    expect(resolved?.model.input).toEqual(["text", "image"]);
   });
 
   it("keeps non-vision Ollama model as text-only", async () => {
@@ -202,7 +202,7 @@ describe("loadRegistry", () => {
 
     const resolved = resolveModel("llama3:latest");
     expect(resolved).toBeDefined();
-    expect(resolved!.model.input).toEqual(["text"]);
+    expect(resolved?.model.input).toEqual(["text"]);
   });
 
   it("uses context_length from /api/show", async () => {
@@ -214,7 +214,7 @@ describe("loadRegistry", () => {
 
     const resolved = resolveModel("llava:latest");
     expect(resolved).toBeDefined();
-    expect(resolved!.model.contextWindow).toBe(4096);
+    expect(resolved?.model.contextWindow).toBe(4096);
   });
 
   it("handles Ollama not running gracefully", async () => {
@@ -261,9 +261,9 @@ describe("resolveModel", () => {
 
     const resolved = resolveModel("llama3:latest");
     expect(resolved).toBeDefined();
-    expect(resolved!.provider).toBe("ollama");
-    expect(resolved!.model.id).toBe("llama3:latest");
-    expect(resolved!.apiKey).toBeUndefined();
+    expect(resolved?.provider).toBe("ollama");
+    expect(resolved?.model.id).toBe("llama3:latest");
+    expect(resolved?.apiKey).toBeUndefined();
   });
 
   it("resolves an Anthropic model with apiKey", async () => {
@@ -276,8 +276,8 @@ describe("resolveModel", () => {
 
     const resolved = resolveModel("claude-3-5-haiku-20241022");
     expect(resolved).toBeDefined();
-    expect(resolved!.provider).toBe("anthropic");
-    expect(resolved!.apiKey).toBe("anthropic-tok-test");
+    expect(resolved?.provider).toBe("anthropic");
+    expect(resolved?.apiKey).toBe("anthropic-tok-test");
   });
 
   it("resolves a Codex model with apiKey", async () => {
@@ -292,10 +292,10 @@ describe("resolveModel", () => {
     const codexModel = models.find((m) => m.owned_by === "openai-codex");
     expect(codexModel).toBeDefined();
 
-    const resolved = resolveModel(codexModel!.id);
+    const resolved = resolveModel(codexModel?.id ?? "");
     expect(resolved).toBeDefined();
-    expect(resolved!.provider).toBe("codex");
-    expect(resolved!.apiKey).toBeDefined();
+    expect(resolved?.provider).toBe("codex");
+    expect(resolved?.apiKey).toBeDefined();
   });
 
   it("returns undefined for nonexistent model", async () => {

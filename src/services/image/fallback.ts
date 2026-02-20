@@ -15,8 +15,8 @@ import { preprocessImage } from "./preprocess.js";
 // ── Error ────────────────────────────────────────────────────────────────
 
 export class VisionFallbackError extends Error {
-  constructor(message: string) {
-    super(message);
+  constructor(message: string, options?: ErrorOptions) {
+    super(message, options);
     this.name = "VisionFallbackError";
   }
 }
@@ -143,6 +143,7 @@ async function describeImages(
   } catch (err) {
     throw new VisionFallbackError(
       `Vision fallback model failed: ${err instanceof Error ? err.message : String(err)}`,
+      { cause: err },
     );
   }
 

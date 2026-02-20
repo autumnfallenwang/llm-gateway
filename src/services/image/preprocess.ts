@@ -171,6 +171,7 @@ async function getMetadata(
     if (err instanceof ImageLoadError) throw err;
     throw new ImageLoadError(
       `Failed to read image metadata: ${err instanceof Error ? err.message : String(err)}`,
+      { cause: err },
     );
   }
 }
