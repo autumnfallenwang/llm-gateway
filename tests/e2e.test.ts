@@ -424,6 +424,51 @@ describe("image: streaming", () => {
   });
 });
 
+// ── Phase 3: context window management ──────────────────────────────────
+
+describe("phase 3: context window management", () => {
+  it("models include context_window and max_tokens", async () => {
+    const res = await fetch(`${baseUrl}/v1/models`);
+    expect(res.status).toBe(200);
+    const json = await res.json();
+
+    for (const model of json.data) {
+      expect(model.context_window).toEqual(expect.any(Number));
+      expect(model.context_window).toBeGreaterThan(0);
+      expect(model.max_tokens).toEqual(expect.any(Number));
+      expect(model.max_tokens).toBeGreaterThan(0);
+    }
+  });
+
+  it.skip("large context succeeds with num_ctx override", { timeout: 180_000 }, async () => {
+    // Skipped: sending enough tokens to exceed default num_ctx makes the test
+    // too slow for routine CI. Unit tests cover num_ctx injection logic.
+    const filler = "word ".repeat(3000);
+    const res = await post("/v1/chat/completions", {
+      model: "qwen3:30b",
+      messages: [{ role: "user", content: `${filler}What is 2+2? Reply with just the number.` }],
+      max_tokens: 16,
+    });
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expectCompletionShape(json);
+  });
+
+  it("anthropic context overflow returns 400", { timeout: 60_000 }, async () => {
+    // ~300k tokens to exceed claude-haiku-4-5's 200k context window
+    const massive = "word ".repeat(300_000);
+    const res = await post("/v1/chat/completions", {
+      model: "claude-haiku-4-5",
+      messages: [{ role: "user", content: massive }],
+      max_tokens: 32,
+    });
+    expect(res.status).toBe(400);
+    const json = await res.json();
+    expect(json.error.type).toBe("invalid_request_error");
+    expect(json.error.code).toBe("context_length_exceeded");
+  });
+});
+
 // ── Image: error handling ───────────────────────────────────────────────
 
 describe("image: error handling", () => {
