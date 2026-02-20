@@ -84,6 +84,17 @@ Research complete. See [context-window-test-results.md](context-window-test-resu
 | 22 | Add `OLLAMA_NUM_CTX` config | ✅ Done | `OLLAMA_NUM_CTX` env var (default 32768) in `src/config.ts`. Injected via pi-ai `onPayload` callback in `buildOptions()` for Ollama providers. 2 new tests in `completion.test.ts`. |
 | 23 | Expose `contextWindow` and `maxTokens` in `/v1/models` | ✅ Done | `context_window` and `max_tokens` added to `ModelObjectSchema` (optional ints). `listModels()` maps pi-ai `contextWindow`/`maxTokens` to snake_case. 1 new test in `app.test.ts`. |
 
+## Phase 4: Provider Expansion & Tooling
+
+See [backlog.md](backlog.md) for full details and research notes.
+
+| # | Task | Status | Notes |
+|---|------|--------|-------|
+| 24 | Replace llava with qwen3-vl:8b as default vision fallback | Planned | Change `VISION_FALLBACK_OLLAMA` default in `src/config.ts`. qwen3-vl:8b has DocVQA ~96 vs llava ~70s, supports video, 256K context, 6.1 GB. Also update general fallback chain. |
+| 25 | Enrich /v1/models with validation status | Planned | Return ALL models with `status` (`ok`/`error`/`unknown`), `status_detail`, `validated_at` instead of filtering out failed models. Update `ModelObjectSchema`, remove filter logic in app handler. |
+| 26 | `llmgw update` — dependency update pipeline | Planned | New CLI subcommand: `npm outdated` → `npm update` → `npm test` → rebuild or rollback. Full dep scope. |
+| 27 | Add Gemini provider support | Planned | Fourth backend via pi-ai `google-gemini-cli`. Auth from `~/.gemini/oauth_creds.json` (OAuth token + projectId via `loadCodeAssist` API). Models: gemini-2.0-flash, 2.5-flash, 2.5-pro, 3-flash-preview, 3-pro-preview. Smoke tested with pi-ai `complete()`. Changes: auth.ts, config.ts, registry.ts, completion.ts, vision fallback, tests. |
+
 ## Previous Milestones
 
 Phase 1 backend + streaming + Docker deploy complete. See tasks 1–10 above.
