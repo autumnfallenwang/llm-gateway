@@ -3,12 +3,14 @@ import {
   type Context,
   complete,
   type ImageContent,
+  isContextOverflow,
   type Message,
   stream,
   type TextContent,
   type Usage,
 } from "@mariozechner/pi-ai";
 import { DEFAULT_SYSTEM_PROMPT } from "../config.js";
+import { BackendError } from "../errors.js";
 import type { ChatCompletionRequest, ChatCompletionResponse } from "../routes/chat.js";
 import type { ContentPart } from "../schemas/chat.js";
 import { applyVisionFallback } from "./image/fallback.js";
@@ -30,6 +32,22 @@ const EMPTY_USAGE: Usage = {
   totalTokens: 0,
   cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
 };
+
+const RATE_LIMIT_PATTERN = /rate.limit|usage.limit|too many requests|429/i;
+
+function throwIfBackendError(result: AssistantMessage): void {
+  if (result.stopReason !== "error") return;
+
+  const msg = result.errorMessage ?? "Unknown backend error";
+
+  if (isContextOverflow(result)) {
+    throw new BackendError(msg, 400, "invalid_request_error", "context_length_exceeded");
+  }
+  if (RATE_LIMIT_PATTERN.test(msg)) {
+    throw new BackendError(msg, 429, "rate_limit_exceeded", "rate_limit_exceeded");
+  }
+  throw new BackendError(msg, 500, "server_error", "server_error");
+}
 
 function extractTextContent(content: string | ContentPart[]): string {
   if (typeof content === "string") return content;
@@ -170,6 +188,7 @@ export async function createCompletion(
   const context = await buildContext(effectiveBody, resolved);
   const options = buildOptions(body, resolved);
   const result = await complete(resolved.model, context, options);
+  throwIfBackendError(result);
   return formatResponse(result, body.model);
 }
 
@@ -241,7 +260,7 @@ export async function* createStreamingCompletion(
       const finishReason = STOP_REASON_MAP[event.reason] ?? "stop";
       yield chunk({}, finishReason);
     } else if (event.type === "error") {
-      throw new Error(event.error.errorMessage ?? "Stream error");
+      throwIfBackendError(event.error);
     }
   }
 }

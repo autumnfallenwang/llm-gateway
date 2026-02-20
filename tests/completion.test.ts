@@ -1,13 +1,15 @@
 import type { AssistantMessage, Context } from "@mariozechner/pi-ai";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { BackendError } from "../src/errors";
 
 const completeMock = vi.fn();
+const isContextOverflowMock = vi.fn();
 const loadImageMock = vi.fn();
 const preprocessImageMock = vi.fn();
 
 vi.mock("@mariozechner/pi-ai", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@mariozechner/pi-ai")>();
-  return { ...actual, complete: completeMock };
+  return { ...actual, complete: completeMock, isContextOverflow: isContextOverflowMock };
 });
 
 vi.mock("../src/services/image/load", () => ({
@@ -195,11 +197,11 @@ describe("createCompletion", () => {
   });
 
   it("maps stopReason correctly", async () => {
+    isContextOverflowMock.mockReturnValue(false);
     for (const [piaiReason, expected] of [
       ["stop", "stop"],
       ["length", "length"],
       ["toolUse", "tool_calls"],
-      ["error", "stop"],
     ] as const) {
       completeMock.mockResolvedValue(makeAssistantMessage({ stopReason: piaiReason }));
 
@@ -462,5 +464,102 @@ describe("createCompletion", () => {
         stream: false,
       }),
     ).rejects.toThrow("Failed to fetch image URL: HTTP 404 Not Found");
+  });
+});
+
+describe("backend error handling", () => {
+  it("throws 400 BackendError for context overflow", async () => {
+    isContextOverflowMock.mockReturnValue(true);
+    completeMock.mockResolvedValue(
+      makeAssistantMessage({
+        stopReason: "error",
+        errorMessage: "prompt is too long: 300000 tokens > 200000 maximum",
+      }),
+    );
+
+    await expect(
+      createCompletion(makeResolved(), {
+        model: "test-model",
+        messages: [{ role: "user", content: "Hi" }],
+        stream: false,
+      }),
+    ).rejects.toSatisfy((err: BackendError) => {
+      expect(err).toBeInstanceOf(BackendError);
+      expect(err.httpStatus).toBe(400);
+      expect(err.errorType).toBe("invalid_request_error");
+      expect(err.errorCode).toBe("context_length_exceeded");
+      expect(err.message).toBe("prompt is too long: 300000 tokens > 200000 maximum");
+      return true;
+    });
+  });
+
+  it("throws 429 BackendError for rate limit errors", async () => {
+    isContextOverflowMock.mockReturnValue(false);
+    completeMock.mockResolvedValue(
+      makeAssistantMessage({
+        stopReason: "error",
+        errorMessage: "Rate limit exceeded, please retry after 30s",
+      }),
+    );
+
+    await expect(
+      createCompletion(makeResolved(), {
+        model: "test-model",
+        messages: [{ role: "user", content: "Hi" }],
+        stream: false,
+      }),
+    ).rejects.toSatisfy((err: BackendError) => {
+      expect(err).toBeInstanceOf(BackendError);
+      expect(err.httpStatus).toBe(429);
+      expect(err.errorType).toBe("rate_limit_exceeded");
+      expect(err.errorCode).toBe("rate_limit_exceeded");
+      return true;
+    });
+  });
+
+  it("throws 500 BackendError for generic backend errors", async () => {
+    isContextOverflowMock.mockReturnValue(false);
+    completeMock.mockResolvedValue(
+      makeAssistantMessage({
+        stopReason: "error",
+        errorMessage: "Internal server failure",
+      }),
+    );
+
+    await expect(
+      createCompletion(makeResolved(), {
+        model: "test-model",
+        messages: [{ role: "user", content: "Hi" }],
+        stream: false,
+      }),
+    ).rejects.toSatisfy((err: BackendError) => {
+      expect(err).toBeInstanceOf(BackendError);
+      expect(err.httpStatus).toBe(500);
+      expect(err.errorType).toBe("server_error");
+      expect(err.errorCode).toBe("server_error");
+      return true;
+    });
+  });
+
+  it("uses fallback message when errorMessage is missing", async () => {
+    isContextOverflowMock.mockReturnValue(false);
+    completeMock.mockResolvedValue(
+      makeAssistantMessage({
+        stopReason: "error",
+        errorMessage: undefined,
+      }),
+    );
+
+    await expect(
+      createCompletion(makeResolved(), {
+        model: "test-model",
+        messages: [{ role: "user", content: "Hi" }],
+        stream: false,
+      }),
+    ).rejects.toSatisfy((err: BackendError) => {
+      expect(err).toBeInstanceOf(BackendError);
+      expect(err.message).toBe("Unknown backend error");
+      return true;
+    });
   });
 });

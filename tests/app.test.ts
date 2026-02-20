@@ -35,12 +35,15 @@ function createMockEventStream() {
   };
 }
 
+const isContextOverflowMock = vi.fn().mockReturnValue(false);
+
 vi.mock("@mariozechner/pi-ai", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@mariozechner/pi-ai")>();
   return {
     ...actual,
     complete: vi.fn().mockResolvedValue(MOCK_ASSISTANT_MESSAGE),
     stream: vi.fn().mockImplementation(() => createMockEventStream()),
+    isContextOverflow: isContextOverflowMock,
   };
 });
 
@@ -236,5 +239,81 @@ describe("GET /v1/models", () => {
     const json = await res.json();
     expect(json.object).toBe("list");
     expect(Array.isArray(json.data)).toBe(true);
+  });
+});
+
+describe("Backend error responses", () => {
+  const MOCK_MODEL = {
+    model: {
+      id: "test",
+      name: "test",
+      api: "openai-completions",
+      provider: "ollama",
+      baseUrl: "",
+      reasoning: false,
+      input: ["text"],
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+      contextWindow: 4096,
+      maxTokens: 4096,
+    },
+    provider: "ollama",
+  };
+
+  async function mockResolveModel() {
+    const { resolveModel } = await import("../src/services/registry");
+    vi.mocked(resolveModel).mockReturnValueOnce(MOCK_MODEL);
+  }
+
+  it("returns 400 for context overflow errors", async () => {
+    await mockResolveModel();
+    const { complete } = await import("@mariozechner/pi-ai");
+    vi.mocked(complete).mockResolvedValueOnce({
+      ...MOCK_ASSISTANT_MESSAGE,
+      stopReason: "error",
+      errorMessage: "prompt is too long: 10000 tokens > 4096 maximum",
+    });
+    isContextOverflowMock.mockReturnValueOnce(true);
+
+    const res = await post("/v1/chat/completions", VALID_BODY);
+    expect(res.status).toBe(400);
+    const json = await res.json();
+    expect(json.error.type).toBe("invalid_request_error");
+    expect(json.error.code).toBe("context_length_exceeded");
+    expect(json.error.message).toContain("prompt is too long");
+  });
+
+  it("returns 429 for rate limit errors", async () => {
+    await mockResolveModel();
+    const { complete } = await import("@mariozechner/pi-ai");
+    vi.mocked(complete).mockResolvedValueOnce({
+      ...MOCK_ASSISTANT_MESSAGE,
+      stopReason: "error",
+      errorMessage: "Rate limit exceeded",
+    });
+    isContextOverflowMock.mockReturnValueOnce(false);
+
+    const res = await post("/v1/chat/completions", VALID_BODY);
+    expect(res.status).toBe(429);
+    const json = await res.json();
+    expect(json.error.type).toBe("rate_limit_exceeded");
+    expect(json.error.code).toBe("rate_limit_exceeded");
+  });
+
+  it("returns 500 for generic backend errors", async () => {
+    await mockResolveModel();
+    const { complete } = await import("@mariozechner/pi-ai");
+    vi.mocked(complete).mockResolvedValueOnce({
+      ...MOCK_ASSISTANT_MESSAGE,
+      stopReason: "error",
+      errorMessage: "Something went wrong",
+    });
+    isContextOverflowMock.mockReturnValueOnce(false);
+
+    const res = await post("/v1/chat/completions", VALID_BODY);
+    expect(res.status).toBe(500);
+    const json = await res.json();
+    expect(json.error.type).toBe("server_error");
+    expect(json.error.code).toBe("server_error");
+    expect(json.error.message).toBe("Something went wrong");
   });
 });

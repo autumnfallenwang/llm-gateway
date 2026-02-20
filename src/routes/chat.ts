@@ -196,6 +196,14 @@ export const chatCompletionRoute = createRoute({
       },
       description: "Model not found",
     },
+    429: {
+      content: {
+        "application/json": {
+          schema: ErrorResponseSchema,
+        },
+      },
+      description: "Rate limit exceeded",
+    },
     500: {
       content: {
         "application/json": {

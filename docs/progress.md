@@ -27,12 +27,12 @@
 - Completion service translates OpenAI ↔ pi-ai (system prompt extraction, message conversion, usage/stopReason mapping)
 - Streaming uses pi-ai `stream()` → async generator yields OpenAI chunk JSON → Hono `streamSSE()` writes SSE events
 - Codex provider gets default system prompt when none provided
-- 404 with `model_not_found` for unknown models, 500 with backend error details on failure
+- 404 with `model_not_found` for unknown models, classified backend errors: 400 `context_length_exceeded`, 429 `rate_limit_exceeded`, 500 `server_error`
 - Streaming errors sent as SSE error events before stream closes
 - Image processing pipeline: `image_url` content parts → load (HTTPS/data URI) → preprocess (resize, compress, format convert) → pi-ai `ImageContent`
 - `ImageLoadError` returns 400 `invalid_request_error` (not 500) in both streaming and non-streaming paths
-- 114 unit tests passing (fast), 220 total with e2e/compatibility, 0 lint errors
-- `npm run test:fast` for dev iteration (~1.7s), `npm test` for full validation (~93s)
+- 140 unit tests passing (fast), 0 lint errors
+- `npm run test:fast` for dev iteration (~1.7s), `npm test` for full validation
 
 ## Reference Docs
 
@@ -79,7 +79,7 @@ Research complete. See [context-window-test-results.md](context-window-test-resu
 
 | # | Task | Status | Notes |
 |---|------|--------|-------|
-| 21 | Fix gateway error swallowing | Planned | `formatResponse()` maps `stopReason: "error"` → `"stop"`, hiding all pi-ai errors. Fix: check `stopReason === "error"` and classify via error chain: (1) pi-ai's `isContextOverflow()` → 400 `context_length_exceeded`, (2) our own `isRateLimited(errorMessage)` regex (`/rate.limit\|usage.limit\|429/i`) → 429 `rate_limit_exceeded`, (3) fallback → 500 `server_error`. Preserve `errorMessage` in all cases. Ollama doesn't rate limit (local). |
+| 21 | Fix gateway error swallowing | ✅ Done | `BackendError` class in `src/errors.ts`. `throwIfBackendError()` in completion service classifies errors: `isContextOverflow()` → 400, rate limit regex → 429, fallback → 500. Both streaming and non-streaming paths. 7 new tests. |
 | 22 | Add `OLLAMA_NUM_CTX` config | Planned | Env var in `src/config.ts`, passed as `num_ctx` in Ollama requests. Default 32768. Replaces Ollama's ~4096 default. Users tune based on GPU VRAM. 24GB GPU tested up to ~128k tokens with gpt-oss:20b. |
 | 23 | Expose `contextWindow` and `maxTokens` in `/v1/models` | Planned | Add non-standard fields to model response. Data already on every `Model` object. Anthropic/Codex: from pi-ai registry. Ollama: `contextWindow` from `/api/show`, `maxTokens` hardcoded default. Won't break OpenAI compatibility. Enables clients to manage context intelligently. |
 

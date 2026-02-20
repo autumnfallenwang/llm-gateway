@@ -3,6 +3,7 @@ import { OpenAPIHono } from "@hono/zod-openapi";
 import { cors } from "hono/cors";
 import { streamSSE } from "hono/streaming";
 import { APP_DESCRIPTION, APP_NAME, APP_VERSION, LLM_GATEWAY_PORT } from "./config";
+import { BackendError } from "./errors";
 import { chatCompletionRoute } from "./routes/chat";
 import { modelsRoute } from "./routes/models";
 import { validateModelsRoute } from "./routes/validate";
@@ -87,6 +88,19 @@ app.openapi(chatCompletionRoute, async (c) => {
           });
           return;
         }
+        if (err instanceof BackendError) {
+          await sseStream.writeSSE({
+            data: JSON.stringify({
+              error: {
+                message: err.message,
+                type: err.errorType,
+                param: null,
+                code: err.errorCode,
+              },
+            }),
+          });
+          return;
+        }
         const message = err instanceof Error ? err.message : "Unknown backend error";
         await sseStream.writeSSE({
           data: JSON.stringify({
@@ -130,6 +144,19 @@ app.openapi(chatCompletionRoute, async (c) => {
           },
         },
         502,
+      );
+    }
+    if (err instanceof BackendError) {
+      return c.json(
+        {
+          error: {
+            message: err.message,
+            type: err.errorType,
+            param: null,
+            code: err.errorCode,
+          },
+        },
+        err.httpStatus as 400 | 429 | 500,
       );
     }
     const message = err instanceof Error ? err.message : "Unknown backend error";
