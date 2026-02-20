@@ -184,41 +184,110 @@ export const chatCompletionRoute = createRoute({
       content: {
         "application/json": {
           schema: ErrorResponseSchema,
+          examples: {
+            validation: {
+              summary: "Request validation error",
+              value: {
+                error: {
+                  message: "Invalid type: Expected string but received undefined",
+                  type: "invalid_request_error",
+                  param: "model",
+                  code: null,
+                },
+              },
+            },
+            context_length: {
+              summary: "Context length exceeded",
+              value: {
+                error: {
+                  message: "prompt is too long: 250000 tokens > 200000 maximum context length",
+                  type: "invalid_request_error",
+                  param: null,
+                  code: "context_length_exceeded",
+                },
+              },
+            },
+            image: {
+              summary: "Invalid image",
+              value: {
+                error: {
+                  message: "Invalid image URL: unsupported scheme",
+                  type: "invalid_request_error",
+                  param: "messages",
+                  code: null,
+                },
+              },
+            },
+          },
         },
       },
-      description: "Validation error or unsupported feature",
+      description:
+        "Request validation error (missing/invalid fields), context length exceeded (prompt too long for model), or invalid image (bad URL, unsupported format, fetch failure)",
     },
     404: {
       content: {
         "application/json": {
           schema: ErrorResponseSchema,
+          example: {
+            error: {
+              message: "Model 'nonexistent-model' not found",
+              type: "invalid_request_error",
+              param: "model",
+              code: "model_not_found",
+            },
+          },
         },
       },
-      description: "Model not found",
+      description: "Model not found in any configured backend",
     },
     429: {
       content: {
         "application/json": {
           schema: ErrorResponseSchema,
+          example: {
+            error: {
+              message: "Rate limit exceeded, please retry after 30s",
+              type: "rate_limit_exceeded",
+              param: null,
+              code: "rate_limit_exceeded",
+            },
+          },
         },
       },
-      description: "Rate limit exceeded",
+      description: "Backend rate limit exceeded — retry after backoff",
     },
     500: {
       content: {
         "application/json": {
           schema: ErrorResponseSchema,
+          example: {
+            error: {
+              message: "Backend request failed: connection refused",
+              type: "server_error",
+              param: null,
+              code: "server_error",
+            },
+          },
         },
       },
-      description: "Backend error",
+      description: "Unclassified backend error (Ollama/Anthropic/Codex)",
     },
     502: {
       content: {
         "application/json": {
           schema: ErrorResponseSchema,
+          example: {
+            error: {
+              message: "Vision fallback failed: all fallback models exhausted",
+              type: "server_error",
+              param: null,
+              code: "vision_fallback_failed",
+            },
+          },
         },
       },
-      description: "Vision fallback failed",
+      description:
+        "Vision fallback failed — text-only model received an image and all vision fallback models failed",
     },
   },
 });
