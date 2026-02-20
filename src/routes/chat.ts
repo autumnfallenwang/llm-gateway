@@ -72,9 +72,9 @@ export const chatCompletionRoute = createRoute({
               },
             },
             "ollama-image": {
-              summary: "Ollama vision — llava + image URL",
+              summary: "Ollama vision — qwen3-vl:8b + image URL",
               value: {
-                model: "llava:latest",
+                model: "qwen3-vl:8b",
                 messages: [
                   {
                     role: "user",

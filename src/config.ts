@@ -51,7 +51,7 @@ export const IMAGE_LOW_DETAIL_MAX_PX = 512;
 
 /** Per-family preferred vision model (same-provider affinity) */
 export const VISION_FALLBACK_FAMILY: Record<string, string> = {
-  ollama: env.VISION_FALLBACK_OLLAMA ?? "llava",
+  ollama: env.VISION_FALLBACK_OLLAMA ?? "qwen3-vl:8b",
   anthropic: env.VISION_FALLBACK_ANTHROPIC ?? "claude-haiku-4-5",
   openai: env.VISION_FALLBACK_OPENAI ?? "gpt-4o-mini",
 };
@@ -59,7 +59,7 @@ export const VISION_FALLBACK_FAMILY: Record<string, string> = {
 /** General fallback chain if family model unavailable (comma-separated env override) */
 export const VISION_FALLBACK_GENERAL: string[] = env.VISION_FALLBACK_GENERAL
   ? env.VISION_FALLBACK_GENERAL.split(",").map((s) => s.trim())
-  : ["llava", "claude-haiku-4-5", "gpt-4o-mini"];
+  : ["qwen3-vl:8b", "claude-haiku-4-5", "gpt-4o-mini"];
 
 export const VISION_FALLBACK_MAX_DESCRIPTION_CHARS = Number(
   env.VISION_FALLBACK_MAX_DESCRIPTION_CHARS ?? 1000,

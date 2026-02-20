@@ -229,7 +229,7 @@ describe("applyVisionFallback", () => {
     setupImageMocks();
     completeMock.mockResolvedValue(makeAssistantMessage());
     resolveModelMock.mockImplementation((id: string) => {
-      if (id === "llava")
+      if (id === "qwen3-vl:8b")
         return makeVisionResolved({
           id,
           provider: "ollama",
@@ -247,7 +247,7 @@ describe("applyVisionFallback", () => {
 
     await applyVisionFallback(body, makeResolved({ provider: "ollama" }));
 
-    expect(resolveModelMock).toHaveBeenCalledWith("llava");
+    expect(resolveModelMock).toHaveBeenCalledWith("qwen3-vl:8b");
   });
 
   it("maps codex provider to openai family", async () => {
@@ -275,7 +275,7 @@ describe("applyVisionFallback", () => {
     completeMock.mockResolvedValue(makeAssistantMessage());
     // Family model not found, first general chain model found
     resolveModelMock.mockImplementation((id: string) => {
-      if (id === "llava") return makeVisionResolved({ id, provider: "ollama" });
+      if (id === "qwen3-vl:8b") return makeVisionResolved({ id, provider: "ollama" });
       return undefined;
     });
 
@@ -290,7 +290,7 @@ describe("applyVisionFallback", () => {
 
     // First tried family model, then general chain
     expect(resolveModelMock).toHaveBeenCalledWith("claude-haiku-4-5");
-    expect(resolveModelMock).toHaveBeenCalledWith("llava");
+    expect(resolveModelMock).toHaveBeenCalledWith("qwen3-vl:8b");
   });
 
   it("falls through to general chain when family model lacks vision", async () => {
@@ -300,7 +300,7 @@ describe("applyVisionFallback", () => {
       // Family model exists but is text-only
       if (id === "claude-haiku-4-5") return makeResolved({ id });
       // General chain model has vision
-      if (id === "llava") return makeVisionResolved({ id, provider: "ollama" });
+      if (id === "qwen3-vl:8b") return makeVisionResolved({ id, provider: "ollama" });
       return undefined;
     });
 
@@ -314,7 +314,7 @@ describe("applyVisionFallback", () => {
     await applyVisionFallback(body, makeResolved({ provider: "anthropic" }));
 
     expect(resolveModelMock).toHaveBeenCalledWith("claude-haiku-4-5");
-    expect(resolveModelMock).toHaveBeenCalledWith("llava");
+    expect(resolveModelMock).toHaveBeenCalledWith("qwen3-vl:8b");
   });
 
   it("throws VisionFallbackError when no fallback model available", async () => {

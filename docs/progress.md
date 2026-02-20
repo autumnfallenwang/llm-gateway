@@ -65,7 +65,7 @@ When target model doesn't support images, describe via a vision model first. Fix
 
 | # | Task | Status | Notes |
 |---|------|--------|-------|
-| 15 | Fallback model config | ✅ Done | Family-first + general fallback. Per-family vision model (ollama→`llava`, anthropic→`claude-haiku-4-5`, openai→`gpt-4o-mini`) then general chain. All env-var overridable. Config in `src/config.ts`. |
+| 15 | Fallback model config | ✅ Done | Family-first + general fallback. Per-family vision model (ollama→`qwen3-vl:8b`, anthropic→`claude-haiku-4-5`, openai→`gpt-4o-mini`) then general chain. All env-var overridable. Config in `src/config.ts`. |
 | 16 | Vision fallback service | ✅ Done | `src/services/image/fallback.ts` — `applyVisionFallback()` intercepts non-vision models, describes images via family-first + general chain fallback, replaces image parts with text. `VisionFallbackError` → 502 in both streaming/non-streaming. Integrated into `createCompletion` + `createStreamingCompletion`. |
 | 17 | Unit tests for vision fallback | ✅ Done | `tests/vision-fallback.test.ts` — 20 tests covering skip paths, fallback model selection (family-first + general chain), image description & replacement, truncation, error handling. |
 | 19 | Detect Ollama vision models | ✅ Done | `fetchModelCapabilities()` calls `/api/show` per model, detects `"vision"` capability, extracts `context_length` from `model_info`. `buildOllamaModel` sets `input: ["text", "image"]` for vision models. |
@@ -90,7 +90,7 @@ See [backlog.md](backlog.md) for full details and research notes.
 
 | # | Task | Status | Notes |
 |---|------|--------|-------|
-| 24 | Replace llava with qwen3-vl:8b as default vision fallback | Planned | Change `VISION_FALLBACK_OLLAMA` default in `src/config.ts`. qwen3-vl:8b has DocVQA ~96 vs llava ~70s, supports video, 256K context, 6.1 GB. Also update general fallback chain. |
+| 24 | Replace llava with qwen3-vl:8b as default vision fallback | ✅ Done | Changed `VISION_FALLBACK_OLLAMA` and `VISION_FALLBACK_GENERAL` defaults from `llava` to `qwen3-vl:8b` in `src/config.ts`. Updated Swagger example, CLAUDE.md docs, and vision-fallback tests. |
 | 25 | Enrich /v1/models with validation status | Planned | Return ALL models with `status` (`ok`/`error`/`unknown`), `status_detail`, `validated_at` instead of filtering out failed models. Update `ModelObjectSchema`, remove filter logic in app handler. |
 | 26 | `llmgw update` — dependency update pipeline | Planned | New CLI subcommand: `npm outdated` → `npm update` → `npm test` → rebuild or rollback. Full dep scope. |
 | 27 | Add Gemini provider support | Planned | Fourth backend via pi-ai `google-gemini-cli`. Auth from `~/.gemini/oauth_creds.json` (OAuth token + projectId via `loadCodeAssist` API). Models: gemini-2.0-flash, 2.5-flash, 2.5-pro, 3-flash-preview, 3-pro-preview. Smoke tested with pi-ai `complete()`. Changes: auth.ts, config.ts, registry.ts, completion.ts, vision fallback, tests. |
