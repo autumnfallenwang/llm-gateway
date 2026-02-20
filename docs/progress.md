@@ -11,7 +11,7 @@
 | 5 | Completion service | ✅ Done | `src/services/completion.ts` — OpenAI ↔ pi-ai translation, Codex system prompt fallback |
 | 6 | Routes | ✅ Done | `src/routes/{chat,models,validate}.ts` — OpenAPI route defs with request examples |
 | 7 | App + server wiring | ✅ Done | All handlers wired: chat completions, models list (with validation filtering), model validation |
-| 8 | Tests | ✅ Done | 9 test files, 114 fast / 192 total tests |
+| 8 | Tests | ✅ Done | 9 test files, 143 fast / 230 total tests |
 | 9 | Model validation | ✅ Done | `src/services/validation.ts` — tests every model with real completion, saves to `~/.llm-gateway/models.json` |
 | 10 | Streaming support | ✅ Done | SSE streaming via `stream: true` — all three backends (Ollama, Anthropic, Codex) |
 
@@ -21,7 +21,7 @@
 - Full request validation with OpenAI-format errors (`message`, `type`, `param`, `code`)
 - `POST /v1/chat/completions` → routes to Ollama/Anthropic/Codex via pi-ai, returns OpenAI-format response
 - `POST /v1/chat/completions` with `stream: true` → SSE streaming with `chat.completion.chunk` objects, `data: [DONE]` sentinel
-- `GET /v1/models` → returns only validated models (if validation has been run), all models otherwise
+- `GET /v1/models` → returns only validated models (if validation has been run), all models otherwise; includes `context_window` and `max_tokens` per model
 - `POST /v1/models/validate` → tests every registered model, saves results to `~/.llm-gateway/models.json`, filters broken models from `GET /v1/models`
 - Model registry discovers Ollama, Anthropic, Codex models at startup
 - Completion service translates OpenAI ↔ pi-ai (system prompt extraction, message conversion, usage/stopReason mapping)
@@ -31,7 +31,8 @@
 - Streaming errors sent as SSE error events before stream closes
 - Image processing pipeline: `image_url` content parts → load (HTTPS/data URI) → preprocess (resize, compress, format convert) → pi-ai `ImageContent`
 - `ImageLoadError` returns 400 `invalid_request_error` (not 500) in both streaming and non-streaming paths
-- 140 unit tests passing (fast), 0 lint errors
+- Ollama `num_ctx` injection: configurable via `OLLAMA_NUM_CTX` env var (default 32768), replaces Ollama's wasteful ~4096 default
+- 143 unit tests passing (fast), 0 lint errors, 0 lint warnings
 - `npm run test:fast` for dev iteration (~1.7s), `npm test` for full validation
 
 ## Reference Docs
@@ -80,10 +81,11 @@ Research complete. See [context-window-test-results.md](context-window-test-resu
 | # | Task | Status | Notes |
 |---|------|--------|-------|
 | 21 | Fix gateway error swallowing | ✅ Done | `BackendError` class in `src/errors.ts`. `throwIfBackendError()` in completion service classifies errors: `isContextOverflow()` → 400, rate limit regex → 429, fallback → 500. Both streaming and non-streaming paths. 7 new tests. |
-| 22 | Add `OLLAMA_NUM_CTX` config | Planned | Env var in `src/config.ts`, passed as `num_ctx` in Ollama requests. Default 32768. Replaces Ollama's ~4096 default. Users tune based on GPU VRAM. 24GB GPU tested up to ~128k tokens with gpt-oss:20b. |
-| 23 | Expose `contextWindow` and `maxTokens` in `/v1/models` | Planned | Add non-standard fields to model response. Data already on every `Model` object. Anthropic/Codex: from pi-ai registry. Ollama: `contextWindow` from `/api/show`, `maxTokens` hardcoded default. Won't break OpenAI compatibility. Enables clients to manage context intelligently. |
+| 22 | Add `OLLAMA_NUM_CTX` config | ✅ Done | `OLLAMA_NUM_CTX` env var (default 32768) in `src/config.ts`. Injected via pi-ai `onPayload` callback in `buildOptions()` for Ollama providers. 2 new tests in `completion.test.ts`. |
+| 23 | Expose `contextWindow` and `maxTokens` in `/v1/models` | ✅ Done | `context_window` and `max_tokens` added to `ModelObjectSchema` (optional ints). `listModels()` maps pi-ai `contextWindow`/`maxTokens` to snake_case. 1 new test in `app.test.ts`. |
 
 ## Previous Milestones
 
 Phase 1 backend + streaming + Docker deploy complete. See tasks 1–10 above.
 Phase 2 image processing pipeline complete. See tasks 11–20 above.
+Phase 3 context window management complete. See tasks 21–23 above.
