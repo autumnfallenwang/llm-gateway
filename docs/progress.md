@@ -6,24 +6,24 @@
 |---|------|--------|-------|
 | 1 | Project setup | ✅ Done | Hono + Biome + Vitest + tsx, all config files |
 | 2 | Zod schemas | ✅ Done | `src/schemas/{error,chat,models,validate}.ts` |
-| 3 | Auth module | ✅ Done | `src/services/auth.ts` — Anthropic OAuth + Codex JWT |
+| 3 | Auth module | ✅ Done | `src/services/auth.ts` — Anthropic OAuth + Codex JWT + Gemini OAuth |
 | 4 | Model registry | ✅ Done | `src/services/registry.ts` + `src/lib/ollama.ts` — discover & resolve models |
 | 5 | Completion service | ✅ Done | `src/services/completion.ts` — OpenAI ↔ pi-ai translation, Codex system prompt fallback |
 | 6 | Routes | ✅ Done | `src/routes/{chat,models,validate}.ts` — OpenAPI route defs with request examples |
 | 7 | App + server wiring | ✅ Done | All handlers wired: chat completions, models list (with validation filtering), model validation |
-| 8 | Tests | ✅ Done | 9 test files, 146 fast / 230+ total tests |
+| 8 | Tests | ✅ Done | 10 test files, 151 fast / 244 total tests |
 | 9 | Model validation | ✅ Done | `src/services/validation.ts` — tests every model with real completion, saves to `~/.llm-gateway/models.json` |
-| 10 | Streaming support | ✅ Done | SSE streaming via `stream: true` — all three backends (Ollama, Anthropic, Codex) |
+| 10 | Streaming support | ✅ Done | SSE streaming via `stream: true` — all four backends (Ollama, Anthropic, Codex, Gemini) |
 
 ## What's Working
 
 - `npm run dev` → `:51277`, Swagger UI at `/docs`
 - Full request validation with OpenAI-format errors (`message`, `type`, `param`, `code`)
-- `POST /v1/chat/completions` → routes to Ollama/Anthropic/Codex via pi-ai, returns OpenAI-format response
+- `POST /v1/chat/completions` → routes to Ollama/Anthropic/Codex/Gemini via pi-ai, returns OpenAI-format response
 - `POST /v1/chat/completions` with `stream: true` → SSE streaming with `chat.completion.chunk` objects, `data: [DONE]` sentinel
 - `GET /v1/models` → returns ALL models with `status` (`ok`/`error`/`unknown`), `status_detail`, `validated_at` fields; includes `context_window` and `max_tokens` per model
 - `POST /v1/models/validate` → tests every registered model, saves results to `~/.llm-gateway/models.json`
-- Model registry discovers Ollama, Anthropic, Codex models at startup
+- Model registry discovers Ollama, Anthropic, Codex, Gemini models at startup
 - Completion service translates OpenAI ↔ pi-ai (system prompt extraction, message conversion, usage/stopReason mapping)
 - Streaming uses pi-ai `stream()` → async generator yields OpenAI chunk JSON → Hono `streamSSE()` writes SSE events
 - Codex provider gets default system prompt when none provided
@@ -32,7 +32,8 @@
 - Image processing pipeline: `image_url` content parts → load (HTTPS/data URI) → preprocess (resize, compress, format convert) → pi-ai `ImageContent`
 - `ImageLoadError` returns 400 `invalid_request_error` (not 500) in both streaming and non-streaming paths
 - Ollama `num_ctx` injection: configurable via `OLLAMA_NUM_CTX` env var (default 32768), replaces Ollama's wasteful ~4096 default
-- 146 unit tests passing (fast), 0 lint errors, 0 lint warnings
+- Gemini OAuth: token refresh via pi-ai `refreshGoogleCloudToken`, project discovery via `loadCodeAssist` API, persists refreshed tokens
+- 151 unit tests passing (fast), 244 total tests, 0 lint errors, 0 lint warnings
 - `npm run test:fast` for dev iteration (~1.7s), `npm test` for full validation
 
 ## Reference Docs
@@ -70,7 +71,7 @@ When target model doesn't support images, describe via a vision model first. Fix
 | 17 | Unit tests for vision fallback | ✅ Done | `tests/vision-fallback.test.ts` — 20 tests covering skip paths, fallback model selection (family-first + general chain), image description & replacement, truncation, error handling. |
 | 19 | Detect Ollama vision models | ✅ Done | `fetchModelCapabilities()` calls `/api/show` per model, detects `"vision"` capability, extracts `context_length` from `model_info`. `buildOllamaModel` sets `input: ["text", "image"]` for vision models. |
 | 20 | Tests for Ollama vision detection | ✅ Done | `tests/ollama.test.ts` — 16 tests (fetchModelCapabilities, extractContextLength, buildOllamaModel). 3 new integration tests in `tests/registry.test.ts`. |
-| 18 | E2E tests for image pipeline | ✅ Done | 9 tests: direct vision (data URI + HTTPS URL × 3 backends), vision fallback (Ollama text-only), streaming vision, error handling (invalid data URI). |
+| 18 | E2E tests for image pipeline | ✅ Done | 13 tests: direct vision (data URI + HTTPS URL × 4 backends), vision fallback (Ollama text-only), streaming vision, error handling (invalid data URI). |
 
 ## Phase 3: Context Window Management
 
@@ -92,7 +93,7 @@ See [backlog.md](backlog.md) for full details and research notes.
 |---|------|--------|-------|
 | 24 | Replace llava with qwen3-vl:8b as default vision fallback | ✅ Done | Changed `VISION_FALLBACK_OLLAMA` and `VISION_FALLBACK_GENERAL` defaults from `llava` to `qwen3-vl:8b` in `src/config.ts`. Updated Swagger example, CLAUDE.md docs, and vision-fallback tests. |
 | 25 | Enrich /v1/models with validation status | ✅ Done | `ModelObjectSchema` gains `status`, `status_detail`, `validated_at`. App handler enriches ALL models instead of filtering. 3 new tests in `app.test.ts`. |
-| 26 | `llmgw update` — dependency update pipeline | Planned | New CLI subcommand: `npm outdated` → `npm update` → `npm test` → rebuild or rollback. Full dep scope. |
+| 26 | `llmgw update` — dependency update pipeline | ✅ Done | CLI subcommand: `npm outdated` → `npm update` → `npm test` → rebuild or rollback. Full dep scope. |
 | 27 | Add Gemini provider support | ✅ Done | Fourth backend via pi-ai `google-gemini-cli`. Auth from `~/.gemini/oauth_creds.json` (OAuth token refresh + projectId via `loadCodeAssist` API). Config, auth, registry, vision fallback, route examples, unit + e2e tests all updated. |
 
 ## Previous Milestones
@@ -100,3 +101,4 @@ See [backlog.md](backlog.md) for full details and research notes.
 Phase 1 backend + streaming + Docker deploy complete. See tasks 1–10 above.
 Phase 2 image processing pipeline complete. See tasks 11–20 above.
 Phase 3 context window management complete. See tasks 21–23 above.
+Phase 4 provider expansion & tooling complete. See tasks 24–27 above.

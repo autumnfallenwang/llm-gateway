@@ -1,6 +1,6 @@
 # LLM Gateway
 
-Self-hosted OpenAI-compatible API gateway. Routes requests to Ollama, Anthropic, Codex via pi-ai.
+Self-hosted OpenAI-compatible API gateway. Routes requests to Ollama, Anthropic, Codex, Gemini via pi-ai.
 
 ## Stack
 
