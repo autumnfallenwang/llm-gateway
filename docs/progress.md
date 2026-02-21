@@ -11,7 +11,7 @@
 | 5 | Completion service | ✅ Done | `src/services/completion.ts` — OpenAI ↔ pi-ai translation, Codex system prompt fallback |
 | 6 | Routes | ✅ Done | `src/routes/{chat,models,validate}.ts` — OpenAPI route defs with request examples |
 | 7 | App + server wiring | ✅ Done | All handlers wired: chat completions, models list (with validation filtering), model validation |
-| 8 | Tests | ✅ Done | 9 test files, 143 fast / 230 total tests |
+| 8 | Tests | ✅ Done | 9 test files, 146 fast / 230+ total tests |
 | 9 | Model validation | ✅ Done | `src/services/validation.ts` — tests every model with real completion, saves to `~/.llm-gateway/models.json` |
 | 10 | Streaming support | ✅ Done | SSE streaming via `stream: true` — all three backends (Ollama, Anthropic, Codex) |
 
@@ -21,8 +21,8 @@
 - Full request validation with OpenAI-format errors (`message`, `type`, `param`, `code`)
 - `POST /v1/chat/completions` → routes to Ollama/Anthropic/Codex via pi-ai, returns OpenAI-format response
 - `POST /v1/chat/completions` with `stream: true` → SSE streaming with `chat.completion.chunk` objects, `data: [DONE]` sentinel
-- `GET /v1/models` → returns only validated models (if validation has been run), all models otherwise; includes `context_window` and `max_tokens` per model
-- `POST /v1/models/validate` → tests every registered model, saves results to `~/.llm-gateway/models.json`, filters broken models from `GET /v1/models`
+- `GET /v1/models` → returns ALL models with `status` (`ok`/`error`/`unknown`), `status_detail`, `validated_at` fields; includes `context_window` and `max_tokens` per model
+- `POST /v1/models/validate` → tests every registered model, saves results to `~/.llm-gateway/models.json`
 - Model registry discovers Ollama, Anthropic, Codex models at startup
 - Completion service translates OpenAI ↔ pi-ai (system prompt extraction, message conversion, usage/stopReason mapping)
 - Streaming uses pi-ai `stream()` → async generator yields OpenAI chunk JSON → Hono `streamSSE()` writes SSE events
@@ -32,7 +32,7 @@
 - Image processing pipeline: `image_url` content parts → load (HTTPS/data URI) → preprocess (resize, compress, format convert) → pi-ai `ImageContent`
 - `ImageLoadError` returns 400 `invalid_request_error` (not 500) in both streaming and non-streaming paths
 - Ollama `num_ctx` injection: configurable via `OLLAMA_NUM_CTX` env var (default 32768), replaces Ollama's wasteful ~4096 default
-- 143 unit tests passing (fast), 0 lint errors, 0 lint warnings
+- 146 unit tests passing (fast), 0 lint errors, 0 lint warnings
 - `npm run test:fast` for dev iteration (~1.7s), `npm test` for full validation
 
 ## Reference Docs
@@ -91,7 +91,7 @@ See [backlog.md](backlog.md) for full details and research notes.
 | # | Task | Status | Notes |
 |---|------|--------|-------|
 | 24 | Replace llava with qwen3-vl:8b as default vision fallback | ✅ Done | Changed `VISION_FALLBACK_OLLAMA` and `VISION_FALLBACK_GENERAL` defaults from `llava` to `qwen3-vl:8b` in `src/config.ts`. Updated Swagger example, CLAUDE.md docs, and vision-fallback tests. |
-| 25 | Enrich /v1/models with validation status | Planned | Return ALL models with `status` (`ok`/`error`/`unknown`), `status_detail`, `validated_at` instead of filtering out failed models. Update `ModelObjectSchema`, remove filter logic in app handler. |
+| 25 | Enrich /v1/models with validation status | ✅ Done | `ModelObjectSchema` gains `status`, `status_detail`, `validated_at`. App handler enriches ALL models instead of filtering. 3 new tests in `app.test.ts`. |
 | 26 | `llmgw update` — dependency update pipeline | Planned | New CLI subcommand: `npm outdated` → `npm update` → `npm test` → rebuild or rollback. Full dep scope. |
 | 27 | Add Gemini provider support | Planned | Fourth backend via pi-ai `google-gemini-cli`. Auth from `~/.gemini/oauth_creds.json` (OAuth token + projectId via `loadCodeAssist` API). Models: gemini-2.0-flash, 2.5-flash, 2.5-pro, 3-flash-preview, 3-pro-preview. Smoke tested with pi-ai `complete()`. Changes: auth.ts, config.ts, registry.ts, completion.ts, vision fallback, tests. |
 

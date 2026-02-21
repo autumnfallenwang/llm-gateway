@@ -20,6 +20,20 @@ export const ModelObjectSchema = z.object({
     .int()
     .optional()
     .openapi({ description: "Maximum output tokens per completion" }),
+  status: z
+    .enum(["ok", "error", "unknown"])
+    .optional()
+    .openapi({ description: "Validation status: ok, error, or unknown (never validated)" }),
+  status_detail: z
+    .string()
+    .nullable()
+    .optional()
+    .openapi({ description: "Error message when status is 'error', null otherwise" }),
+  validated_at: z
+    .string()
+    .nullable()
+    .optional()
+    .openapi({ description: "ISO 8601 timestamp of last validation run, null if never validated" }),
 });
 
 export const ModelsResponseSchema = z.object({

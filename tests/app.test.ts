@@ -249,12 +249,17 @@ describe("POST /v1/chat/completions", () => {
 });
 
 describe("GET /v1/models", () => {
-  it("returns models list shape", async () => {
+  it("returns models list shape with status fields", async () => {
     const res = await app.request("/v1/models");
     expect(res.status).toBe(200);
     const json = await res.json();
     expect(json.object).toBe("list");
     expect(Array.isArray(json.data)).toBe(true);
+    for (const model of json.data) {
+      expect(model).toHaveProperty("status");
+      expect(model).toHaveProperty("status_detail");
+      expect(model).toHaveProperty("validated_at");
+    }
   });
 
   it("returns context_window and max_tokens for each model", async () => {
@@ -283,6 +288,148 @@ describe("GET /v1/models", () => {
     expect(model).toBeDefined();
     expect(model.context_window).toBe(8192);
     expect(model.max_tokens).toBe(2048);
+  });
+
+  it("enriches models with validation status from report", async () => {
+    const { loadRegistry } = await import("../src/services/registry");
+    const { fetchOllamaModels } = await import("../src/lib/ollama");
+    const { readValidationReport } = await import("../src/services/validation");
+
+    vi.mocked(fetchOllamaModels).mockResolvedValueOnce([
+      {
+        id: "good-model",
+        name: "good-model",
+        api: "openai-completions",
+        provider: "ollama",
+        baseUrl: "",
+        reasoning: false,
+        input: ["text"],
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+        contextWindow: 4096,
+        maxTokens: 4096,
+      },
+      {
+        id: "bad-model",
+        name: "bad-model",
+        api: "openai-completions",
+        provider: "ollama",
+        baseUrl: "",
+        reasoning: false,
+        input: ["text"],
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+        contextWindow: 4096,
+        maxTokens: 4096,
+      },
+    ]);
+    await loadRegistry();
+
+    vi.mocked(readValidationReport).mockResolvedValueOnce({
+      validatedAt: "2026-01-15T10:00:00.000Z",
+      models: {
+        "good-model": { status: "ok", latencyMs: 100 },
+        "bad-model": { status: "error", error: "connection refused" },
+      },
+    });
+
+    const res = await app.request("/v1/models");
+    expect(res.status).toBe(200);
+    const json = await res.json();
+
+    const good = json.data.find((m: { id: string }) => m.id === "good-model");
+    expect(good.status).toBe("ok");
+    expect(good.status_detail).toBeNull();
+    expect(good.validated_at).toBe("2026-01-15T10:00:00.000Z");
+
+    const bad = json.data.find((m: { id: string }) => m.id === "bad-model");
+    expect(bad.status).toBe("error");
+    expect(bad.status_detail).toBe("connection refused");
+    expect(bad.validated_at).toBe("2026-01-15T10:00:00.000Z");
+  });
+
+  it("returns status 'unknown' when no validation report exists", async () => {
+    const { loadRegistry } = await import("../src/services/registry");
+    const { fetchOllamaModels } = await import("../src/lib/ollama");
+    const { readValidationReport } = await import("../src/services/validation");
+
+    vi.mocked(fetchOllamaModels).mockResolvedValueOnce([
+      {
+        id: "some-model",
+        name: "some-model",
+        api: "openai-completions",
+        provider: "ollama",
+        baseUrl: "",
+        reasoning: false,
+        input: ["text"],
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+        contextWindow: 4096,
+        maxTokens: 4096,
+      },
+    ]);
+    await loadRegistry();
+
+    vi.mocked(readValidationReport).mockResolvedValueOnce(null);
+
+    const res = await app.request("/v1/models");
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    const model = json.data.find((m: { id: string }) => m.id === "some-model");
+    expect(model.status).toBe("unknown");
+    expect(model.status_detail).toBeNull();
+    expect(model.validated_at).toBeNull();
+  });
+
+  it("returns status 'unknown' for models not in validation report", async () => {
+    const { loadRegistry } = await import("../src/services/registry");
+    const { fetchOllamaModels } = await import("../src/lib/ollama");
+    const { readValidationReport } = await import("../src/services/validation");
+
+    vi.mocked(fetchOllamaModels).mockResolvedValueOnce([
+      {
+        id: "known-model",
+        name: "known-model",
+        api: "openai-completions",
+        provider: "ollama",
+        baseUrl: "",
+        reasoning: false,
+        input: ["text"],
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+        contextWindow: 4096,
+        maxTokens: 4096,
+      },
+      {
+        id: "new-model",
+        name: "new-model",
+        api: "openai-completions",
+        provider: "ollama",
+        baseUrl: "",
+        reasoning: false,
+        input: ["text"],
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+        contextWindow: 4096,
+        maxTokens: 4096,
+      },
+    ]);
+    await loadRegistry();
+
+    vi.mocked(readValidationReport).mockResolvedValueOnce({
+      validatedAt: "2026-01-15T10:00:00.000Z",
+      models: {
+        "known-model": { status: "ok", latencyMs: 50 },
+      },
+    });
+
+    const res = await app.request("/v1/models");
+    expect(res.status).toBe(200);
+    const json = await res.json();
+
+    const known = json.data.find((m: { id: string }) => m.id === "known-model");
+    expect(known.status).toBe("ok");
+    expect(known.validated_at).toBe("2026-01-15T10:00:00.000Z");
+
+    const newModel = json.data.find((m: { id: string }) => m.id === "new-model");
+    expect(newModel.status).toBe("unknown");
+    expect(newModel.status_detail).toBeNull();
+    expect(newModel.validated_at).toBe("2026-01-15T10:00:00.000Z");
   });
 });
 

@@ -179,12 +179,27 @@ app.openapi(modelsRoute, async (c) => {
   const allModels = listModels();
   const report = await readValidationReport();
 
-  if (!report) {
-    return c.json({ object: "list" as const, data: allModels }, 200);
-  }
-
-  const filtered = allModels.filter((m) => report.models[m.id]?.status === "ok");
-  return c.json({ object: "list" as const, data: filtered }, 200);
+  const enriched = allModels.map((m) => {
+    if (!report) {
+      return { ...m, status: "unknown" as const, status_detail: null, validated_at: null };
+    }
+    const result = report.models[m.id];
+    if (!result) {
+      return {
+        ...m,
+        status: "unknown" as const,
+        status_detail: null,
+        validated_at: report.validatedAt,
+      };
+    }
+    return {
+      ...m,
+      status: result.status,
+      status_detail: result.error ?? null,
+      validated_at: report.validatedAt,
+    };
+  });
+  return c.json({ object: "list" as const, data: enriched }, 200);
 });
 
 // Model validation
