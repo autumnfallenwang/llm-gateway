@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
@@ -9,10 +10,38 @@ export const LLM_GATEWAY_PORT = Number(env.LLM_GATEWAY_PORT ?? 51277);
 
 // ── App metadata ───────────────────────────────────────────────────────────
 
+const pkg = JSON.parse(readFileSync(join(import.meta.dirname, "..", "package.json"), "utf-8")) as {
+  version: string;
+};
+
 export const APP_NAME = "llm-gateway";
-export const APP_VERSION = "0.1.0";
-export const APP_DESCRIPTION =
-  "Self-hosted OpenAI-compatible API gateway for multiple LLM backends";
+export const APP_VERSION: string = pkg.version;
+export const APP_DESCRIPTION = `Self-hosted OpenAI-compatible API gateway that routes requests to multiple LLM backends (Ollama, Anthropic, Codex, Gemini) through a unified OpenAI-format API.
+
+## Quick Start
+
+Use any OpenAI-compatible SDK with \`baseURL\` pointed at this gateway. No API key is required — authentication to upstream providers is handled server-side.
+
+\`\`\`python
+from openai import OpenAI
+client = OpenAI(base_url="http://localhost:${LLM_GATEWAY_PORT}/v1", api_key="unused")
+response = client.chat.completions.create(
+    model="qwen3:30b",  # or claude-haiku-4-5, gpt-5.1, gemini-2.5-flash
+    messages=[{"role": "user", "content": "Hello!"}],
+)
+\`\`\`
+
+## Available Models
+
+Models are dynamic — they depend on which backends are configured. Call \`GET /v1/models\` to discover available models at runtime. Each model's \`owned_by\` field indicates its backend: \`ollama\`, \`anthropic\`, \`openai-codex\`, or \`google-gemini-cli\`.
+
+## Streaming
+
+Set \`stream: true\` to receive Server-Sent Events. Each event is \`data: {chunk_json}\\n\\n\` with object type \`chat.completion.chunk\`. The stream ends with \`data: [DONE]\\n\\n\`. OpenAI SDKs handle this automatically.
+
+## Vision
+
+Send images via \`image_url\` content parts (HTTPS URLs or data URIs). Vision-capable models process images directly. Non-vision models automatically fall back to a vision model that describes the image as text.`;
 
 // ── Ollama ─────────────────────────────────────────────────────────────────
 

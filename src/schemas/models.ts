@@ -7,9 +7,9 @@ export const ModelObjectSchema = z.object({
     .number()
     .int()
     .openapi({ description: "Unix timestamp of model creation or last modification" }),
-  owned_by: z
-    .string()
-    .openapi({ description: "Model provider: 'ollama', 'anthropic', or 'codex'" }),
+  owned_by: z.string().openapi({
+    description: "Model provider: 'ollama', 'anthropic', 'openai-codex', or 'google-gemini-cli'",
+  }),
   context_window: z
     .number()
     .int()
