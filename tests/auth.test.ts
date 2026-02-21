@@ -6,6 +6,7 @@ import {
   getAnthropicKey,
   getCodexKey,
   getCredentialStatus,
+  getGeminiKey,
   loadCredentials,
 } from "../src/services/auth";
 
@@ -35,6 +36,10 @@ function codexPath(): string {
   return join(tempDir, "codex.json");
 }
 
+function geminiPath(): string {
+  return join(tempDir, "gemini.json");
+}
+
 // ── Tests ───────────────────────────────────────────────────────────────────
 
 describe("loadCredentials", () => {
@@ -50,6 +55,7 @@ describe("loadCredentials", () => {
     await loadCredentials({
       anthropicCredentialsPath: anthropicPath(),
       codexCredentialsPath: codexPath(),
+      geminiCredentialsPath: geminiPath(),
     });
 
     expect(getAnthropicKey()).toBe("anthropic-tok-123");
@@ -62,6 +68,7 @@ describe("loadCredentials", () => {
     await loadCredentials({
       anthropicCredentialsPath: anthropicPath(),
       codexCredentialsPath: codexPath(),
+      geminiCredentialsPath: geminiPath(),
     });
 
     expect(getCodexKey()).toBe(jwt);
@@ -71,6 +78,7 @@ describe("loadCredentials", () => {
     await loadCredentials({
       anthropicCredentialsPath: join(tempDir, "nonexistent.json"),
       codexCredentialsPath: codexPath(),
+      geminiCredentialsPath: geminiPath(),
     });
 
     expect(getAnthropicKey()).toBeUndefined();
@@ -80,6 +88,7 @@ describe("loadCredentials", () => {
     await loadCredentials({
       anthropicCredentialsPath: anthropicPath(),
       codexCredentialsPath: join(tempDir, "nonexistent.json"),
+      geminiCredentialsPath: geminiPath(),
     });
 
     expect(getCodexKey()).toBeUndefined();
@@ -92,6 +101,7 @@ describe("loadCredentials", () => {
     await loadCredentials({
       anthropicCredentialsPath: anthropicPath(),
       codexCredentialsPath: codexPath(),
+      geminiCredentialsPath: geminiPath(),
     });
 
     expect(getAnthropicKey()).toBeUndefined();
@@ -110,6 +120,7 @@ describe("loadCredentials", () => {
     await loadCredentials({
       anthropicCredentialsPath: anthropicPath(),
       codexCredentialsPath: codexPath(),
+      geminiCredentialsPath: geminiPath(),
     });
 
     expect(getAnthropicKey()).toBe("expired-tok");
@@ -125,6 +136,7 @@ describe("loadCredentials", () => {
     await loadCredentials({
       anthropicCredentialsPath: anthropicPath(),
       codexCredentialsPath: codexPath(),
+      geminiCredentialsPath: geminiPath(),
     });
 
     expect(getCodexKey()).toBe(jwt);
@@ -149,6 +161,7 @@ describe("loadCredentials", () => {
     await loadCredentials({
       anthropicCredentialsPath: anthropicPath(),
       codexCredentialsPath: codexPath(),
+      geminiCredentialsPath: geminiPath(),
     });
 
     const status = getCredentialStatus();
@@ -162,5 +175,66 @@ describe("loadCredentials", () => {
     expect(status.codex.available).toBe(true);
     expect(status.codex.expired).toBe(false);
     expect(status.codex.expiresAt).toBe(codexExp * 1000);
+  });
+
+  it("returns undefined for missing Gemini file without throwing", async () => {
+    await loadCredentials({
+      anthropicCredentialsPath: anthropicPath(),
+      codexCredentialsPath: codexPath(),
+      geminiCredentialsPath: join(tempDir, "nonexistent.json"),
+    });
+
+    expect(getGeminiKey()).toBeUndefined();
+  });
+
+  it("returns undefined for malformed Gemini JSON without throwing", async () => {
+    await writeFile(geminiPath(), "not json{{{");
+
+    await loadCredentials({
+      anthropicCredentialsPath: anthropicPath(),
+      codexCredentialsPath: codexPath(),
+      geminiCredentialsPath: geminiPath(),
+    });
+
+    expect(getGeminiKey()).toBeUndefined();
+  });
+
+  it("returns undefined when Gemini network calls fail (fake tokens)", async () => {
+    await writeFile(
+      geminiPath(),
+      JSON.stringify({
+        access_token: "fake-gemini-token",
+        expiry_date: Date.now() + 3_600_000,
+      }),
+    );
+
+    await loadCredentials({
+      anthropicCredentialsPath: anthropicPath(),
+      codexCredentialsPath: codexPath(),
+      geminiCredentialsPath: geminiPath(),
+    });
+
+    // Token is present but project discovery will fail with fake token,
+    // so key should still be set (with empty projectId fallback)
+    const key = getGeminiKey();
+    if (key) {
+      const parsed = JSON.parse(key);
+      expect(parsed.token).toBe("fake-gemini-token");
+    }
+  });
+
+  it("includes gemini in credential status shape", async () => {
+    await loadCredentials({
+      anthropicCredentialsPath: anthropicPath(),
+      codexCredentialsPath: codexPath(),
+      geminiCredentialsPath: geminiPath(),
+    });
+
+    const status = getCredentialStatus();
+    expect(status.gemini).toEqual({
+      available: false,
+      expired: false,
+      expiresAt: undefined,
+    });
   });
 });

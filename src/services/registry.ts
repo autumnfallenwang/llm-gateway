@@ -1,12 +1,12 @@
 import { getModels, type Model } from "@mariozechner/pi-ai";
 import { fetchOllamaModels } from "../lib/ollama.js";
-import { getAnthropicKey, getCodexKey } from "./auth.js";
+import { getAnthropicKey, getCodexKey, getGeminiKey } from "./auth.js";
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
 export interface ResolvedModel {
   model: Model<string>;
-  provider: "ollama" | "anthropic" | "codex";
+  provider: "ollama" | "anthropic" | "codex" | "gemini";
   apiKey?: string;
 }
 
@@ -19,6 +19,7 @@ export interface RegistryConfig {
 let ollamaModels: Model<string>[] = [];
 let anthropicModels: Model<string>[] = [];
 let codexModels: Model<string>[] = [];
+let geminiModels: Model<string>[] = [];
 
 // ── Public API ──────────────────────────────────────────────────────────────
 
@@ -27,10 +28,11 @@ export async function loadRegistry(config?: RegistryConfig): Promise<void> {
 
   anthropicModels = getAnthropicKey() ? getModels("anthropic") : [];
   codexModels = getCodexKey() ? getModels("openai-codex") : [];
+  geminiModels = getGeminiKey() ? getModels("google-gemini-cli") : [];
 
   // biome-ignore lint/suspicious/noConsole: intentional startup log
   console.log(
-    `[registry] Loaded ${ollamaModels.length} Ollama, ${anthropicModels.length} Anthropic, ${codexModels.length} Codex models`,
+    `[registry] Loaded ${ollamaModels.length} Ollama, ${anthropicModels.length} Anthropic, ${codexModels.length} Codex, ${geminiModels.length} Gemini models`,
   );
 }
 
@@ -67,6 +69,14 @@ export function listModels(): {
       context_window: m.contextWindow,
       max_tokens: m.maxTokens,
     })),
+    ...geminiModels.map((m) => ({
+      id: m.id,
+      object: "model" as const,
+      created: 0,
+      owned_by: m.provider,
+      context_window: m.contextWindow,
+      max_tokens: m.maxTokens,
+    })),
   ];
   return all;
 }
@@ -80,6 +90,9 @@ export function resolveModel(modelId: string): ResolvedModel | undefined {
 
   const codex = codexModels.find((m) => m.id === modelId);
   if (codex) return { model: codex, provider: "codex", apiKey: getCodexKey() };
+
+  const gemini = geminiModels.find((m) => m.id === modelId);
+  if (gemini) return { model: gemini, provider: "gemini", apiKey: getGeminiKey() };
 
   return undefined;
 }

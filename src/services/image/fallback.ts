@@ -27,6 +27,7 @@ const PROVIDER_TO_FAMILY: Record<string, string> = {
   ollama: "ollama",
   anthropic: "anthropic",
   codex: "openai",
+  gemini: "google-gemini-cli",
 };
 
 // ── Vision system prompt ─────────────────────────────────────────────────

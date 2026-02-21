@@ -12,7 +12,7 @@ export const chatCompletionRoute = createRoute({
   operationId: "createChatCompletion",
   summary: "Create a chat completion",
   description:
-    "Generates a model response for the given conversation. Supports Ollama, Anthropic, and Codex backends. Set stream=true for Server-Sent Events streaming.",
+    "Generates a model response for the given conversation. Supports Ollama, Anthropic, Codex, and Gemini backends. Set stream=true for Server-Sent Events streaming.",
   tags: ["Chat"],
   request: {
     body: {
@@ -44,6 +44,14 @@ export const chatCompletionRoute = createRoute({
                 max_tokens: 128,
               },
             },
+            gemini: {
+              summary: "Gemini — gemini-2.5-flash",
+              value: {
+                model: "gemini-2.5-flash",
+                messages: [{ role: "user", content: "Explain black holes in two sentences." }],
+                max_tokens: 128,
+              },
+            },
             "ollama-stream": {
               summary: "Ollama streaming — qwen3:30b",
               value: {
@@ -66,6 +74,15 @@ export const chatCompletionRoute = createRoute({
               summary: "Codex streaming — GPT-5.1",
               value: {
                 model: "gpt-5.1",
+                messages: [{ role: "user", content: "Explain black holes in two sentences." }],
+                max_tokens: 128,
+                stream: true,
+              },
+            },
+            "gemini-stream": {
+              summary: "Gemini streaming — gemini-2.5-flash",
+              value: {
+                model: "gemini-2.5-flash",
                 messages: [{ role: "user", content: "Explain black holes in two sentences." }],
                 max_tokens: 128,
                 stream: true,
@@ -138,6 +155,27 @@ export const chatCompletionRoute = createRoute({
               summary: "Codex vision — GPT-5.1 + image URL",
               value: {
                 model: "gpt-5.1",
+                messages: [
+                  {
+                    role: "user",
+                    content: [
+                      { type: "text", text: "Describe this image briefly." },
+                      {
+                        type: "image_url",
+                        image_url: {
+                          url: "https://upload.wikimedia.org/wikipedia/commons/thumb/4/47/PNG_transparency_demonstration_1.png/280px-PNG_transparency_demonstration_1.png",
+                        },
+                      },
+                    ],
+                  },
+                ],
+                max_tokens: 128,
+              },
+            },
+            "gemini-image": {
+              summary: "Gemini vision — gemini-2.0-flash + image URL",
+              value: {
+                model: "gemini-2.0-flash",
                 messages: [
                   {
                     role: "user",
@@ -270,7 +308,7 @@ export const chatCompletionRoute = createRoute({
           },
         },
       },
-      description: "Unclassified backend error (Ollama/Anthropic/Codex)",
+      description: "Unclassified backend error (Ollama/Anthropic/Codex/Gemini)",
     },
     502: {
       content: {

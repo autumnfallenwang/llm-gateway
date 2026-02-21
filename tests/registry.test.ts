@@ -94,6 +94,10 @@ function codexPath(): string {
   return join(tempDir, "codex.json");
 }
 
+function geminiPath(): string {
+  return join(tempDir, "gemini.json");
+}
+
 function makeJwt(payload: Record<string, unknown>): string {
   const header = Buffer.from(JSON.stringify({ alg: "none", typ: "JWT" })).toString("base64url");
   const body = Buffer.from(JSON.stringify(payload)).toString("base64url");
@@ -121,6 +125,7 @@ describe("loadRegistry", () => {
     await loadCredentials({
       anthropicCredentialsPath: anthropicPath(),
       codexCredentialsPath: codexPath(),
+      geminiCredentialsPath: geminiPath(),
     });
     await loadRegistry({ ollamaBaseUrl: `http://localhost:${ollamaPort}` });
 
@@ -135,6 +140,7 @@ describe("loadRegistry", () => {
     await loadCredentials({
       anthropicCredentialsPath: anthropicPath(),
       codexCredentialsPath: codexPath(),
+      geminiCredentialsPath: geminiPath(),
     });
     await loadRegistry({ ollamaBaseUrl: "http://localhost:1" }); // no Ollama
 
@@ -149,6 +155,7 @@ describe("loadRegistry", () => {
     await loadCredentials({
       anthropicCredentialsPath: anthropicPath(),
       codexCredentialsPath: codexPath(),
+      geminiCredentialsPath: geminiPath(),
     });
     await loadRegistry({ ollamaBaseUrl: "http://localhost:1" }); // no Ollama
 
@@ -161,6 +168,7 @@ describe("loadRegistry", () => {
     await loadCredentials({
       anthropicCredentialsPath: anthropicPath(),
       codexCredentialsPath: codexPath(),
+      geminiCredentialsPath: geminiPath(),
     });
     await loadRegistry({ ollamaBaseUrl: `http://localhost:${ollamaPort}` });
 
@@ -173,6 +181,7 @@ describe("loadRegistry", () => {
     await loadCredentials({
       anthropicCredentialsPath: anthropicPath(),
       codexCredentialsPath: codexPath(),
+      geminiCredentialsPath: geminiPath(),
     });
     await loadRegistry({ ollamaBaseUrl: `http://localhost:${ollamaPort}` });
 
@@ -181,10 +190,24 @@ describe("loadRegistry", () => {
     expect(codexIds).toHaveLength(0);
   });
 
+  it("skips Gemini models when no key", async () => {
+    await loadCredentials({
+      anthropicCredentialsPath: anthropicPath(),
+      codexCredentialsPath: codexPath(),
+      geminiCredentialsPath: geminiPath(),
+    });
+    await loadRegistry({ ollamaBaseUrl: `http://localhost:${ollamaPort}` });
+
+    const models = listModels();
+    const geminiIds = models.filter((m) => m.owned_by === "google-gemini-cli");
+    expect(geminiIds).toHaveLength(0);
+  });
+
   it("detects vision-capable Ollama model", async () => {
     await loadCredentials({
       anthropicCredentialsPath: anthropicPath(),
       codexCredentialsPath: codexPath(),
+      geminiCredentialsPath: geminiPath(),
     });
     await loadRegistry({ ollamaBaseUrl: `http://localhost:${ollamaPort}` });
 
@@ -197,6 +220,7 @@ describe("loadRegistry", () => {
     await loadCredentials({
       anthropicCredentialsPath: anthropicPath(),
       codexCredentialsPath: codexPath(),
+      geminiCredentialsPath: geminiPath(),
     });
     await loadRegistry({ ollamaBaseUrl: `http://localhost:${ollamaPort}` });
 
@@ -209,6 +233,7 @@ describe("loadRegistry", () => {
     await loadCredentials({
       anthropicCredentialsPath: anthropicPath(),
       codexCredentialsPath: codexPath(),
+      geminiCredentialsPath: geminiPath(),
     });
     await loadRegistry({ ollamaBaseUrl: `http://localhost:${ollamaPort}` });
 
@@ -221,6 +246,7 @@ describe("loadRegistry", () => {
     await loadCredentials({
       anthropicCredentialsPath: anthropicPath(),
       codexCredentialsPath: codexPath(),
+      geminiCredentialsPath: geminiPath(),
     });
     // Port 1 should refuse connections
     await loadRegistry({ ollamaBaseUrl: "http://localhost:1" });
@@ -236,6 +262,7 @@ describe("listModels", () => {
     await loadCredentials({
       anthropicCredentialsPath: anthropicPath(),
       codexCredentialsPath: codexPath(),
+      geminiCredentialsPath: geminiPath(),
     });
     await loadRegistry({ ollamaBaseUrl: `http://localhost:${ollamaPort}` });
 
@@ -256,6 +283,7 @@ describe("resolveModel", () => {
     await loadCredentials({
       anthropicCredentialsPath: anthropicPath(),
       codexCredentialsPath: codexPath(),
+      geminiCredentialsPath: geminiPath(),
     });
     await loadRegistry({ ollamaBaseUrl: `http://localhost:${ollamaPort}` });
 
@@ -271,6 +299,7 @@ describe("resolveModel", () => {
     await loadCredentials({
       anthropicCredentialsPath: anthropicPath(),
       codexCredentialsPath: codexPath(),
+      geminiCredentialsPath: geminiPath(),
     });
     await loadRegistry({ ollamaBaseUrl: "http://localhost:1" });
 
@@ -285,6 +314,7 @@ describe("resolveModel", () => {
     await loadCredentials({
       anthropicCredentialsPath: anthropicPath(),
       codexCredentialsPath: codexPath(),
+      geminiCredentialsPath: geminiPath(),
     });
     await loadRegistry({ ollamaBaseUrl: "http://localhost:1" });
 
@@ -302,6 +332,7 @@ describe("resolveModel", () => {
     await loadCredentials({
       anthropicCredentialsPath: anthropicPath(),
       codexCredentialsPath: codexPath(),
+      geminiCredentialsPath: geminiPath(),
     });
     await loadRegistry({ ollamaBaseUrl: `http://localhost:${ollamaPort}` });
 

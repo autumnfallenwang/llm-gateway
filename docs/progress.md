@@ -93,7 +93,7 @@ See [backlog.md](backlog.md) for full details and research notes.
 | 24 | Replace llava with qwen3-vl:8b as default vision fallback | ✅ Done | Changed `VISION_FALLBACK_OLLAMA` and `VISION_FALLBACK_GENERAL` defaults from `llava` to `qwen3-vl:8b` in `src/config.ts`. Updated Swagger example, CLAUDE.md docs, and vision-fallback tests. |
 | 25 | Enrich /v1/models with validation status | ✅ Done | `ModelObjectSchema` gains `status`, `status_detail`, `validated_at`. App handler enriches ALL models instead of filtering. 3 new tests in `app.test.ts`. |
 | 26 | `llmgw update` — dependency update pipeline | Planned | New CLI subcommand: `npm outdated` → `npm update` → `npm test` → rebuild or rollback. Full dep scope. |
-| 27 | Add Gemini provider support | Planned | Fourth backend via pi-ai `google-gemini-cli`. Auth from `~/.gemini/oauth_creds.json` (OAuth token + projectId via `loadCodeAssist` API). Models: gemini-2.0-flash, 2.5-flash, 2.5-pro, 3-flash-preview, 3-pro-preview. Smoke tested with pi-ai `complete()`. Changes: auth.ts, config.ts, registry.ts, completion.ts, vision fallback, tests. |
+| 27 | Add Gemini provider support | ✅ Done | Fourth backend via pi-ai `google-gemini-cli`. Auth from `~/.gemini/oauth_creds.json` (OAuth token refresh + projectId via `loadCodeAssist` API). Config, auth, registry, vision fallback, route examples, unit + e2e tests all updated. |
 
 ## Previous Milestones
 
