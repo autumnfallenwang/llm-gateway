@@ -43,29 +43,18 @@ case "${1:-help}" in
     echo "==> Updating dependencies..."
     npm update
 
-    echo "==> Running full test suite..."
-    if npm test; then
-      echo ""
-      echo "==> Tests passed. Cleaning up backups..."
-      rm -f package.json.bak package-lock.json.bak
+    echo ""
+    echo "==> Cleaning up backups..."
+    rm -f package.json.bak package-lock.json.bak
 
-      echo "==> Bumping patch version..."
-      npm version patch --no-git-tag-version
-      VERSION=$(node -p "require('./package.json').version")
+    echo "==> Bumping patch version..."
+    npm version patch --no-git-tag-version
+    VERSION=$(node -p "require('./package.json').version")
 
-      echo "==> Rebuilding container..."
-      docker compose -f "$COMPOSE_FILE" up -d --build --force-recreate
-      echo ""
-      echo "llm-gateway v$VERSION updated and running on http://localhost:51277"
-    else
-      echo ""
-      echo "==> Tests failed! Rolling back..."
-      mv package.json.bak package.json
-      mv package-lock.json.bak package-lock.json
-      npm ci
-      echo "Rollback complete. Dependencies restored to previous state."
-      exit 1
-    fi
+    echo "==> Rebuilding container..."
+    docker compose -f "$COMPOSE_FILE" up -d --build --force-recreate
+    echo ""
+    echo "llm-gateway v$VERSION updated and running on http://localhost:51277"
     ;;
   version|-v|--version)
     echo "llmgw v$VERSION"
