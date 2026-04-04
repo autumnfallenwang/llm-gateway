@@ -51,6 +51,11 @@ case "${1:-help}" in
     npm version patch --no-git-tag-version
     VERSION=$(node -p "require('./package.json').version")
 
+    echo "==> Committing and pushing..."
+    git add package.json package-lock.json
+    git commit -m "chore: bump to v$VERSION with dependency updates"
+    git push
+
     echo "==> Rebuilding container..."
     docker compose -f "$COMPOSE_FILE" up -d --build --force-recreate
     echo ""
