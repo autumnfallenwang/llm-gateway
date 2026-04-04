@@ -1,3 +1,5 @@
+name: llm-gateway
+
 services:
   llm-gateway:
     build:
