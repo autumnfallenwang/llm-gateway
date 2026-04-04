@@ -63,6 +63,13 @@ export const CODEX_CREDENTIALS_PATH =
 export const GEMINI_CREDENTIALS_PATH =
   env.GEMINI_CREDENTIALS_PATH ?? join(homedir(), ".gemini", "oauth_creds.json");
 
+// ── Credential Refresh ────────────────────────────────────────────────────
+
+/** How often to re-read credential files from disk (ms). Default: 24 h */
+export const CREDENTIAL_REFRESH_INTERVAL_MS = Number(
+  env.CREDENTIAL_REFRESH_INTERVAL_MS ?? 24 * 60 * 60 * 1000,
+);
+
 // ── Validation ─────────────────────────────────────────────────────────────
 
 export const VALIDATION_FILE_PATH =

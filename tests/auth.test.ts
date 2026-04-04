@@ -223,6 +223,38 @@ describe("loadCredentials", () => {
     }
   });
 
+  it("picks up changed credentials on reload (simulates scheduled refresh)", async () => {
+    const expiresAt = Date.now() + 3_600_000;
+    await writeFile(
+      anthropicPath(),
+      JSON.stringify({
+        claudeAiOauth: { accessToken: "old-tok", expiresAt },
+      }),
+    );
+
+    await loadCredentials({
+      anthropicCredentialsPath: anthropicPath(),
+      codexCredentialsPath: codexPath(),
+      geminiCredentialsPath: geminiPath(),
+    });
+    expect(getAnthropicKey()).toBe("old-tok");
+
+    // Simulate credential file being refreshed on disk
+    await writeFile(
+      anthropicPath(),
+      JSON.stringify({
+        claudeAiOauth: { accessToken: "new-tok", expiresAt: expiresAt + 3_600_000 },
+      }),
+    );
+
+    await loadCredentials({
+      anthropicCredentialsPath: anthropicPath(),
+      codexCredentialsPath: codexPath(),
+      geminiCredentialsPath: geminiPath(),
+    });
+    expect(getAnthropicKey()).toBe("new-tok");
+  });
+
   it("includes gemini in credential status shape", async () => {
     await loadCredentials({
       anthropicCredentialsPath: anthropicPath(),
