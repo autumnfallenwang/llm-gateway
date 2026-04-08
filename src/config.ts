@@ -65,9 +65,9 @@ export const GEMINI_CREDENTIALS_PATH =
 
 // ── Credential Refresh ────────────────────────────────────────────────────
 
-/** How often to re-read credential files from disk (ms). Default: 24 h */
+/** How often to re-read credential files from disk (ms). Default: 30 min */
 export const CREDENTIAL_REFRESH_INTERVAL_MS = Number(
-  env.CREDENTIAL_REFRESH_INTERVAL_MS ?? 24 * 60 * 60 * 1000,
+  env.CREDENTIAL_REFRESH_INTERVAL_MS ?? 30 * 60 * 1000,
 );
 
 // ── Validation ─────────────────────────────────────────────────────────────
