@@ -29,35 +29,73 @@ case "${1:-help}" in
   update)
     cd "$PROJECT_DIR"
 
-    echo "==> Checking for outdated packages..."
-    if npm outdated; then
-      echo "All packages are up to date."
-      exit 0
-    fi
-
-    echo ""
     echo "==> Backing up package files..."
     cp package.json package.json.bak
     cp package-lock.json package-lock.json.bak
 
-    echo "==> Updating dependencies..."
-    npm update
+    echo "==> Bumping all dependencies to latest (across major/minor caps)..."
+    npx --yes npm-check-updates -u
 
-    echo ""
-    echo "==> Cleaning up backups..."
+    echo "==> Installing updated dependencies..."
+    if ! npm install; then
+      echo ""
+      echo "!! npm install failed — rolling back package files" >&2
+      mv package.json.bak package.json
+      mv package-lock.json.bak package-lock.json
+      npm ci
+      exit 1
+    fi
+
+    echo "==> Running test suite (gate before publish + deploy)..."
+    if ! npm test; then
+      echo ""
+      echo "!! Tests failed — rolling back package files" >&2
+      mv package.json.bak package.json
+      mv package-lock.json.bak package-lock.json
+      npm ci
+      exit 1
+    fi
+
+    echo "==> Tests passed — cleaning up backups"
     rm -f package.json.bak package-lock.json.bak
 
     echo "==> Bumping patch version..."
     npm version patch --no-git-tag-version
     VERSION=$(node -p "require('./package.json').version")
 
+    echo "==> Rebuilding container..."
+    docker compose -f "$COMPOSE_FILE" up -d --build --force-recreate
+
+    echo "==> Waiting for gateway to be ready..."
+    READY=0
+    for _ in $(seq 1 30); do
+      if curl -fs http://localhost:51277/ >/dev/null 2>&1; then
+        READY=1
+        break
+      fi
+      sleep 1
+    done
+
+    if [ "$READY" -ne 1 ]; then
+      echo "!! Gateway did not become ready within 30s — check 'llmgw logs'" >&2
+      exit 1
+    fi
+
+    echo "==> Validating all models..."
+    REPORT=$(curl -fs --max-time 900 -X POST http://localhost:51277/v1/models/validate || echo "")
+    if [ -n "$REPORT" ]; then
+      OK=$(echo "$REPORT" | jq -r '[.models | to_entries[] | select(.value.status=="ok")] | length' 2>/dev/null || echo "?")
+      ERR=$(echo "$REPORT" | jq -r '[.models | to_entries[] | select(.value.status=="error")] | length' 2>/dev/null || echo "?")
+      echo "Validation: $OK ok / $ERR error"
+    else
+      echo "!! Validation request failed — gateway is up but models not validated" >&2
+    fi
+
     echo "==> Committing and pushing..."
     git add package.json package-lock.json
     git commit -m "chore: bump to v$VERSION with dependency updates"
     git push
 
-    echo "==> Rebuilding container..."
-    docker compose -f "$COMPOSE_FILE" up -d --build --force-recreate
     echo ""
     echo "llm-gateway v$VERSION updated and running on http://localhost:51277"
     ;;

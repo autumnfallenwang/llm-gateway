@@ -30,6 +30,7 @@ Docker-based deployment via `deploy/` directory. The `llmgw` CLI is symlinked to
 - `llmgw logs` - tail container logs
 - `llmgw status` - show running state
 - `llmgw rebuild` - force full rebuild + restart
+- `llmgw update` - bump all deps to latest (incl. major/minor caps via `ncu -u`), gate on `npm test`, rebuild container, validate models via `POST /v1/models/validate`, then commit + push. Rolls back package.json/package-lock.json if tests fail.
 - `llmgw version` - show version from package.json
 
 ## Config

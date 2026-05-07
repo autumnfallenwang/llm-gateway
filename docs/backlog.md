@@ -16,12 +16,12 @@
 
 **Why**: Hiding broken models loses information. Clients should see full picture and decide themselves. Completion endpoint already allows requests to any registered model regardless of validation status.
 
-## 3. `llmgw update` — full dependency update pipeline
+## 3. `llmgw update` — full dependency update pipeline ✅ Done (extended 2026-05-06)
 
-**What**: Add an `update` subcommand to the `llmgw` CLI
-**Flow**: `npm outdated` → `npm update` → `npm test` → if pass: `llmgw rebuild`, if fail: rollback `package.json` + `package-lock.json`
-**Scope**: All deps, not just pi-ai. Small dep count makes full update safe.
-**Why**: pi-ai updates bring new Anthropic/Codex models. Other deps bring security patches and bug fixes. One command to stay current with a safety net.
+**What**: `update` subcommand on the `llmgw` CLI.
+**Flow**: `ncu -u` (cross caret/tilde caps) → `npm install` → `npm test` (gate, rolls back package.json + lockfile on failure) → `npm version patch` → rebuild container → wait for ready → `POST /v1/models/validate` → commit + push.
+**Scope**: All deps, not just pi-ai. Single command, fully automatic downstream — type one thing, walk away.
+**Why**: pi-ai updates bring new Anthropic/Codex models, but their `^0.x` caret means `npm update` alone gets stuck at the minor cap. `ncu -u` rewrites the spec so we follow latest. Test gate prevents broken updates from reaching the deployed container; auto-validate ensures `/v1/models` reflects upstream availability without a separate manual call.
 
 ## 4. Add Gemini provider support
 
