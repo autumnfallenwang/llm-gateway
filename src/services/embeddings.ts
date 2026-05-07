@@ -14,9 +14,14 @@ interface UpstreamError {
   error?: { message?: string };
 }
 
+export interface EmbeddingsOptions {
+  signal?: AbortSignal;
+}
+
 export async function createEmbedding(
   resolved: ResolvedModel,
   body: EmbeddingsRequest,
+  options?: EmbeddingsOptions,
 ): Promise<EmbeddingsResponse> {
   // Provider gate: only Ollama is wired up today. Anthropic has no embeddings API; Codex
   // and Gemini OAuth providers don't expose embedding models. See openai-embeddings-spec.md.
@@ -46,6 +51,7 @@ export async function createEmbedding(
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
+      signal: options?.signal,
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown fetch error";

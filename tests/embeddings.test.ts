@@ -226,6 +226,21 @@ describe("createEmbedding: Ollama passthrough", () => {
     expect(sentBody.dimensions).toBe(512);
   });
 
+  it("forwards an AbortSignal to fetch when supplied via options", async () => {
+    const resolved = makeResolved({ provider: "ollama", capability: "embedding" });
+    fetchMock.mockResolvedValueOnce(ollamaResponse(HAPPY_RESPONSE));
+
+    const controller = new AbortController();
+    await createEmbedding(
+      resolved,
+      { model: "bge-m3:latest", input: "x" },
+      { signal: controller.signal },
+    );
+
+    const init = fetchMock.mock.calls[0][1];
+    expect(init?.signal).toBe(controller.signal);
+  });
+
   it("does not mutate the request body before forwarding", async () => {
     const resolved = makeResolved({ provider: "ollama", capability: "embedding" });
     fetchMock.mockResolvedValueOnce(ollamaResponse(HAPPY_RESPONSE));

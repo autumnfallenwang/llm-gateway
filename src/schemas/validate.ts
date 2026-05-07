@@ -12,6 +12,10 @@ export const ModelValidationResultSchema = z.object({
     .string()
     .optional()
     .openapi({ description: "Error description, present when status is 'error'" }),
+  embeddingDim: z.number().int().positive().optional().openapi({
+    description:
+      "Dimension of the returned embedding vector, present when an embedding model validated successfully",
+  }),
 });
 
 export const ValidateResponseSchema = z.object({

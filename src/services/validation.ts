@@ -9,6 +9,7 @@ import {
   VALIDATION_TIMEOUT_MS,
 } from "../config.js";
 import type { ModelValidationResult, ValidateResponse } from "../schemas/validate.js";
+import { createEmbedding } from "./embeddings.js";
 import { listModels, type ResolvedModel, resolveModel } from "./registry.js";
 
 // ── Types ───────────────────────────────────────────────────────────────────
@@ -21,7 +22,7 @@ export interface ValidationConfig {
 
 // ── Core functions ──────────────────────────────────────────────────────────
 
-export async function validateSingleModel(
+async function validateChatModel(
   resolved: ResolvedModel,
   timeoutMs: number,
 ): Promise<ModelValidationResult> {
@@ -68,6 +69,49 @@ export async function validateSingleModel(
     const message = err instanceof Error ? err.message : "Unknown error";
     return { status: "error", latencyMs, error: message };
   }
+}
+
+async function validateEmbeddingModel(
+  resolved: ResolvedModel,
+  timeoutMs: number,
+): Promise<ModelValidationResult> {
+  const start = Date.now();
+  try {
+    const result = await createEmbedding(
+      resolved,
+      { model: resolved.model.id, input: "test" },
+      { signal: AbortSignal.timeout(timeoutMs) },
+    );
+    const latencyMs = Date.now() - start;
+
+    const first = result.data?.[0];
+    let dim = 0;
+    if (Array.isArray(first?.embedding)) {
+      dim = (first.embedding as number[]).length;
+    } else if (typeof first?.embedding === "string") {
+      dim = first.embedding.length;
+    }
+
+    if (!first || dim === 0) {
+      return { status: "error", latencyMs, error: "empty embedding vector" };
+    }
+
+    return { status: "ok", latencyMs, embeddingDim: dim };
+  } catch (err) {
+    const latencyMs = Date.now() - start;
+    const message = err instanceof Error ? err.message : "Unknown error";
+    return { status: "error", latencyMs, error: message };
+  }
+}
+
+export function validateSingleModel(
+  resolved: ResolvedModel,
+  timeoutMs: number,
+): Promise<ModelValidationResult> {
+  if (resolved.capability === "embedding") {
+    return validateEmbeddingModel(resolved, timeoutMs);
+  }
+  return validateChatModel(resolved, timeoutMs);
 }
 
 async function runWithConcurrency<T>(tasks: (() => Promise<T>)[], limit: number): Promise<T[]> {
