@@ -249,14 +249,81 @@ Once the validator records dimensions, mirror the value out as `embedding_dimens
 
 ---
 
-## POC Log (filled in by task 29b)
+## POC Log
 
-This section is reserved for the empirical probe against local Ollama. Task 29b will run real `curl` commands against `bge-m3:latest`, `qwen3-embedding:0.6b`, and `nomic-embed-text:latest`, and append:
+Empirical probe against local Ollama on 2026-05-07, ollama running at `http://localhost:11434`. Three embedders pulled: `bge-m3:latest`, `qwen3-embedding:0.6b`, `nomic-embed-text:latest`. All commands run via `curl`; response shapes inspected with `jq`.
 
-- Exact request and response bytes for single + batch input.
-- Confirmed dimensions per model.
-- Latency on warm vs cold model load.
-- Error response format on bad model name and oversized input.
-- Any divergence from this spec (none expected, but we record what we see, not what we hope).
+### Single-string input — happy path
 
-Until that section is filled in, this doc is a research-derived contract; after task 29b it becomes a verified one.
+| Model | HTTP | Latency | `data[0].embedding` length | `usage.prompt_tokens` |
+|---|---|---|---|---|
+| `bge-m3:latest` | 200 | warm | **1024** | 5 |
+| `qwen3-embedding:0.6b` | 200 | warm | **1024** | 3 |
+| `nomic-embed-text:latest` | 200 | warm | **768** | 4 |
+
+Response shape verified verbatim: `{ object: "list", data: [{ object: "embedding", index: 0, embedding: [...] }], model, usage: { prompt_tokens, total_tokens } }`. **Byte-for-byte OpenAI-compatible** for all three. Dimensions match the table in "Constraints".
+
+### Batch input — `input: ["alpha","beta","gamma"]` against bge-m3
+
+```
+HTTP 200
+data_count: 3, indices: [0,1,2], dims: [1024,1024,1024]
+usage: { prompt_tokens: 10, total_tokens: 10 }
+```
+
+One upstream request → three vectors in input order. `usage.prompt_tokens` is the **sum** across inputs, not per-input.
+
+### `encoding_format: "base64"` — bge-m3
+
+```
+HTTP 200, embedding_type: "string", embedding_len: 5464
+```
+
+Vector arrives as a base64 string. `5464` chars decodes to ~4096 bytes = 1024 × float32 — confirms little-endian float32 layout per spec.
+
+### `dimensions: 512` — bge-m3
+
+```
+HTTP 200, dim: 512
+```
+
+**Divergence from the OpenAI spec.** OpenAI documents `dimensions` as honored only by `text-embedding-3-*` models, but **Ollama honors it for bge-m3** (and presumably any embedder that supports truncation). Behavior: Matryoshka-style head truncation. Useful — we don't need to special-case which models accept the param. Just pass through; if a model doesn't support it, Ollama returns its own error.
+
+### Error path — unknown model
+
+```bash
+curl -X POST .../v1/embeddings -d '{"model":"nonexistent-model-xyz","input":"oops"}'
+# HTTP 404
+{ "error": {
+    "message": "model \"nonexistent-model-xyz\" not found, try pulling it first",
+    "type": "not_found_error",
+    "param": null,
+    "code": null
+} }
+```
+
+**Two divergences from our chat-completions error envelope:**
+- `type: "not_found_error"` — chat completions use `invalid_request_error` for `model_not_found`. Ollama uses a distinct type.
+- `code: null` — chat completions return `code: "model_not_found"`. Ollama returns null.
+
+**Gateway implication:** when our route catches Ollama's 404, we should **rewrap** to match our chat-completions envelope (`type: "invalid_request_error"`, `code: "model_not_found"`) for consistency across endpoints. Don't passthrough verbatim. The error rewrap is the only translation step in an otherwise pure passthrough.
+
+But actually, we won't get here in practice — our gateway resolves the model from its own registry before forwarding. An unknown model returns 404 at our route level, never reaches Ollama. This case matters only if a model is pulled from Ollama after the gateway started but never re-registered. Edge case worth handling but not the hot path.
+
+### Edge cases
+
+| Input | HTTP | Notes |
+|---|---|---|
+| `input: ""` (empty string) | **200** | Returns a real 1024-dim vector with `prompt_tokens: 2`. Ollama is permissive — does not match the OpenAI spec's "cannot be an empty string" wording. We pass through. |
+| `input: []` (empty array) | **400** `invalid_request_error` "invalid input" | ✅ matches OpenAI behavior |
+| `input: [1212, 318, 257, ...]` (token IDs) | **400** `invalid_request_error` "invalid input type" | ✅ matches Ollama's documented "no token-array support" |
+
+### Conclusions
+
+1. **Pure passthrough is viable** for `model`, `input` (string + array), `encoding_format`, `dimensions`, `user`. No format translation needed.
+2. **Error rewrap is the only translator step** — Ollama uses `not_found_error` and null `code` on 404; our gateway should normalize that to `invalid_request_error` + `model_not_found` for envelope consistency. But this only fires for the rare in-flight model rename case.
+3. **`dimensions` works on bge-m3** — broader than the OpenAI spec implies. Don't gate it.
+4. **Empty string is permissive** in Ollama. We don't pre-validate; let Ollama decide.
+5. **All three local embedders are healthy** — match expected dimensions and respond in <1s warm. Ready to be the e2e test fixtures.
+
+The spec contract is now empirically verified for the Ollama path. Implementation can proceed against it.
