@@ -356,6 +356,66 @@ describe("GET /v1/models", () => {
     expect(bad.validated_at).toBe("2026-01-15T10:00:00.000Z");
   });
 
+  it("populates embedding_dimensions for embedding models from validation report", async () => {
+    const { loadRegistry } = await import("../src/services/registry");
+    const { fetchOllamaModels } = await import("../src/lib/ollama");
+    const { readValidationReport } = await import("../src/services/validation");
+
+    vi.mocked(fetchOllamaModels).mockResolvedValueOnce([
+      {
+        model: {
+          id: "bge-m3:latest",
+          name: "bge-m3:latest",
+          api: "openai-completions",
+          provider: "ollama",
+          baseUrl: "",
+          reasoning: false,
+          input: ["text"],
+          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+          contextWindow: 8192,
+          maxTokens: 4096,
+        },
+        capabilities: { supportsVision: false, supportsEmbedding: true, supportsCompletion: false },
+      },
+      {
+        model: {
+          id: "qwen3:30b",
+          name: "qwen3:30b",
+          api: "openai-completions",
+          provider: "ollama",
+          baseUrl: "",
+          reasoning: false,
+          input: ["text"],
+          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+          contextWindow: 4096,
+          maxTokens: 4096,
+        },
+        capabilities: { supportsVision: false, supportsEmbedding: false, supportsCompletion: true },
+      },
+    ]);
+    await loadRegistry();
+
+    vi.mocked(readValidationReport).mockResolvedValueOnce({
+      validatedAt: "2026-05-07T00:00:00.000Z",
+      models: {
+        "bge-m3:latest": { status: "ok", latencyMs: 50, embeddingDim: 1024 },
+        "qwen3:30b": { status: "ok", latencyMs: 200 },
+      },
+    });
+
+    const res = await app.request("/v1/models");
+    expect(res.status).toBe(200);
+    const json = await res.json();
+
+    const embedder = json.data.find((m: { id: string }) => m.id === "bge-m3:latest");
+    expect(embedder.capability).toBe("embedding");
+    expect(embedder.embedding_dimensions).toBe(1024);
+
+    const chat = json.data.find((m: { id: string }) => m.id === "qwen3:30b");
+    expect(chat.capability).toBe("chat");
+    expect(chat.embedding_dimensions).toBeUndefined();
+  });
+
   it("returns status 'unknown' when no validation report exists", async () => {
     const { loadRegistry } = await import("../src/services/registry");
     const { fetchOllamaModels } = await import("../src/lib/ollama");

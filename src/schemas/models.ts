@@ -38,6 +38,10 @@ export const ModelObjectSchema = z.object({
     .nullable()
     .optional()
     .openapi({ description: "ISO 8601 timestamp of last validation run, null if never validated" }),
+  embedding_dimensions: z.number().int().positive().optional().openapi({
+    description:
+      "Embedding vector dimension. Populated for embedding models that have validated successfully — lets consumers verify a stored vector(N) column matches at boot.",
+  }),
 });
 
 export const ModelsResponseSchema = z.object({

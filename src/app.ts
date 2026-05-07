@@ -291,6 +291,7 @@ app.openapi(modelsRoute, async (c) => {
       status: result.status,
       status_detail: result.error ?? null,
       validated_at: report.validatedAt,
+      ...(result.embeddingDim !== undefined && { embedding_dimensions: result.embeddingDim }),
     };
   });
   return c.json({ object: "list" as const, data: enriched }, 200);
