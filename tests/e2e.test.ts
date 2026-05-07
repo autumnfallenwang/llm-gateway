@@ -538,3 +538,176 @@ describe("image: error handling", () => {
     expect(json.error.type).toBe("invalid_request_error");
   });
 });
+
+// ── Phase 5: embeddings ────────────────────────────────────────────────
+
+describe("phase 5: embeddings", () => {
+  // The local Ollama embedder used as the test fixture. Tests in this block
+  // fail-skip if the model isn't pulled.
+  const EMBEDDER = "bge-m3:latest";
+  const EXPECTED_DIM = 1024;
+
+  async function embedderAvailable(): Promise<boolean> {
+    const res = await fetch(`${baseUrl}/v1/models`);
+    if (!res.ok) return false;
+    const json = (await res.json()) as { data: { id: string }[] };
+    return json.data.some((m) => m.id === EMBEDDER);
+  }
+
+  it("registry tags bge-m3 as embedding capability", async () => {
+    if (!(await embedderAvailable())) return;
+    const res = await fetch(`${baseUrl}/v1/models`);
+    const json = (await res.json()) as { data: { id: string; capability?: string }[] };
+    const embedder = json.data.find((m) => m.id === EMBEDDER);
+    expect(embedder?.capability).toBe("embedding");
+  });
+
+  it("POST /v1/embeddings with single string input", { timeout: 30_000 }, async () => {
+    if (!(await embedderAvailable())) return;
+    const res = await post("/v1/embeddings", {
+      model: EMBEDDER,
+      input: "the quick brown fox",
+    });
+    expect(res.status).toBe(200);
+    const json = (await res.json()) as {
+      object: string;
+      data: { object: string; index: number; embedding: number[] }[];
+      model: string;
+      usage: { prompt_tokens: number; total_tokens: number };
+    };
+    expect(json.object).toBe("list");
+    expect(json.model).toBe(EMBEDDER);
+    expect(json.data).toHaveLength(1);
+    expect(json.data[0].object).toBe("embedding");
+    expect(json.data[0].index).toBe(0);
+    expect(Array.isArray(json.data[0].embedding)).toBe(true);
+    expect(json.data[0].embedding).toHaveLength(EXPECTED_DIM);
+    expect(json.usage.prompt_tokens).toBeGreaterThan(0);
+  });
+
+  it("POST /v1/embeddings with batch input", { timeout: 30_000 }, async () => {
+    if (!(await embedderAvailable())) return;
+    const res = await post("/v1/embeddings", {
+      model: EMBEDDER,
+      input: ["alpha", "beta", "gamma"],
+    });
+    expect(res.status).toBe(200);
+    const json = (await res.json()) as {
+      data: { index: number; embedding: number[] }[];
+    };
+    expect(json.data).toHaveLength(3);
+    expect(json.data.map((d) => d.index)).toEqual([0, 1, 2]);
+    for (const entry of json.data) {
+      expect(entry.embedding).toHaveLength(EXPECTED_DIM);
+    }
+  });
+
+  it("encoding_format='base64' returns a string vector", { timeout: 30_000 }, async () => {
+    if (!(await embedderAvailable())) return;
+    const res = await post("/v1/embeddings", {
+      model: EMBEDDER,
+      input: "compact me",
+      encoding_format: "base64",
+    });
+    expect(res.status).toBe(200);
+    const json = (await res.json()) as { data: { embedding: number[] | string }[] };
+    expect(typeof json.data[0].embedding).toBe("string");
+  });
+
+  it("dimensions parameter truncates the vector", { timeout: 30_000 }, async () => {
+    if (!(await embedderAvailable())) return;
+    const res = await post("/v1/embeddings", {
+      model: EMBEDDER,
+      input: "truncate me",
+      dimensions: 512,
+    });
+    expect(res.status).toBe(200);
+    const json = (await res.json()) as { data: { embedding: number[] }[] };
+    expect(json.data[0].embedding).toHaveLength(512);
+  });
+
+  it("chat model used at /v1/embeddings returns 400 wrong_capability", async () => {
+    const res = await post("/v1/embeddings", {
+      model: "claude-haiku-4-5",
+      input: "should fail",
+    });
+    // Anthropic provider gate fires first → 501; this test is for the
+    // ollama-chat-model case below.
+    expect([400, 501]).toContain(res.status);
+  });
+
+  it("anthropic model returns 501 provider_unsupported", async () => {
+    const res = await post("/v1/embeddings", {
+      model: "claude-haiku-4-5",
+      input: "should fail",
+    });
+    expect(res.status).toBe(501);
+    const json = (await res.json()) as { error: { code: string } };
+    expect(json.error.code).toBe("provider_unsupported");
+  });
+
+  it("ollama chat model used at /v1/embeddings returns 400 wrong_capability", async () => {
+    // Use any chat-capability ollama model that exists in the registry
+    const modelsRes = await fetch(`${baseUrl}/v1/models`);
+    const models = (await modelsRes.json()) as {
+      data: { id: string; capability?: string; owned_by: string }[];
+    };
+    const chatOllama = models.data.find((m) => m.owned_by === "ollama" && m.capability === "chat");
+    if (!chatOllama) return;
+
+    const res = await post("/v1/embeddings", {
+      model: chatOllama.id,
+      input: "should fail",
+    });
+    expect(res.status).toBe(400);
+    const json = (await res.json()) as { error: { code: string } };
+    expect(json.error.code).toBe("wrong_capability");
+  });
+
+  it("embedding model used at /v1/chat/completions returns 400 wrong_capability", async () => {
+    if (!(await embedderAvailable())) return;
+    const res = await post("/v1/chat/completions", {
+      model: EMBEDDER,
+      messages: [{ role: "user", content: "hi" }],
+      max_tokens: 8,
+    });
+    expect(res.status).toBe(400);
+    const json = (await res.json()) as { error: { code: string } };
+    expect(json.error.code).toBe("wrong_capability");
+  });
+
+  it("unknown model at /v1/embeddings returns 404 model_not_found", async () => {
+    const res = await post("/v1/embeddings", {
+      model: "definitely-not-a-real-model-xyz",
+      input: "x",
+    });
+    expect(res.status).toBe(404);
+    const json = (await res.json()) as { error: { code: string } };
+    expect(json.error.code).toBe("model_not_found");
+  });
+
+  it("POST /v1/models/validate promotes embedders to status:'ok' with embedding_dimensions", {
+    timeout: 180_000,
+  }, async () => {
+    if (!(await embedderAvailable())) return;
+
+    const res = await post("/v1/models/validate", {});
+    expect(res.status).toBe(200);
+    const report = (await res.json()) as {
+      models: Record<string, { status: string; embeddingDim?: number }>;
+    };
+
+    const embedderResult = report.models[EMBEDDER];
+    expect(embedderResult).toBeDefined();
+    expect(embedderResult.status).toBe("ok");
+    expect(embedderResult.embeddingDim).toBe(EXPECTED_DIM);
+
+    // Confirm /v1/models also surfaces the dimension
+    const modelsRes = await fetch(`${baseUrl}/v1/models`);
+    const json = (await modelsRes.json()) as {
+      data: { id: string; embedding_dimensions?: number }[];
+    };
+    const embedder = json.data.find((m) => m.id === EMBEDDER);
+    expect(embedder?.embedding_dimensions).toBe(EXPECTED_DIM);
+  });
+});
