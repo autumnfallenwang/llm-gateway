@@ -67,6 +67,7 @@ Centralized in `src/config.ts`. Key env var overrides:
 - [docs/openai-error-spec.md](docs/openai-error-spec.md) - OpenAI error response format + gateway error mapping
 - [docs/openai-vision-spec.md](docs/openai-vision-spec.md) - Vision API facts + pi-ai behavior + OpenClaw fallback policy
 - [docs/openai-embeddings-spec.md](docs/openai-embeddings-spec.md) - Embeddings API spec + Ollama passthrough + gateway routing decisions (Phase 5)
+- [docs/structured-logging-spec.md](docs/structured-logging-spec.md) - Phase 7 logging contract: universal JSON shape, pino, field conventions, migration plan
 - [docs/image-processing-plan.md](docs/image-processing-plan.md) - Image processing architecture plan
 - [docs/llmgw-embeddings-hotfix.md](docs/llmgw-embeddings-hotfix.md) - Phase 5 embeddings hotfix handoff (route + per-capability validation)
 - [docs/llmgw-anthropic-auth-hotfix.md](docs/llmgw-anthropic-auth-hotfix.md) - Phase 6 Anthropic auth hotfix handoff (container-private credential chain + lazy refresh)

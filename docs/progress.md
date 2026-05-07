@@ -44,6 +44,7 @@
 - [openai-error-spec.md](openai-error-spec.md) — error format + gateway error mapping
 - [openai-vision-spec.md](openai-vision-spec.md) — vision API facts, pi-ai behavior, OpenClaw fallback policy
 - [openai-embeddings-spec.md](openai-embeddings-spec.md) — embeddings API spec + Ollama passthrough + routing decisions (Phase 5; written before route implementation)
+- [structured-logging-spec.md](structured-logging-spec.md) — Phase 7 logging contract: universal JSON shape, pino, field conventions, migration plan
 - [image-processing-plan.md](image-processing-plan.md) — full image processing architecture plan
 - [llmgw-embeddings-hotfix.md](llmgw-embeddings-hotfix.md) — embeddings hotfix handoff (Phase 5)
 - [llmgw-anthropic-auth-hotfix.md](llmgw-anthropic-auth-hotfix.md) — Anthropic auth hotfix handoff (Phase 6)
@@ -141,6 +142,26 @@ Production gateway returns `Connection error.` for Anthropic streaming completio
 | 37 | Tests | ✅ Done | `tests/auth.test.ts` rewritten with `vi.mock` partial of `refreshAnthropicToken`: cache bootstrap (no refresh), seed bootstrap + immediate refresh + cache write-through, seed without refresh_token rejected, fresh-token skip, expired refresh, safety-skew refresh, single-flight mutex (10 concurrent → 1 refresh), refresh write-through, no-op when unavailable, mutex clears on error. `tests/registry.test.ts` updated to use `anthropicSeedPath`/`anthropicCachePath` (cache path so no refresh fires) and adds `refreshToken` to fixture. **168 unit tests pass.** |
 
 **Out of scope (follow-ups)**: Codex lazy refresh via `refreshOpenAICodexToken`, Gemini write-to-cache instead of host file. Both are architecturally identical to the Anthropic fix but not currently breaking production.
+
+## Phase 7: Structured Logging
+
+Migrate from 29 ad-hoc `console.log/warn/error` calls to JSON-per-line structured logging via `pino`. Adds per-request access logs (currently absent — can't tell which request failed without instrumenting the handler). Universal JSON shape works against Loki today, ELK/Datadog/Splunk tomorrow with no app changes. See [structured-logging-spec.md](structured-logging-spec.md) for the full contract (field naming, level taxonomy, migration mapping, what we don't implement).
+
+**Architecture**: app writes JSON-per-line to stdout only. Docker captures via its existing log driver. Promtail (separate observability stack, out of scope for this phase) tails Docker's capture and ships to Loki. App stays portable — same code works under systemd, Kubernetes, Nomad.
+
+| # | Task | Status | Notes |
+|---|------|--------|-------|
+| 38 | Spec doc — universal JSON shape, pino choice, migration mapping | ✅ Done | `docs/structured-logging-spec.md` written. Locks the contract: required fields (`time`, `level`, `msg`, `service`, `version`), conventions (`event` namespace, `*_ms` durations, `err` for Errors), level taxonomy, what we explicitly don't implement (file output, transports, alerting). |
+| 39a | Logger module + LOG_LEVEL config | ⏳ Planned | New `src/lib/logger.ts` exports a configured `pino` instance with `service`/`version` base fields and ISO timestamp. New `LOG_LEVEL` env var (default `"info"`). `pino` + `pino-pretty` added to dependencies. |
+| 39b | Migrate 29 `console.*` sites to structured `log.*` calls | ⏳ Planned | Pattern catalog in spec doc — bracketed namespaces become `event` field, template-string values become typed fields, caught errors become `err` field. Inventory: ~12 in `auth.ts`, ~4 in `validation.ts`, ~3 in `registry.ts`/`ollama.ts`, ~2 in `vision/fallback.ts`, ~2 in `index.ts`, ~6 elsewhere. |
+| 39c | Hono request-logging middleware | ⏳ Planned | One log line per HTTP request — `event: "http.request"` with `req_id` (UUID), `method`, `path`, `status`, `latency_ms`. `req_id` exposed to handlers via `c.get("req_id")` for trace stitching. Highest-value single addition — currently we have zero per-request observability. |
+| 39d | `deploy/compose.yaml` log size cap | ⏳ Planned | Add `logging.driver: json-file` with `max-size: 10m`, `max-file: 5`. Currently unbounded — `docker inspect` confirms `LogConfig.Config: {}`. 50MB cap; rotation handled by Docker. |
+| 39e | Tests | ⏳ Planned | Unit test for logger module base fields. Middleware test using pino's buffer destination — assert one `http.request` line per dispatched request with correct shape. Don't test every migrated call site (plumbing). |
+
+**Out of scope (separate later phases)**:
+- Loki + Promtail + Grafana deployment as a separate `~/agentic/observability/` stack — multi-app concern, not specific to llmgw.
+- Prometheus metrics + dashboards — different problem (numbers vs events); add when we want trend graphs/alerts.
+- OpenTelemetry — overkill for a single-service gateway; revisit if multi-service tracing matters.
 
 ## Previous Milestones
 

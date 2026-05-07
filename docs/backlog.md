@@ -86,3 +86,20 @@
 - Gemini: already refreshes in-memory, but writes back to the `:ro` host file (silent failure). Follow-up to write to container cache instead.
 
 **Why**: standard OAuth supports multiple independent refresh-token chains per account. The container running its own chain is the right architecture — never touching the host file means we can't break a running `claude` CLI session, and we're not at the mercy of host-side filesystem semantics.
+
+## 7. Structured logging (Phase 7)
+
+**Source**: [structured-logging-spec.md](structured-logging-spec.md) — full contract.
+
+**State**: spec doc done; implementation pending.
+
+**Why**: 29 ad-hoc `console.log/warn/error` calls produce un-structured plaintext. Per-request access logs are entirely missing — when something fails in production, you can't tell which request, with what params, took how long. Universal JSON-per-line output unlocks any modern aggregator (Loki, ELK, Datadog) without app-side changes.
+
+**Scope**:
+1. New `src/lib/logger.ts` — single configured `pino` instance with `service`/`version` base fields. `LOG_LEVEL` env var.
+2. Migrate all 29 `console.*` sites to typed `log.*` calls (auth ~12, validation ~4, registry/ollama ~3, vision-fallback ~2, server-startup ~2, others ~6).
+3. Hono `app.use("*")` middleware emits `event:"http.request"` line per request with `req_id`, `method`, `path`, `status`, `latency_ms`.
+4. `deploy/compose.yaml` adds Docker log size cap (`max-size: 10m`, `max-file: 5`) — currently unbounded.
+5. Unit tests for logger module + middleware shape.
+
+**Out of scope** (separate later phases): Loki+Promtail+Grafana deployment, Prometheus metrics, OpenTelemetry. App stays portable; observability infrastructure layers on top of stdout via Docker's existing capture.
