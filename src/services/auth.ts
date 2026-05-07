@@ -12,6 +12,7 @@ import {
   GEMINI_CREDENTIALS_PATH,
   GEMINI_PROJECT_URL,
 } from "../config.js";
+import { log } from "../lib/logger.js";
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -99,8 +100,10 @@ async function readAnthropicFile(path: string): Promise<AnthropicCredsState | un
   } catch (err: unknown) {
     const code = (err as NodeJS.ErrnoException).code;
     if (code !== "ENOENT") {
-      // biome-ignore lint/suspicious/noConsole: intentional auth log
-      console.warn(`[auth] Failed to read Anthropic file ${path}: ${(err as Error).message}`);
+      log.warn(
+        { event: "auth.file.read_failed", provider: "anthropic", path, err },
+        "Failed to read Anthropic file",
+      );
     }
     return undefined;
   }
@@ -108,8 +111,10 @@ async function readAnthropicFile(path: string): Promise<AnthropicCredsState | un
   try {
     data = JSON.parse(raw);
   } catch {
-    // biome-ignore lint/suspicious/noConsole: intentional auth log
-    console.warn(`[auth] Anthropic file at ${path} is not valid JSON`);
+    log.warn(
+      { event: "auth.file.invalid_json", provider: "anthropic", path },
+      "Anthropic credentials file is not valid JSON",
+    );
     return undefined;
   }
   const oauth = data.claudeAiOauth;
@@ -134,9 +139,9 @@ async function writeAnthropicCache(path: string, creds: AnthropicCredsState): Pr
   try {
     await writeFile(path, JSON.stringify(payload, null, 2));
   } catch (err: unknown) {
-    // biome-ignore lint/suspicious/noConsole: intentional auth log
-    console.warn(
-      `[auth] Failed to write Anthropic cache ${path}: ${(err as Error).message} — refresh succeeded in-memory but won't persist across restart`,
+    log.warn(
+      { event: "auth.cache.write_failed", provider: "anthropic", path, err },
+      "Failed to write Anthropic cache — refresh succeeded in-memory but won't persist across restart",
     );
   }
 }
@@ -154,9 +159,13 @@ async function performAnthropicRefresh(): Promise<void> {
     expires: refreshed.expires,
   };
   await writeAnthropicCache(anthropicCachePath, anthropicCreds);
-  // biome-ignore lint/suspicious/noConsole: intentional auth log
-  console.log(
-    `[auth] Anthropic token refreshed (expires in ${Math.round((anthropicCreds.expires - Date.now()) / 60_000)} min)`,
+  log.info(
+    {
+      event: "auth.refresh.succeeded",
+      provider: "anthropic",
+      expires_in_min: Math.round((anthropicCreds.expires - Date.now()) / 60_000),
+    },
+    "Anthropic token refreshed",
   );
 }
 
@@ -189,9 +198,14 @@ async function loadAnthropicCredentials(seedPath: string, cachePath: string): Pr
   if (fromCache) {
     anthropicCreds = fromCache;
     const expired = anthropicCreds.expires < Date.now();
-    // biome-ignore lint/suspicious/noConsole: intentional startup log
-    console.log(
-      `[auth] Anthropic credentials loaded from cache${expired ? " (expired — will refresh on first request)" : ""}`,
+    log.info(
+      {
+        event: "auth.credentials.loaded",
+        provider: "anthropic",
+        source: "cache",
+        expired,
+      },
+      "Anthropic credentials loaded from cache",
     );
     return;
   }
@@ -199,20 +213,24 @@ async function loadAnthropicCredentials(seedPath: string, cachePath: string): Pr
   // First boot: read the host seed, then immediately mint our own chain.
   const fromSeed = await readAnthropicFile(seedPath);
   if (!fromSeed) {
-    // biome-ignore lint/suspicious/noConsole: intentional startup log
-    console.warn("[auth] Anthropic credentials not found — backend unavailable");
+    log.warn(
+      { event: "auth.credentials.unavailable", provider: "anthropic" },
+      "Anthropic credentials not found — backend unavailable",
+    );
     return;
   }
   anthropicCreds = fromSeed;
-  // biome-ignore lint/suspicious/noConsole: intentional startup log
-  console.log("[auth] Anthropic credentials seeded from host file — refreshing to mint own chain");
+  log.info(
+    { event: "auth.credentials.seeded", provider: "anthropic" },
+    "Anthropic credentials seeded from host file — refreshing to mint own chain",
+  );
 
   try {
     await performAnthropicRefresh();
   } catch (err: unknown) {
-    // biome-ignore lint/suspicious/noConsole: intentional auth log
-    console.warn(
-      `[auth] Initial Anthropic refresh failed: ${(err as Error).message} — using seed token until lazy refresh succeeds`,
+    log.warn(
+      { event: "auth.refresh.failed", provider: "anthropic", phase: "initial", err },
+      "Initial Anthropic refresh failed — using seed token until lazy refresh succeeds",
     );
   }
 }
@@ -228,22 +246,28 @@ async function loadCodexCredentials(path: string): Promise<void> {
       codexAccessToken = token;
       codexExpiresAt = decodeJwtExp(token);
       const expired = codexExpiresAt !== undefined && codexExpiresAt < Date.now();
-      // biome-ignore lint/suspicious/noConsole: intentional startup log
-      console.log(
-        `[auth] Codex credentials loaded${expired ? " (expired — upstream may reject)" : ""}`,
+      log.info(
+        { event: "auth.credentials.loaded", provider: "codex", expired },
+        "Codex credentials loaded",
       );
     } else {
-      // biome-ignore lint/suspicious/noConsole: intentional startup log
-      console.warn("[auth] Codex credentials file found but missing access_token");
+      log.warn(
+        { event: "auth.credentials.malformed", provider: "codex" },
+        "Codex credentials file found but missing access_token",
+      );
     }
   } catch (err: unknown) {
     const code = (err as NodeJS.ErrnoException).code;
     if (code === "ENOENT") {
-      // biome-ignore lint/suspicious/noConsole: intentional startup log
-      console.warn("[auth] Codex credentials not found — backend unavailable");
+      log.warn(
+        { event: "auth.credentials.unavailable", provider: "codex" },
+        "Codex credentials not found — backend unavailable",
+      );
     } else {
-      // biome-ignore lint/suspicious/noConsole: intentional startup log
-      console.warn("[auth] Failed to read Codex credentials:", (err as Error).message);
+      log.warn(
+        { event: "auth.file.read_failed", provider: "codex", err },
+        "Failed to read Codex credentials",
+      );
     }
   }
 }
@@ -301,8 +325,10 @@ async function loadGeminiCredentials(geminiPath: string): Promise<void> {
     let expiryDate = data.expiry_date;
 
     if (!token && !data.refresh_token) {
-      // biome-ignore lint/suspicious/noConsole: intentional startup log
-      console.warn("[auth] Gemini credentials file found but missing tokens");
+      log.warn(
+        { event: "auth.credentials.malformed", provider: "gemini" },
+        "Gemini credentials file found but missing tokens",
+      );
       return;
     }
 
@@ -317,8 +343,10 @@ async function loadGeminiCredentials(geminiPath: string): Promise<void> {
     }
 
     if (!token) {
-      // biome-ignore lint/suspicious/noConsole: intentional startup log
-      console.warn("[auth] Gemini credentials file found but token refresh failed");
+      log.warn(
+        { event: "auth.refresh.failed", provider: "gemini", phase: "initial" },
+        "Gemini credentials file found but token refresh failed",
+      );
       return;
     }
 
@@ -334,20 +362,28 @@ async function loadGeminiCredentials(geminiPath: string): Promise<void> {
     geminiExpiresAt = expiryDate;
 
     if (projectId) {
-      // biome-ignore lint/suspicious/noConsole: intentional startup log
-      console.log(`[auth] Gemini credentials loaded (project: ${projectId})`);
+      log.info(
+        { event: "auth.credentials.loaded", provider: "gemini", project_id: projectId },
+        "Gemini credentials loaded",
+      );
     } else {
-      // biome-ignore lint/suspicious/noConsole: intentional startup log
-      console.warn("[auth] Gemini token loaded but project discovery failed");
+      log.warn(
+        { event: "auth.project_discovery.failed", provider: "gemini" },
+        "Gemini token loaded but project discovery failed",
+      );
     }
   } catch (err: unknown) {
     const code = (err as NodeJS.ErrnoException).code;
     if (code === "ENOENT") {
-      // biome-ignore lint/suspicious/noConsole: intentional startup log
-      console.warn("[auth] Gemini credentials not found — backend unavailable");
+      log.warn(
+        { event: "auth.credentials.unavailable", provider: "gemini" },
+        "Gemini credentials not found — backend unavailable",
+      );
     } else {
-      // biome-ignore lint/suspicious/noConsole: intentional startup log
-      console.warn("[auth] Failed to read Gemini credentials:", (err as Error).message);
+      log.warn(
+        { event: "auth.file.read_failed", provider: "gemini", err },
+        "Failed to read Gemini credentials",
+      );
     }
   }
 }

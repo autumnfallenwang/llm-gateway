@@ -8,6 +8,13 @@ services:
     container_name: llm-gateway
     network_mode: host
     restart: unless-stopped
+    # Cap stdout/stderr capture at 50MB total (5 × 10MB rotated). Promtail/Loki
+    # tail all rotation files, so capping doesn't lose log history downstream.
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "5"
     volumes:
       # Read-only directory mounts (avoids inode pinning when host CLIs rotate credential files)
       - ~/.claude:/home/node/host-claude:ro

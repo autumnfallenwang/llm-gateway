@@ -40,6 +40,7 @@ Centralized in `src/config.ts`. Key env var overrides:
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `LLM_GATEWAY_PORT` | `51277` | Server port |
+| `LOG_LEVEL` | `info` | pino log level (`trace`/`debug`/`info`/`warn`/`error`/`fatal`). Bump to `debug` for verbose troubleshooting. |
 | `OLLAMA_BASE_URL` | `http://localhost:11434` | Ollama API base URL |
 | `OLLAMA_NUM_CTX` | `32768` | Ollama runtime context window size (`num_ctx`) |
 | `ANTHROPIC_SEED_PATH` | `~/.claude/.credentials.json` | Read-only seed: host's Claude CLI credentials. Read once on first boot. |

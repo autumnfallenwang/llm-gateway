@@ -1,4 +1,5 @@
 import { getModels, type Model } from "@mariozechner/pi-ai";
+import { log } from "../lib/logger.js";
 import { fetchOllamaModels, type OllamaModelCapabilities } from "../lib/ollama.js";
 import { getAnthropicKey, getCodexKey, getGeminiKey } from "./auth.js";
 
@@ -55,9 +56,15 @@ export async function loadRegistry(config?: RegistryConfig): Promise<void> {
     ? getModels("google-gemini-cli").map((m) => ({ model: m, capability: "chat" as const }))
     : [];
 
-  // biome-ignore lint/suspicious/noConsole: intentional startup log
-  console.log(
-    `[registry] Loaded ${ollamaEntries.length} Ollama, ${anthropicEntries.length} Anthropic, ${codexEntries.length} Codex, ${geminiEntries.length} Gemini models`,
+  log.info(
+    {
+      event: "registry.loaded",
+      ollama: ollamaEntries.length,
+      anthropic: anthropicEntries.length,
+      codex: codexEntries.length,
+      gemini: geminiEntries.length,
+    },
+    "Model registry loaded",
   );
 }
 

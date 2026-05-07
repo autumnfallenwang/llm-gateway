@@ -71,6 +71,17 @@ vi.mock("../src/services/registry", async (importOriginal) => {
   };
 });
 
+// Spy on log.info to capture middleware emissions without mocking the whole module
+// (which would break the rest of the app's logging path).
+const logInfoMock = vi.fn();
+vi.mock("../src/lib/logger", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../src/lib/logger")>();
+  return {
+    ...actual,
+    log: { ...actual.log, info: logInfoMock },
+  };
+});
+
 // Must import after vi.mock
 const { default: app } = await import("../src/app");
 
@@ -586,5 +597,67 @@ describe("Backend error responses", () => {
     expect(json.error.type).toBe("server_error");
     expect(json.error.code).toBe("server_error");
     expect(json.error.message).toBe("Something went wrong");
+  });
+});
+
+describe("Request access log middleware", () => {
+  function findHttpRequestLog(path: string): Record<string, unknown> | undefined {
+    for (const call of logInfoMock.mock.calls) {
+      const [meta] = call as [Record<string, unknown> | undefined];
+      if (meta?.event === "http.request" && meta?.path === path) {
+        return meta;
+      }
+    }
+    return undefined;
+  }
+
+  it("emits a single http.request log line per request with correct shape", async () => {
+    logInfoMock.mockClear();
+    const res = await post("/v1/chat/completions", VALID_BODY);
+    expect(res.status).toBe(404); // unresolved model — we only care about the log line shape
+
+    const logEntry = findHttpRequestLog("/v1/chat/completions");
+    expect(logEntry).toBeDefined();
+    expect(logEntry?.method).toBe("POST");
+    expect(logEntry?.status).toBe(404);
+    expect(logEntry?.req_id).toEqual(expect.any(String));
+    expect((logEntry?.req_id as string).length).toBeGreaterThan(8);
+    expect(logEntry?.latency_ms).toEqual(expect.any(Number));
+    expect((logEntry?.latency_ms as number) >= 0).toBe(true);
+  });
+
+  it("logs failed-validation requests with status 400", async () => {
+    logInfoMock.mockClear();
+    await app.request("/v1/chat/completions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ messages: [] }), // missing model
+    });
+
+    const logEntry = findHttpRequestLog("/v1/chat/completions");
+    expect(logEntry).toBeDefined();
+    expect(logEntry?.status).toBe(400);
+  });
+
+  it("does not log /openapi.json, /docs, or / (skip list)", async () => {
+    logInfoMock.mockClear();
+    await app.request("/openapi.json");
+    await app.request("/");
+
+    expect(findHttpRequestLog("/openapi.json")).toBeUndefined();
+    expect(findHttpRequestLog("/")).toBeUndefined();
+  });
+
+  it("each request gets a unique req_id", async () => {
+    logInfoMock.mockClear();
+    await post("/v1/chat/completions", VALID_BODY);
+    await post("/v1/chat/completions", VALID_BODY);
+
+    const httpCalls = logInfoMock.mock.calls.filter(
+      (c) => (c[0] as Record<string, unknown>)?.event === "http.request",
+    );
+    const ids = httpCalls.map((c) => (c[0] as Record<string, unknown>).req_id);
+    expect(ids).toHaveLength(2);
+    expect(ids[0]).not.toBe(ids[1]);
   });
 });

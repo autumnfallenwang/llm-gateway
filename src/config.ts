@@ -8,6 +8,11 @@ const env = process.env;
 
 export const LLM_GATEWAY_PORT = Number(env.LLM_GATEWAY_PORT ?? 51277);
 
+// ── Logging ────────────────────────────────────────────────────────────────
+
+/** Minimum log level emitted to stdout. Set to "debug" for verbose troubleshooting. */
+export const LOG_LEVEL = env.LOG_LEVEL ?? "info";
+
 // ── App metadata ───────────────────────────────────────────────────────────
 
 const pkg = JSON.parse(readFileSync(join(import.meta.dirname, "..", "package.json"), "utf-8")) as {

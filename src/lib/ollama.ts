@@ -6,6 +6,7 @@ import {
   OLLAMA_FETCH_TIMEOUT_MS,
   OLLAMA_SHOW_TIMEOUT_MS,
 } from "../config.js";
+import { log } from "./logger.js";
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -107,8 +108,10 @@ export async function fetchOllamaModels(baseUrl?: string): Promise<FetchedOllama
       signal: AbortSignal.timeout(OLLAMA_FETCH_TIMEOUT_MS),
     });
     if (!res.ok) {
-      // biome-ignore lint/suspicious/noConsole: intentional startup log
-      console.warn(`[ollama] Unexpected status ${res.status} from ${base}/v1/models`);
+      log.warn(
+        { event: "ollama.fetch_models.unexpected_status", status: res.status, base_url: base },
+        "Unexpected status from Ollama /v1/models",
+      );
       return [];
     }
     const body = (await res.json()) as OllamaModelsResponse;
@@ -126,8 +129,10 @@ export async function fetchOllamaModels(baseUrl?: string): Promise<FetchedOllama
       .filter(({ model }) => model.input.includes("image"))
       .map(({ model }) => model.id);
     if (visionIds.length > 0) {
-      // biome-ignore lint/suspicious/noConsole: intentional startup log
-      console.log(`[ollama] Vision-capable models: ${visionIds.join(", ")}`);
+      log.info(
+        { event: "ollama.vision_models_detected", models: visionIds, count: visionIds.length },
+        "Ollama vision-capable models detected",
+      );
     }
 
     const embeddingIds = fetched
@@ -136,14 +141,22 @@ export async function fetchOllamaModels(baseUrl?: string): Promise<FetchedOllama
       )
       .map(({ model }) => model.id);
     if (embeddingIds.length > 0) {
-      // biome-ignore lint/suspicious/noConsole: intentional startup log
-      console.log(`[ollama] Embedding models: ${embeddingIds.join(", ")}`);
+      log.info(
+        {
+          event: "ollama.embedding_models_detected",
+          models: embeddingIds,
+          count: embeddingIds.length,
+        },
+        "Ollama embedding models detected",
+      );
     }
 
     return fetched;
   } catch {
-    // biome-ignore lint/suspicious/noConsole: intentional startup log
-    console.warn("[ollama] Could not reach Ollama — local models unavailable");
+    log.warn(
+      { event: "ollama.unreachable", base_url: base },
+      "Could not reach Ollama — local models unavailable",
+    );
     return [];
   }
 }

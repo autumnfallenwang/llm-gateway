@@ -4,6 +4,7 @@ import { cors } from "hono/cors";
 import { streamSSE } from "hono/streaming";
 import { APP_DESCRIPTION, APP_NAME, APP_VERSION, LLM_GATEWAY_PORT } from "./config";
 import { BackendError } from "./errors";
+import { log } from "./lib/logger";
 import { chatCompletionRoute } from "./routes/chat";
 import { embeddingsRoute } from "./routes/embeddings";
 import { modelsRoute } from "./routes/models";
@@ -16,7 +17,10 @@ import { ImageLoadError } from "./services/image/load";
 import { listModels, resolveModel } from "./services/registry";
 import { readValidationReport, validateAllModels } from "./services/validation";
 
-const app = new OpenAPIHono({
+type AppVariables = { req_id: string };
+
+// biome-ignore lint/style/useNamingConvention: Variables is Hono's required generic key
+const app = new OpenAPIHono<{ Variables: AppVariables }>({
   defaultHook: (result, c) => {
     if (!result.success) {
       const firstIssue = result.error.issues[0];
@@ -37,6 +41,29 @@ const app = new OpenAPIHono({
 });
 
 app.use("/*", cors());
+
+// Request access log: one structured line per request (event="http.request") with
+// req_id, method, path, status, latency_ms. Skips the Swagger / openapi / health
+// noise to keep logs focused on real API traffic.
+const REQUEST_LOG_SKIP = new Set(["/", "/docs", "/openapi.json"]);
+app.use("*", async (c, next) => {
+  const start = Date.now();
+  const reqId = crypto.randomUUID();
+  c.set("req_id", reqId);
+  await next();
+  if (REQUEST_LOG_SKIP.has(c.req.path)) return;
+  log.info(
+    {
+      event: "http.request",
+      req_id: reqId,
+      method: c.req.method,
+      path: c.req.path,
+      status: c.res.status,
+      latency_ms: Date.now() - start,
+    },
+    "request handled",
+  );
+});
 
 // Chat completions
 app.openapi(chatCompletionRoute, async (c) => {

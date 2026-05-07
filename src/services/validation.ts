@@ -8,6 +8,7 @@ import {
   VALIDATION_MAX_TOKENS,
   VALIDATION_TIMEOUT_MS,
 } from "../config.js";
+import { log } from "../lib/logger.js";
 import type { ModelValidationResult, ValidateResponse } from "../schemas/validate.js";
 import { createEmbedding } from "./embeddings.js";
 import { listModels, type ResolvedModel, resolveModel } from "./registry.js";
@@ -138,9 +139,9 @@ export async function validateAllModels(config?: ValidationConfig): Promise<Vali
   const allModels = listModels();
   const models: Record<string, ModelValidationResult> = {};
 
-  // biome-ignore lint/suspicious/noConsole: intentional progress log
-  console.log(
-    `[validation] Starting validation of ${allModels.length} models (concurrency: ${concurrency})`,
+  log.info(
+    { event: "validation.started", model_count: allModels.length, concurrency },
+    "Starting model validation",
   );
 
   const tasks = allModels.map((m) => async () => {
@@ -148,12 +149,18 @@ export async function validateAllModels(config?: ValidationConfig): Promise<Vali
     if (!resolved) {
       return { id: m.id, result: { status: "error" as const, error: "model not resolvable" } };
     }
-    // biome-ignore lint/suspicious/noConsole: intentional progress log
-    console.log(`[validation] Testing ${m.id}...`);
+    log.debug({ event: "validation.testing", model: m.id }, "Testing model");
     const result = await validateSingleModel(resolved, timeoutMs);
-    // biome-ignore lint/suspicious/noConsole: intentional progress log
-    console.log(
-      `[validation] ${m.id}: ${result.status}${result.latencyMs ? ` (${result.latencyMs}ms)` : ""}${result.error ? ` — ${result.error}` : ""}`,
+    log.info(
+      {
+        event: "validation.completed",
+        model: m.id,
+        status: result.status,
+        latency_ms: result.latencyMs,
+        ...(result.error && { err_message: result.error }),
+        ...(result.embeddingDim && { embedding_dim: result.embeddingDim }),
+      },
+      "Model validation completed",
     );
     return { id: m.id, result };
   });
@@ -172,9 +179,14 @@ export async function validateAllModels(config?: ValidationConfig): Promise<Vali
   await writeFile(filePath, JSON.stringify(report, null, 2));
 
   const okCount = Object.values(models).filter((m) => m.status === "ok").length;
-  // biome-ignore lint/suspicious/noConsole: intentional progress log
-  console.log(
-    `[validation] Done: ${okCount}/${allModels.length} models passed. Results saved to ${filePath}`,
+  log.info(
+    {
+      event: "validation.done",
+      ok_count: okCount,
+      total_count: allModels.length,
+      file_path: filePath,
+    },
+    "Validation done",
   );
 
   return report;
