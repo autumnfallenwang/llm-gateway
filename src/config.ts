@@ -22,6 +22,8 @@ export const APP_DESCRIPTION = `Self-hosted OpenAI-compatible API gateway that r
 
 Use any OpenAI-compatible SDK with \`baseURL\` pointed at this gateway. No API key is required — authentication to upstream providers is handled server-side.
 
+### Chat completions
+
 \`\`\`python
 from openai import OpenAI
 client = OpenAI(base_url="http://localhost:${LLM_GATEWAY_PORT}/v1", api_key="unused")
@@ -31,17 +33,34 @@ response = client.chat.completions.create(
 )
 \`\`\`
 
+### Embeddings
+
+\`\`\`python
+response = client.embeddings.create(
+    model="bge-m3:latest",  # or qwen3-embedding:0.6b, nomic-embed-text:latest
+    input="The quick brown fox",
+)
+print(len(response.data[0].embedding))  # 1024 for bge-m3
+\`\`\`
+
 ## Available Models
 
-Models are dynamic — they depend on which backends are configured. Call \`GET /v1/models\` to discover available models at runtime. Each model's \`owned_by\` field indicates its backend: \`ollama\`, \`anthropic\`, \`openai-codex\`, or \`google-gemini-cli\`.
+Models are dynamic — they depend on which backends are configured. Call \`GET /v1/models\` to discover available models at runtime. Each model carries:
+- \`owned_by\`: backend (\`ollama\`, \`anthropic\`, \`openai-codex\`, \`google-gemini-cli\`)
+- \`capability\`: \`"chat"\` (use \`/v1/chat/completions\`) or \`"embedding"\` (use \`/v1/embeddings\`)
+- \`embedding_dimensions\`: vector length, populated for validated embedding models
 
 ## Streaming
 
-Set \`stream: true\` to receive Server-Sent Events. Each event is \`data: {chunk_json}\\n\\n\` with object type \`chat.completion.chunk\`. The stream ends with \`data: [DONE]\\n\\n\`. OpenAI SDKs handle this automatically.
+Set \`stream: true\` on chat completions to receive Server-Sent Events. Each event is \`data: {chunk_json}\\n\\n\` with object type \`chat.completion.chunk\`. The stream ends with \`data: [DONE]\\n\\n\`. OpenAI SDKs handle this automatically. Embeddings do not stream.
 
 ## Vision
 
-Send images via \`image_url\` content parts (HTTPS URLs or data URIs). Vision-capable models process images directly. Non-vision models automatically fall back to a vision model that describes the image as text.`;
+Send images via \`image_url\` content parts (HTTPS URLs or data URIs). Vision-capable models process images directly. Non-vision models automatically fall back to a vision model that describes the image as text.
+
+## Embeddings
+
+\`POST /v1/embeddings\` is OpenAI-compatible byte-for-byte. Currently routes to Ollama embedding models (\`bge-m3\`, \`qwen3-embedding\`, \`nomic-embed-text\`). Anthropic / Codex / Gemini OAuth providers don't expose embedding APIs and return \`501 provider_unsupported\`. Supported request fields: \`model\`, \`input\` (string or array of strings up to 2048 items), \`encoding_format\` (\`"float"\` default or \`"base64"\` for compact transport), \`dimensions\` (Matryoshka-style truncation), \`user\`. Token-array inputs are not supported.`;
 
 // ── Ollama ─────────────────────────────────────────────────────────────────
 

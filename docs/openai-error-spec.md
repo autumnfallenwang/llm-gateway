@@ -56,6 +56,18 @@ These are the machine-readable `code` strings observed in OpenAI error responses
 | `invalid_api_key` | 401 | `authentication_error` | API key is invalid or revoked |
 | `string_above_max_length` | 400 | `invalid_request_error` | A string parameter exceeds max allowed length |
 
+### Gateway-specific `code` Values
+
+The gateway emits these additional codes that aren't in OpenAI's vocabulary but follow the same envelope shape. They surface gateway-specific routing decisions:
+
+| `code` | HTTP | `type` | Meaning | Surface |
+|--------|------|--------|---------|---------|
+| `vision_fallback_failed` | 502 | `server_error` | All vision fallback models exhausted | `/v1/chat/completions` (Phase 2) |
+| `anthropic_auth_failed` | 500 | `server_error` | Container could not refresh Anthropic OAuth | `/v1/chat/completions` (Phase 6) |
+| `provider_unsupported` | 501 | `invalid_request_error` | Provider does not offer this endpoint (e.g. Anthropic embeddings) | `/v1/embeddings` (Phase 5) |
+| `wrong_capability` | 400 | `invalid_request_error` | Embedding model used at chat endpoint, or chat model used at embeddings endpoint | both routes (Phase 5) |
+| `invalid_input` | 400 | `invalid_request_error` | Upstream Ollama rejected the input (e.g. empty array, token-array form) | `/v1/embeddings` (Phase 5) |
+
 Note: OpenAI's error codes are not exhaustively documented. The `code` field is often `null` for simple validation errors. New codes may appear as the API evolves.
 
 ---
@@ -92,47 +104,46 @@ These are all error scenarios our gateway needs to handle, mapped to the OpenAI 
 | Ollama unreachable | `"Backend unavailable: ollama"` | `server_error` | `null` | `null` |
 | Unexpected error | `"Internal server error"` | `server_error` | `null` | `null` |
 
-### Future Consideration (not Phase 1)
+### Phase 3: Context overflow
 
-| Condition | HTTP | `type` | `code` |
-|-----------|------|--------|--------|
-| Context too long for model | 400 | `invalid_request_error` | `context_length_exceeded` |
-| Auth token expired / missing (if gateway adds auth) | 401 | `authentication_error` | `invalid_api_key` |
-| Backend rate limited | 429 | `rate_limit_error` | `rate_limit_exceeded` |
+| Condition | `message` (example) | `type` | `param` | `code` |
+|-----------|---------------------|--------|---------|--------|
+| Prompt exceeds model context | `"prompt is too long: 250000 tokens > 200000 maximum context length"` | `invalid_request_error` | `null` | `context_length_exceeded` |
+
+### Phase 5: Embeddings (`/v1/embeddings`)
+
+| Condition | HTTP | `message` (example) | `type` | `param` | `code` |
+|-----------|------|---------------------|--------|---------|--------|
+| Anthropic / Codex / Gemini model | 501 | `"Provider 'anthropic' does not offer an embeddings API. Use an Ollama or OpenAI embedding model."` | `invalid_request_error` | `null` | `provider_unsupported` |
+| Chat model used at `/v1/embeddings` | 400 | `"Model 'qwen3:30b' is a chat model. Use POST /v1/chat/completions instead."` | `invalid_request_error` | `null` | `wrong_capability` |
+| Embedding model used at `/v1/chat/completions` | 400 | `"Model 'bge-m3:latest' is an embedding model. Use POST /v1/embeddings instead."` | `invalid_request_error` | `model` | `wrong_capability` |
+| Empty array input | 400 | `"invalid input"` | `invalid_request_error` | `null` | `invalid_input` |
+| Token-array input (unsupported) | 400 | `"invalid input type"` | `invalid_request_error` | `null` | `invalid_input` |
+| Unknown model at `/v1/embeddings` | 404 | `"Model 'foo' not found"` | `invalid_request_error` | `model` | `model_not_found` |
+
+Note on the upstream-Ollama 404 path: Ollama's native error envelope uses `type: "not_found_error"` and `code: null`. The gateway **rewraps** this to `type: "invalid_request_error"` + `code: "model_not_found"` for envelope consistency with `/v1/chat/completions`. See `docs/openai-embeddings-spec.md` "POC Log" §"Error path — unknown model".
 
 ---
 
-## Comparison: What We Have vs What We Need
+## Implementation status
 
-### Current `ErrorResponseSchema`
+The action items below were captured in Phase 1; all are now implemented:
 
-```typescript
-z.object({
-  error: z.object({
-    message: z.string(),
-    type: z.string(),
-    code: z.string().nullable(),
-  }),
-})
-```
+- [x] `param` field added to `ErrorResponseSchema` (`src/schemas/error.ts`)
+- [x] `defaultHook` in `app.ts` populates `param` from the first Zod issue's path
+- [x] Streaming validation errors include `param: "stream"` when applicable
+- [x] Model-not-found errors use `type: "invalid_request_error"`, `code: "model_not_found"`, `param: "model"`
+- [x] Tests assert `param` is present (`tests/app.test.ts`, `tests/embeddings.test.ts`)
 
-### What OpenAI Actually Returns
+The current schema matches OpenAI's envelope verbatim:
 
 ```typescript
 z.object({
   error: z.object({
     message: z.string(),
     type: z.string(),
-    param: z.string().nullable(),  // ← MISSING from our schema
+    param: z.string().nullable(),
     code: z.string().nullable(),
   }),
 })
 ```
-
-### Action Items
-
-- [ ] Add `param` field to `ErrorResponseSchema`
-- [ ] Update `defaultHook` in `app.ts` to populate `param` from Zod issue path
-- [ ] Update stream-not-supported error to include `param: "stream"`
-- [ ] Update model-not-found error (task #4) to use `type: "not_found_error"`, `code: "model_not_found"`
-- [ ] Update tests to assert `param` field is present

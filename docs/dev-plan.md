@@ -1,5 +1,9 @@
 # Gateway Development Plan - Phase 1
 
+> **Historical doc.** This is the original Phase 1 plan from when the gateway was first built; everything below describes the v0.1 minimum viable shape. The gateway has since added streaming, vision (Phase 2), context window management (Phase 3), Gemini + tooling (Phase 4), embeddings (Phase 5), and container-private OAuth (Phase 6).
+>
+> For **current state**: see [progress.md](progress.md) for the live task tracker, or `GET /openapi.json` / `/docs` for the live API surface (currently `/v1/chat/completions`, `/v1/embeddings`, `/v1/models`, `/v1/models/validate`).
+
 ## Goal
 
 A local REST API that accepts OpenAI-compatible requests and routes to multiple backends (Ollama, Anthropic, Codex) via pi-ai.
