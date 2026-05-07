@@ -7,6 +7,7 @@ import { BackendError } from "./errors";
 import { chatCompletionRoute } from "./routes/chat";
 import { modelsRoute } from "./routes/models";
 import { validateModelsRoute } from "./routes/validate";
+import { ensureAnthropicFresh } from "./services/auth";
 import { createCompletion, createStreamingCompletion } from "./services/completion";
 import { VisionFallbackError } from "./services/image/fallback";
 import { ImageLoadError } from "./services/image/load";
@@ -39,7 +40,7 @@ app.use("/*", cors());
 app.openapi(chatCompletionRoute, async (c) => {
   const body = c.req.valid("json");
 
-  const resolved = resolveModel(body.model);
+  let resolved = resolveModel(body.model);
   if (!resolved) {
     return c.json(
       {
@@ -52,6 +53,30 @@ app.openapi(chatCompletionRoute, async (c) => {
       },
       404,
     );
+  }
+
+  // Lazy refresh: Anthropic OAuth tokens live ~45 min and the container maintains its own
+  // refresh chain. Refresh on the request path (single-flight via a mutex inside auth.ts)
+  // and re-resolve so the resolved model carries the fresh access token.
+  if (resolved.provider === "anthropic") {
+    try {
+      await ensureAnthropicFresh();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Anthropic credential refresh failed";
+      return c.json(
+        {
+          error: {
+            message: `Anthropic auth error: ${message}`,
+            type: "server_error",
+            param: null,
+            code: "anthropic_auth_failed",
+          },
+        },
+        500,
+      );
+    }
+    const refreshed = resolveModel(body.model);
+    if (refreshed) resolved = refreshed;
   }
 
   if (body.stream) {

@@ -1,7 +1,13 @@
 import { readFile, writeFile } from "node:fs/promises";
-import { geminiCliOAuthProvider, refreshGoogleCloudToken } from "@mariozechner/pi-ai";
 import {
-  ANTHROPIC_CREDENTIALS_PATH,
+  geminiCliOAuthProvider,
+  refreshAnthropicToken,
+  refreshGoogleCloudToken,
+} from "@mariozechner/pi-ai";
+import {
+  ANTHROPIC_CACHE_PATH,
+  ANTHROPIC_REFRESH_SKEW_MS,
+  ANTHROPIC_SEED_PATH,
   CODEX_CREDENTIALS_PATH,
   GEMINI_CREDENTIALS_PATH,
   GEMINI_PROJECT_URL,
@@ -12,6 +18,7 @@ import {
 interface AnthropicCredentialsFile {
   claudeAiOauth?: {
     accessToken?: string;
+    refreshToken?: string;
     expiresAt?: number;
   };
 }
@@ -28,6 +35,13 @@ interface GeminiCredentialsFile {
   expiry_date?: number; // ms epoch
 }
 
+/** In-memory Anthropic OAuth state. Mirrors pi-ai's `OAuthCredentials` shape. */
+interface AnthropicCredsState {
+  access: string;
+  refresh: string;
+  expires: number; // ms epoch
+}
+
 export interface BackendCredentialStatus {
   available: boolean;
   expired: boolean;
@@ -41,15 +55,20 @@ export interface CredentialStatus {
 }
 
 export interface AuthConfig {
-  anthropicCredentialsPath?: string;
+  /** Read-only seed path (host's `~/.claude/.credentials.json` mount). */
+  anthropicSeedPath?: string;
+  /** Writable cache path inside the container's `~/.llm-gateway` volume. */
+  anthropicCachePath?: string;
   codexCredentialsPath?: string;
   geminiCredentialsPath?: string;
 }
 
 // ── Module state ────────────────────────────────────────────────────────────
 
-let anthropicAccessToken: string | undefined;
-let anthropicExpiresAt: number | undefined;
+let anthropicCreds: AnthropicCredsState | undefined;
+let anthropicCachePath: string = ANTHROPIC_CACHE_PATH;
+let anthropicRefreshInFlight: Promise<void> | null = null;
+
 let codexAccessToken: string | undefined;
 let codexExpiresAt: number | undefined;
 let geminiApiKey: string | undefined;
@@ -71,59 +90,134 @@ function decodeJwtExp(jwt: string): number | undefined {
   return undefined;
 }
 
-// ── Gemini OAuth (delegates to pi-ai) ───────────────────────────────────────
+// ── Anthropic credential file I/O ──────────────────────────────────────────
 
-async function discoverGeminiProjectId(accessToken: string): Promise<string | undefined> {
+async function readAnthropicFile(path: string): Promise<AnthropicCredsState | undefined> {
+  let raw: string;
   try {
-    const res = await fetch(GEMINI_PROJECT_URL, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({}),
-      signal: AbortSignal.timeout(10_000),
-    });
-    if (!res.ok) return undefined;
-    const data = (await res.json()) as {
-      cloudaicompanionProject?: string;
-    };
-    return data.cloudaicompanionProject;
-  } catch {
-    return undefined;
-  }
-}
-
-// ── Backend credential loaders ──────────────────────────────────────────────
-
-async function loadAnthropicCredentials(path: string): Promise<void> {
-  try {
-    const raw = await readFile(path, "utf-8");
-    const data: AnthropicCredentialsFile = JSON.parse(raw);
-    const token = data.claudeAiOauth?.accessToken;
-    if (token) {
-      anthropicAccessToken = token;
-      anthropicExpiresAt = data.claudeAiOauth?.expiresAt;
-      const expired = anthropicExpiresAt !== undefined && anthropicExpiresAt < Date.now();
-      // biome-ignore lint/suspicious/noConsole: intentional startup log
-      console.log(
-        `[auth] Anthropic credentials loaded${expired ? " (expired — upstream may reject)" : ""}`,
-      );
-    } else {
-      // biome-ignore lint/suspicious/noConsole: intentional startup log
-      console.warn("[auth] Anthropic credentials file found but missing accessToken");
-    }
+    raw = await readFile(path, "utf-8");
   } catch (err: unknown) {
     const code = (err as NodeJS.ErrnoException).code;
-    if (code === "ENOENT") {
-      // biome-ignore lint/suspicious/noConsole: intentional startup log
-      console.warn("[auth] Anthropic credentials not found — backend unavailable");
-    } else {
-      // biome-ignore lint/suspicious/noConsole: intentional startup log
-      console.warn("[auth] Failed to read Anthropic credentials:", (err as Error).message);
+    if (code !== "ENOENT") {
+      // biome-ignore lint/suspicious/noConsole: intentional auth log
+      console.warn(`[auth] Failed to read Anthropic file ${path}: ${(err as Error).message}`);
     }
+    return undefined;
+  }
+  let data: AnthropicCredentialsFile;
+  try {
+    data = JSON.parse(raw);
+  } catch {
+    // biome-ignore lint/suspicious/noConsole: intentional auth log
+    console.warn(`[auth] Anthropic file at ${path} is not valid JSON`);
+    return undefined;
+  }
+  const oauth = data.claudeAiOauth;
+  if (!oauth?.accessToken || !oauth?.refreshToken) {
+    return undefined;
+  }
+  return {
+    access: oauth.accessToken,
+    refresh: oauth.refreshToken,
+    expires: typeof oauth.expiresAt === "number" ? oauth.expiresAt : 0,
+  };
+}
+
+async function writeAnthropicCache(path: string, creds: AnthropicCredsState): Promise<void> {
+  const payload: AnthropicCredentialsFile = {
+    claudeAiOauth: {
+      accessToken: creds.access,
+      refreshToken: creds.refresh,
+      expiresAt: creds.expires,
+    },
+  };
+  try {
+    await writeFile(path, JSON.stringify(payload, null, 2));
+  } catch (err: unknown) {
+    // biome-ignore lint/suspicious/noConsole: intentional auth log
+    console.warn(
+      `[auth] Failed to write Anthropic cache ${path}: ${(err as Error).message} — refresh succeeded in-memory but won't persist across restart`,
+    );
   }
 }
+
+// ── Anthropic refresh + lazy ensure ────────────────────────────────────────
+
+async function performAnthropicRefresh(): Promise<void> {
+  if (!anthropicCreds) {
+    throw new Error("[auth] cannot refresh — no Anthropic credentials loaded");
+  }
+  const refreshed = await refreshAnthropicToken(anthropicCreds.refresh);
+  anthropicCreds = {
+    access: refreshed.access,
+    refresh: refreshed.refresh,
+    expires: refreshed.expires,
+  };
+  await writeAnthropicCache(anthropicCachePath, anthropicCreds);
+  // biome-ignore lint/suspicious/noConsole: intentional auth log
+  console.log(
+    `[auth] Anthropic token refreshed (expires in ${Math.round((anthropicCreds.expires - Date.now()) / 60_000)} min)`,
+  );
+}
+
+/**
+ * Ensure the in-memory Anthropic access token is fresh. If expired (or within the safety
+ * skew), call `refreshAnthropicToken` and update the cache file. Concurrent calls during
+ * an in-flight refresh deduplicate to a single network round-trip — required because
+ * Anthropic's refresh tokens rotate, so two parallel refreshes would race and one would lose.
+ */
+export async function ensureAnthropicFresh(): Promise<void> {
+  if (!anthropicCreds) return; // backend unavailable; nothing to refresh
+  if (Date.now() < anthropicCreds.expires - ANTHROPIC_REFRESH_SKEW_MS) return;
+
+  if (anthropicRefreshInFlight) {
+    await anthropicRefreshInFlight;
+    return;
+  }
+
+  anthropicRefreshInFlight = performAnthropicRefresh().finally(() => {
+    anthropicRefreshInFlight = null;
+  });
+  await anthropicRefreshInFlight;
+}
+
+async function loadAnthropicCredentials(seedPath: string, cachePath: string): Promise<void> {
+  anthropicCachePath = cachePath;
+
+  // Prefer the container's cache: once we've minted our own chain, never touch the seed again.
+  const fromCache = await readAnthropicFile(cachePath);
+  if (fromCache) {
+    anthropicCreds = fromCache;
+    const expired = anthropicCreds.expires < Date.now();
+    // biome-ignore lint/suspicious/noConsole: intentional startup log
+    console.log(
+      `[auth] Anthropic credentials loaded from cache${expired ? " (expired — will refresh on first request)" : ""}`,
+    );
+    return;
+  }
+
+  // First boot: read the host seed, then immediately mint our own chain.
+  const fromSeed = await readAnthropicFile(seedPath);
+  if (!fromSeed) {
+    // biome-ignore lint/suspicious/noConsole: intentional startup log
+    console.warn("[auth] Anthropic credentials not found — backend unavailable");
+    return;
+  }
+  anthropicCreds = fromSeed;
+  // biome-ignore lint/suspicious/noConsole: intentional startup log
+  console.log("[auth] Anthropic credentials seeded from host file — refreshing to mint own chain");
+
+  try {
+    await performAnthropicRefresh();
+  } catch (err: unknown) {
+    // biome-ignore lint/suspicious/noConsole: intentional auth log
+    console.warn(
+      `[auth] Initial Anthropic refresh failed: ${(err as Error).message} — using seed token until lazy refresh succeeds`,
+    );
+  }
+}
+
+// ── Codex credential loader (unchanged: seed-only, no refresh) ─────────────
 
 async function loadCodexCredentials(path: string): Promise<void> {
   try {
@@ -151,6 +245,29 @@ async function loadCodexCredentials(path: string): Promise<void> {
       // biome-ignore lint/suspicious/noConsole: intentional startup log
       console.warn("[auth] Failed to read Codex credentials:", (err as Error).message);
     }
+  }
+}
+
+// ── Gemini OAuth (delegates to pi-ai) ───────────────────────────────────────
+
+async function discoverGeminiProjectId(accessToken: string): Promise<string | undefined> {
+  try {
+    const res = await fetch(GEMINI_PROJECT_URL, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({}),
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!res.ok) return undefined;
+    const data = (await res.json()) as {
+      cloudaicompanionProject?: string;
+    };
+    return data.cloudaicompanionProject;
+  } catch {
+    return undefined;
   }
 }
 
@@ -239,20 +356,23 @@ async function loadGeminiCredentials(geminiPath: string): Promise<void> {
 
 export async function loadCredentials(config?: AuthConfig): Promise<void> {
   // Reset state
-  anthropicAccessToken = undefined;
-  anthropicExpiresAt = undefined;
+  anthropicCreds = undefined;
+  anthropicRefreshInFlight = null;
   codexAccessToken = undefined;
   codexExpiresAt = undefined;
   geminiApiKey = undefined;
   geminiExpiresAt = undefined;
 
-  await loadAnthropicCredentials(config?.anthropicCredentialsPath ?? ANTHROPIC_CREDENTIALS_PATH);
+  await loadAnthropicCredentials(
+    config?.anthropicSeedPath ?? ANTHROPIC_SEED_PATH,
+    config?.anthropicCachePath ?? ANTHROPIC_CACHE_PATH,
+  );
   await loadCodexCredentials(config?.codexCredentialsPath ?? CODEX_CREDENTIALS_PATH);
   await loadGeminiCredentials(config?.geminiCredentialsPath ?? GEMINI_CREDENTIALS_PATH);
 }
 
 export function getAnthropicKey(): string | undefined {
-  return anthropicAccessToken;
+  return anthropicCreds?.access;
 }
 
 export function getCodexKey(): string | undefined {
@@ -267,9 +387,9 @@ export function getCredentialStatus(): CredentialStatus {
   const now = Date.now();
   return {
     anthropic: {
-      available: anthropicAccessToken !== undefined,
-      expired: anthropicExpiresAt !== undefined && anthropicExpiresAt < now,
-      expiresAt: anthropicExpiresAt,
+      available: anthropicCreds !== undefined,
+      expired: anthropicCreds !== undefined && anthropicCreds.expires < now,
+      expiresAt: anthropicCreds?.expires,
     },
     codex: {
       available: codexAccessToken !== undefined,

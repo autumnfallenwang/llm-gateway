@@ -10,6 +10,10 @@ export const ModelObjectSchema = z.object({
   owned_by: z.string().openapi({
     description: "Model provider: 'ollama', 'anthropic', 'openai-codex', or 'google-gemini-cli'",
   }),
+  capability: z.enum(["chat", "embedding"]).optional().openapi({
+    description:
+      "Which inference endpoint serves this model: 'chat' for /v1/chat/completions, 'embedding' for /v1/embeddings",
+  }),
   context_window: z
     .number()
     .int()

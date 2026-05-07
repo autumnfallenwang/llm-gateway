@@ -28,6 +28,8 @@ export interface OllamaShowResponse {
 
 export interface OllamaModelCapabilities {
   supportsVision: boolean;
+  supportsEmbedding: boolean;
+  supportsCompletion: boolean;
   contextLength?: number;
 }
 
@@ -57,14 +59,17 @@ export async function fetchModelCapabilities(
       signal: AbortSignal.timeout(timeout),
     });
     if (!res.ok) {
-      return { supportsVision: false };
+      return { supportsVision: false, supportsEmbedding: false, supportsCompletion: false };
     }
     const body = (await res.json()) as OllamaShowResponse;
-    const supportsVision = body.capabilities?.includes("vision") ?? false;
+    const caps = body.capabilities ?? [];
+    const supportsVision = caps.includes("vision");
+    const supportsEmbedding = caps.includes("embedding");
+    const supportsCompletion = caps.includes("completion");
     const contextLength = body.model_info ? extractContextLength(body.model_info) : undefined;
-    return { supportsVision, contextLength };
+    return { supportsVision, supportsEmbedding, supportsCompletion, contextLength };
   } catch {
-    return { supportsVision: false };
+    return { supportsVision: false, supportsEmbedding: false, supportsCompletion: false };
   }
 }
 
@@ -90,7 +95,12 @@ export function buildOllamaModel(
 
 // ── Public API ──────────────────────────────────────────────────────────────
 
-export async function fetchOllamaModels(baseUrl?: string): Promise<Model<"openai-completions">[]> {
+export interface FetchedOllamaModel {
+  model: Model<"openai-completions">;
+  capabilities: OllamaModelCapabilities;
+}
+
+export async function fetchOllamaModels(baseUrl?: string): Promise<FetchedOllamaModel[]> {
   const base = baseUrl ?? OLLAMA_BASE_URL;
   try {
     const res = await fetch(`${base}/v1/models`, {
@@ -107,17 +117,30 @@ export async function fetchOllamaModels(baseUrl?: string): Promise<Model<"openai
       body.data.map((entry) => fetchModelCapabilities(entry.id, base)),
     );
 
-    const models = body.data.map((entry, i) =>
-      buildOllamaModel(entry.id, base, capabilitiesResults[i]),
-    );
+    const fetched: FetchedOllamaModel[] = body.data.map((entry, i) => ({
+      model: buildOllamaModel(entry.id, base, capabilitiesResults[i]),
+      capabilities: capabilitiesResults[i],
+    }));
 
-    const visionIds = models.filter((m) => m.input.includes("image")).map((m) => m.id);
+    const visionIds = fetched
+      .filter(({ model }) => model.input.includes("image"))
+      .map(({ model }) => model.id);
     if (visionIds.length > 0) {
       // biome-ignore lint/suspicious/noConsole: intentional startup log
       console.log(`[ollama] Vision-capable models: ${visionIds.join(", ")}`);
     }
 
-    return models;
+    const embeddingIds = fetched
+      .filter(
+        ({ capabilities }) => capabilities.supportsEmbedding && !capabilities.supportsCompletion,
+      )
+      .map(({ model }) => model.id);
+    if (embeddingIds.length > 0) {
+      // biome-ignore lint/suspicious/noConsole: intentional startup log
+      console.log(`[ollama] Embedding models: ${embeddingIds.join(", ")}`);
+    }
+
+    return fetched;
   } catch {
     // biome-ignore lint/suspicious/noConsole: intentional startup log
     console.warn("[ollama] Could not reach Ollama — local models unavailable");

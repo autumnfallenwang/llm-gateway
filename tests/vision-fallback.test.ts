@@ -60,6 +60,7 @@ function makeResolved(
       maxTokens: 4096,
     },
     provider: overrides?.provider ?? "anthropic",
+    capability: "chat",
     apiKey: overrides?.apiKey ?? "test-key",
   };
 }

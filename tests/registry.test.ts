@@ -12,6 +12,7 @@ const OLLAMA_MODELS = [
   { id: "llama3:latest", object: "model", created: 1700000000, owned_by: "library" },
   { id: "codellama:7b", object: "model", created: 1700000001, owned_by: "library" },
   { id: "llava:latest", object: "model", created: 1700000002, owned_by: "library" },
+  { id: "bge-m3:latest", object: "model", created: 1700000003, owned_by: "library" },
 ];
 
 const SHOW_CAPABILITIES: Record<
@@ -29,6 +30,10 @@ const SHOW_CAPABILITIES: Record<
   "llava:latest": {
     capabilities: ["completion", "vision"],
     model_info: { "llava.context_length": 4096 },
+  },
+  "bge-m3:latest": {
+    capabilities: ["embedding"],
+    model_info: { "bert.context_length": 8192 },
   },
 };
 
@@ -86,8 +91,15 @@ afterEach(async () => {
   await rm(tempDir, { recursive: true, force: true });
 });
 
-function anthropicPath(): string {
-  return join(tempDir, "anthropic.json");
+// Anthropic credentials are loaded from the writable cache path (no refresh fires).
+// The seed path points at a non-existent file in tempDir so loadCredentials has
+// nothing to bootstrap from when no cache is set up.
+function anthropicCachePath(): string {
+  return join(tempDir, "anthropic-cache.json");
+}
+
+function anthropicSeedPath(): string {
+  return join(tempDir, "anthropic-seed-nonexistent.json");
 }
 
 function codexPath(): string {
@@ -106,9 +118,13 @@ function makeJwt(payload: Record<string, unknown>): string {
 
 async function setupAnthropicKey(): Promise<void> {
   await writeFile(
-    anthropicPath(),
+    anthropicCachePath(),
     JSON.stringify({
-      claudeAiOauth: { accessToken: "anthropic-tok-test", expiresAt: Date.now() + 3_600_000 },
+      claudeAiOauth: {
+        accessToken: "anthropic-tok-test",
+        refreshToken: "anthropic-refresh-test",
+        expiresAt: Date.now() + 3_600_000,
+      },
     }),
   );
 }
@@ -123,7 +139,8 @@ async function setupCodexKey(): Promise<void> {
 describe("loadRegistry", () => {
   it("discovers Ollama models from mock server", async () => {
     await loadCredentials({
-      anthropicCredentialsPath: anthropicPath(),
+      anthropicSeedPath: anthropicSeedPath(),
+      anthropicCachePath: anthropicCachePath(),
       codexCredentialsPath: codexPath(),
       geminiCredentialsPath: geminiPath(),
     });
@@ -138,7 +155,8 @@ describe("loadRegistry", () => {
   it("loads Anthropic models when key is available", async () => {
     await setupAnthropicKey();
     await loadCredentials({
-      anthropicCredentialsPath: anthropicPath(),
+      anthropicSeedPath: anthropicSeedPath(),
+      anthropicCachePath: anthropicCachePath(),
       codexCredentialsPath: codexPath(),
       geminiCredentialsPath: geminiPath(),
     });
@@ -153,7 +171,8 @@ describe("loadRegistry", () => {
   it("loads Codex models when key is available", async () => {
     await setupCodexKey();
     await loadCredentials({
-      anthropicCredentialsPath: anthropicPath(),
+      anthropicSeedPath: anthropicSeedPath(),
+      anthropicCachePath: anthropicCachePath(),
       codexCredentialsPath: codexPath(),
       geminiCredentialsPath: geminiPath(),
     });
@@ -166,7 +185,8 @@ describe("loadRegistry", () => {
 
   it("skips Anthropic models when no key", async () => {
     await loadCredentials({
-      anthropicCredentialsPath: anthropicPath(),
+      anthropicSeedPath: anthropicSeedPath(),
+      anthropicCachePath: anthropicCachePath(),
       codexCredentialsPath: codexPath(),
       geminiCredentialsPath: geminiPath(),
     });
@@ -179,7 +199,8 @@ describe("loadRegistry", () => {
 
   it("skips Codex models when no key", async () => {
     await loadCredentials({
-      anthropicCredentialsPath: anthropicPath(),
+      anthropicSeedPath: anthropicSeedPath(),
+      anthropicCachePath: anthropicCachePath(),
       codexCredentialsPath: codexPath(),
       geminiCredentialsPath: geminiPath(),
     });
@@ -192,7 +213,8 @@ describe("loadRegistry", () => {
 
   it("skips Gemini models when no key", async () => {
     await loadCredentials({
-      anthropicCredentialsPath: anthropicPath(),
+      anthropicSeedPath: anthropicSeedPath(),
+      anthropicCachePath: anthropicCachePath(),
       codexCredentialsPath: codexPath(),
       geminiCredentialsPath: geminiPath(),
     });
@@ -205,7 +227,8 @@ describe("loadRegistry", () => {
 
   it("detects vision-capable Ollama model", async () => {
     await loadCredentials({
-      anthropicCredentialsPath: anthropicPath(),
+      anthropicSeedPath: anthropicSeedPath(),
+      anthropicCachePath: anthropicCachePath(),
       codexCredentialsPath: codexPath(),
       geminiCredentialsPath: geminiPath(),
     });
@@ -218,7 +241,8 @@ describe("loadRegistry", () => {
 
   it("keeps non-vision Ollama model as text-only", async () => {
     await loadCredentials({
-      anthropicCredentialsPath: anthropicPath(),
+      anthropicSeedPath: anthropicSeedPath(),
+      anthropicCachePath: anthropicCachePath(),
       codexCredentialsPath: codexPath(),
       geminiCredentialsPath: geminiPath(),
     });
@@ -231,7 +255,8 @@ describe("loadRegistry", () => {
 
   it("uses context_length from /api/show", async () => {
     await loadCredentials({
-      anthropicCredentialsPath: anthropicPath(),
+      anthropicSeedPath: anthropicSeedPath(),
+      anthropicCachePath: anthropicCachePath(),
       codexCredentialsPath: codexPath(),
       geminiCredentialsPath: geminiPath(),
     });
@@ -242,9 +267,52 @@ describe("loadRegistry", () => {
     expect(resolved?.model.contextWindow).toBe(4096);
   });
 
+  it("tags embedding Ollama model as embedding capability", async () => {
+    await loadCredentials({
+      anthropicSeedPath: anthropicSeedPath(),
+      anthropicCachePath: anthropicCachePath(),
+      codexCredentialsPath: codexPath(),
+      geminiCredentialsPath: geminiPath(),
+    });
+    await loadRegistry({ ollamaBaseUrl: `http://localhost:${ollamaPort}` });
+
+    const resolved = resolveModel("bge-m3:latest");
+    expect(resolved).toBeDefined();
+    expect(resolved?.capability).toBe("embedding");
+  });
+
+  it("tags chat Ollama model as chat capability", async () => {
+    await loadCredentials({
+      anthropicSeedPath: anthropicSeedPath(),
+      anthropicCachePath: anthropicCachePath(),
+      codexCredentialsPath: codexPath(),
+      geminiCredentialsPath: geminiPath(),
+    });
+    await loadRegistry({ ollamaBaseUrl: `http://localhost:${ollamaPort}` });
+
+    const resolved = resolveModel("llama3:latest");
+    expect(resolved).toBeDefined();
+    expect(resolved?.capability).toBe("chat");
+  });
+
+  it("tags vision Ollama model as chat capability (vision is not embedding)", async () => {
+    await loadCredentials({
+      anthropicSeedPath: anthropicSeedPath(),
+      anthropicCachePath: anthropicCachePath(),
+      codexCredentialsPath: codexPath(),
+      geminiCredentialsPath: geminiPath(),
+    });
+    await loadRegistry({ ollamaBaseUrl: `http://localhost:${ollamaPort}` });
+
+    const resolved = resolveModel("llava:latest");
+    expect(resolved).toBeDefined();
+    expect(resolved?.capability).toBe("chat");
+  });
+
   it("handles Ollama not running gracefully", async () => {
     await loadCredentials({
-      anthropicCredentialsPath: anthropicPath(),
+      anthropicSeedPath: anthropicSeedPath(),
+      anthropicCachePath: anthropicCachePath(),
       codexCredentialsPath: codexPath(),
       geminiCredentialsPath: geminiPath(),
     });
@@ -260,7 +328,8 @@ describe("loadRegistry", () => {
 describe("listModels", () => {
   it("returns correct OpenAI-format objects", async () => {
     await loadCredentials({
-      anthropicCredentialsPath: anthropicPath(),
+      anthropicSeedPath: anthropicSeedPath(),
+      anthropicCachePath: anthropicCachePath(),
       codexCredentialsPath: codexPath(),
       geminiCredentialsPath: geminiPath(),
     });
@@ -274,6 +343,7 @@ describe("listModels", () => {
       expect(m.object).toBe("model");
       expect(typeof m.created).toBe("number");
       expect(typeof m.owned_by).toBe("string");
+      expect(["chat", "embedding"]).toContain(m.capability);
     }
   });
 });
@@ -281,7 +351,8 @@ describe("listModels", () => {
 describe("resolveModel", () => {
   it("resolves an Ollama model with provider='ollama'", async () => {
     await loadCredentials({
-      anthropicCredentialsPath: anthropicPath(),
+      anthropicSeedPath: anthropicSeedPath(),
+      anthropicCachePath: anthropicCachePath(),
       codexCredentialsPath: codexPath(),
       geminiCredentialsPath: geminiPath(),
     });
@@ -297,7 +368,8 @@ describe("resolveModel", () => {
   it("resolves an Anthropic model with apiKey", async () => {
     await setupAnthropicKey();
     await loadCredentials({
-      anthropicCredentialsPath: anthropicPath(),
+      anthropicSeedPath: anthropicSeedPath(),
+      anthropicCachePath: anthropicCachePath(),
       codexCredentialsPath: codexPath(),
       geminiCredentialsPath: geminiPath(),
     });
@@ -307,12 +379,14 @@ describe("resolveModel", () => {
     expect(resolved).toBeDefined();
     expect(resolved?.provider).toBe("anthropic");
     expect(resolved?.apiKey).toBe("anthropic-tok-test");
+    expect(resolved?.capability).toBe("chat");
   });
 
   it("resolves a Codex model with apiKey", async () => {
     await setupCodexKey();
     await loadCredentials({
-      anthropicCredentialsPath: anthropicPath(),
+      anthropicSeedPath: anthropicSeedPath(),
+      anthropicCachePath: anthropicCachePath(),
       codexCredentialsPath: codexPath(),
       geminiCredentialsPath: geminiPath(),
     });
@@ -330,7 +404,8 @@ describe("resolveModel", () => {
 
   it("returns undefined for nonexistent model", async () => {
     await loadCredentials({
-      anthropicCredentialsPath: anthropicPath(),
+      anthropicSeedPath: anthropicSeedPath(),
+      anthropicCachePath: anthropicCachePath(),
       codexCredentialsPath: codexPath(),
       geminiCredentialsPath: geminiPath(),
     });

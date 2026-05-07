@@ -19,6 +19,14 @@ const SHOW_RESPONSES: Record<string, OllamaShowResponse> = {
     capabilities: ["completion"],
     model_info: { "llama3.context_length": 8192 },
   },
+  "bge-m3:latest": {
+    capabilities: ["embedding"],
+    model_info: { "bert.context_length": 8192 },
+  },
+  "hybrid-model": {
+    capabilities: ["completion", "embedding"],
+    model_info: { "hybrid.context_length": 4096 },
+  },
   "bare-model": {
     // no capabilities field at all
     model_info: { "bare.context_length": 2048 },
@@ -77,6 +85,25 @@ describe("fetchModelCapabilities", () => {
     expect(caps.supportsVision).toBe(false);
   });
 
+  it("detects embedding capability", async () => {
+    const caps = await fetchModelCapabilities("bge-m3:latest", `http://localhost:${showPort}`);
+    expect(caps.supportsEmbedding).toBe(true);
+    expect(caps.supportsCompletion).toBe(false);
+    expect(caps.supportsVision).toBe(false);
+  });
+
+  it("detects completion capability", async () => {
+    const caps = await fetchModelCapabilities("llama3:latest", `http://localhost:${showPort}`);
+    expect(caps.supportsCompletion).toBe(true);
+    expect(caps.supportsEmbedding).toBe(false);
+  });
+
+  it("handles model with both completion and embedding", async () => {
+    const caps = await fetchModelCapabilities("hybrid-model", `http://localhost:${showPort}`);
+    expect(caps.supportsCompletion).toBe(true);
+    expect(caps.supportsEmbedding).toBe(true);
+  });
+
   it("extracts context_length from model_info", async () => {
     const caps = await fetchModelCapabilities("llava:latest", `http://localhost:${showPort}`);
     expect(caps.contextLength).toBe(4096);
@@ -85,6 +112,8 @@ describe("fetchModelCapabilities", () => {
   it("handles missing capabilities field", async () => {
     const caps = await fetchModelCapabilities("bare-model", `http://localhost:${showPort}`);
     expect(caps.supportsVision).toBe(false);
+    expect(caps.supportsEmbedding).toBe(false);
+    expect(caps.supportsCompletion).toBe(false);
     expect(caps.contextLength).toBe(2048);
   });
 
@@ -154,6 +183,8 @@ describe("buildOllamaModel", () => {
   it('sets ["text", "image"] when vision', () => {
     const model = buildOllamaModel("llava:latest", undefined, {
       supportsVision: true,
+      supportsEmbedding: false,
+      supportsCompletion: true,
     });
     expect(model.input).toEqual(["text", "image"]);
   });
@@ -161,6 +192,8 @@ describe("buildOllamaModel", () => {
   it('sets ["text"] when not vision', () => {
     const model = buildOllamaModel("llama3:latest", undefined, {
       supportsVision: false,
+      supportsEmbedding: false,
+      supportsCompletion: true,
     });
     expect(model.input).toEqual(["text"]);
   });
@@ -168,6 +201,8 @@ describe("buildOllamaModel", () => {
   it("uses contextLength when provided", () => {
     const model = buildOllamaModel("llava:latest", undefined, {
       supportsVision: true,
+      supportsEmbedding: false,
+      supportsCompletion: true,
       contextLength: 4096,
     });
     expect(model.contextWindow).toBe(4096);
@@ -176,6 +211,8 @@ describe("buildOllamaModel", () => {
   it("falls back to default context window", () => {
     const model = buildOllamaModel("llama3:latest", undefined, {
       supportsVision: false,
+      supportsEmbedding: false,
+      supportsCompletion: true,
     });
     expect(model.contextWindow).toBe(OLLAMA_DEFAULT_CONTEXT_WINDOW);
   });

@@ -44,6 +44,8 @@
 - [openai-error-spec.md](openai-error-spec.md) — error format + gateway error mapping
 - [openai-vision-spec.md](openai-vision-spec.md) — vision API facts, pi-ai behavior, OpenClaw fallback policy
 - [image-processing-plan.md](image-processing-plan.md) — full image processing architecture plan
+- [llmgw-embeddings-hotfix.md](llmgw-embeddings-hotfix.md) — embeddings hotfix handoff (Phase 5)
+- [llmgw-anthropic-auth-hotfix.md](llmgw-anthropic-auth-hotfix.md) — Anthropic auth hotfix handoff (Phase 6)
 
 ## Phase 2: Image Processing
 
@@ -95,6 +97,36 @@ See [backlog.md](backlog.md) for full details and research notes.
 | 25 | Enrich /v1/models with validation status | ✅ Done | `ModelObjectSchema` gains `status`, `status_detail`, `validated_at`. App handler enriches ALL models instead of filtering. 3 new tests in `app.test.ts`. |
 | 26 | `llmgw update` — dependency update pipeline | ✅ Done | CLI subcommand: `npm outdated` → `npm update` → `npm test` → rebuild or rollback. Full dep scope. |
 | 27 | Add Gemini provider support | ✅ Done | Fourth backend via pi-ai `google-gemini-cli`. Auth from `~/.gemini/oauth_creds.json` (OAuth token refresh + projectId via `loadCodeAssist` API). Config, auth, registry, vision fallback, route examples, unit + e2e tests all updated. |
+
+## Phase 5: Embeddings Support
+
+Hotfix surfaced from a homenews semantic-search debugging session. See [llmgw-embeddings-hotfix.md](llmgw-embeddings-hotfix.md) for the full handoff (POC logs, schema reference, verification commands) and [backlog.md](backlog.md#5-embeddings-hotfix--add-post-v1embeddings--per-capability-validation) for scope.
+
+**Background**: `POST /v1/embeddings` does not exist (404). The validator also POSTs chat-completions to embedding models, producing false-positive `error` states. Both bugs are visible against `bge-m3:latest`, `qwen3-embedding:0.6b`, `nomic-embed-text:latest`. All three work natively against Ollama's OpenAI-compatible endpoint.
+
+| # | Task | Status | Notes |
+|---|------|--------|-------|
+| 28 | Tag models with `capability` at registry discovery | ✅ Done | `Capability = "chat" \| "embedding"` in `src/services/registry.ts`. `OllamaModelCapabilities` extended with `supportsEmbedding`/`supportsCompletion` (read from Ollama `/api/show` `capabilities` array). `fetchOllamaModels()` now returns `{ model, capabilities }[]`. `ResolvedModel` and `listModels()` carry `capability`. Anthropic/Codex/Gemini hardcoded `"chat"`. New: `bge-m3:latest` registry test, embedding/completion/hybrid tests in `ollama.test.ts`. Vision is intentionally `chat` (still routes to chat completions). |
+| 29 | Add `POST /v1/embeddings` route | ⏳ Planned | OpenAI schema. Route by `owned_by`: `ollama` → passthrough to `${OLLAMA_BASE_URL}/v1/embeddings`, `openai` → passthrough to OpenAI, `anthropic`/`openai-codex`/`google-gemini-cli` → 501 `provider_unsupported`. Mirror existing error envelope. |
+| 30 | Per-capability validation | ⏳ Planned | Validator dispatches by capability: `chat` → existing tiny chat completion, `embedding` → POST `/v1/embeddings` with `input: "test"`, assert `data[0].embedding.length > 0`, record dim in `status_detail`. |
+| 31 | Expose `embedding_dimensions` in `/v1/models` | ⏳ Planned (optional) | Optional field on `ModelObjectSchema` so consumers can validate `vector(N)` column dim at boot. |
+| 32 | Tests | ⏳ Planned | Unit tests for capability detection + embeddings route (passthrough, 501, error envelope). E2E: real `bge-m3` embedding through the gateway, batch input, dimension assertion, validator promotes embedders from `error` to `ok`. |
+
+## Phase 6: Anthropic Auth Hotfix
+
+Production gateway returns `Connection error.` for Anthropic streaming completions. Two stacked bugs: Docker single-file bind-mount inode-pins to a stale token, and `loadAnthropicCredentials()` never actually calls `refreshAnthropicToken()` — the 30-min cron only re-reads the frozen file. See [llmgw-anthropic-auth-hotfix.md](llmgw-anthropic-auth-hotfix.md) for full root-cause and architecture.
+
+**Architecture**: container becomes its own OAuth client — seed from host file once, then maintain an independent refresh-token chain in a writable container volume. Drop the cron; replace with lazy refresh + single-flight mutex on the request path (what the Claude CLI itself does).
+
+| # | Task | Status | Notes |
+|---|------|--------|-------|
+| 33 | `deploy/compose.yaml`: directory bind-mount + reuse writable volume | ✅ Done | `~/.claude:/home/node/host-claude:ro` (directory, not file) — same for `~/.codex`. Cache lives in existing `~/.llm-gateway` volume. New env vars: `ANTHROPIC_SEED_PATH`, `ANTHROPIC_CACHE_PATH`. `CODEX_CREDENTIALS_PATH` repointed at `host-codex/auth.json`. |
+| 34 | `src/services/auth.ts`: container-private cache + lazy refresh + mutex | ✅ Done | New `AnthropicCredsState` (access/refresh/expires), `readAnthropicFile`/`writeAnthropicCache` helpers. `loadAnthropicCredentials()` prefers cache; falls back to seed + immediate `performAnthropicRefresh()`. Public `ensureAnthropicFresh()` checks `expires - ANTHROPIC_REFRESH_SKEW_MS` (default 60s), single-flight via `anthropicRefreshInFlight` promise. Drops `CREDENTIAL_REFRESH_INTERVAL_MS` from `src/config.ts`; adds `ANTHROPIC_SEED_PATH`, `ANTHROPIC_CACHE_PATH`, `ANTHROPIC_REFRESH_SKEW_MS`. |
+| 35 | `src/index.ts`: drop the `setInterval` cron | ✅ Done | Removed the 30-min cron block and `CREDENTIAL_REFRESH_INTERVAL_MS` import. Bootstrap `loadCredentials()` still runs once at startup. |
+| 36 | Route handler: call `ensureAnthropicFresh()` before resolving Anthropic models | ✅ Done | `src/app.ts` chat completions handler: when `resolved.provider === "anthropic"`, awaits `ensureAnthropicFresh()`, then re-resolves so `resolved.apiKey` carries the fresh token. Refresh errors return 500 with `anthropic_auth_failed` code. |
+| 37 | Tests | ✅ Done | `tests/auth.test.ts` rewritten with `vi.mock` partial of `refreshAnthropicToken`: cache bootstrap (no refresh), seed bootstrap + immediate refresh + cache write-through, seed without refresh_token rejected, fresh-token skip, expired refresh, safety-skew refresh, single-flight mutex (10 concurrent → 1 refresh), refresh write-through, no-op when unavailable, mutex clears on error. `tests/registry.test.ts` updated to use `anthropicSeedPath`/`anthropicCachePath` (cache path so no refresh fires) and adds `refreshToken` to fixture. **168 unit tests pass.** |
+
+**Out of scope (follow-ups)**: Codex lazy refresh via `refreshOpenAICodexToken`, Gemini write-to-cache instead of host file. Both are architecturally identical to the Anthropic fix but not currently breaking production.
 
 ## Previous Milestones
 

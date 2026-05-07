@@ -41,7 +41,9 @@ Centralized in `src/config.ts`. Key env var overrides:
 | `LLM_GATEWAY_PORT` | `51277` | Server port |
 | `OLLAMA_BASE_URL` | `http://localhost:11434` | Ollama API base URL |
 | `OLLAMA_NUM_CTX` | `32768` | Ollama runtime context window size (`num_ctx`) |
-| `ANTHROPIC_CREDENTIALS_PATH` | `~/.claude/.credentials.json` | Anthropic auth file |
+| `ANTHROPIC_SEED_PATH` | `~/.claude/.credentials.json` | Read-only seed: host's Claude CLI credentials. Read once on first boot. |
+| `ANTHROPIC_CACHE_PATH` | `~/.llm-gateway/anthropic-credentials.json` | Container-private OAuth chain (writable). Lazy refresh writes here. |
+| `ANTHROPIC_REFRESH_SKEW_MS` | `60000` | Safety margin before `expiresAt` — refresh fires when `now > expires - skew`. |
 | `CODEX_CREDENTIALS_PATH` | `~/.codex/auth.json` | Codex auth file |
 | `GEMINI_CREDENTIALS_PATH` | `~/.gemini/oauth_creds.json` | Gemini auth file |
 | `VALIDATION_FILE_PATH` | `~/.llm-gateway/models.json` | Validation cache |
@@ -64,4 +66,7 @@ Centralized in `src/config.ts`. Key env var overrides:
 - [docs/openai-error-spec.md](docs/openai-error-spec.md) - OpenAI error response format + gateway error mapping
 - [docs/openai-vision-spec.md](docs/openai-vision-spec.md) - Vision API facts + pi-ai behavior + OpenClaw fallback policy
 - [docs/image-processing-plan.md](docs/image-processing-plan.md) - Image processing architecture plan
+- [docs/llmgw-embeddings-hotfix.md](docs/llmgw-embeddings-hotfix.md) - Phase 5 embeddings hotfix handoff (route + per-capability validation)
+- [docs/llmgw-anthropic-auth-hotfix.md](docs/llmgw-anthropic-auth-hotfix.md) - Phase 6 Anthropic auth hotfix handoff (container-private credential chain + lazy refresh)
+- [docs/backlog.md](docs/backlog.md) - Backlog of planned work
 - [docs/progress.md](docs/progress.md) - Current progress tracker

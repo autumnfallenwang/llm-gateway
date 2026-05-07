@@ -9,12 +9,17 @@ services:
     network_mode: host
     restart: unless-stopped
     volumes:
-      - ~/.claude/.credentials.json:/home/node/.claude/.credentials.json:ro
-      - ~/.codex/auth.json:/home/node/.codex/auth.json:ro
+      # Read-only directory mounts (avoids inode pinning when host CLIs rotate credential files)
+      - ~/.claude:/home/node/host-claude:ro
+      - ~/.codex:/home/node/host-codex:ro
+      # Writable volume — holds the container's own credential cache + validation report
       - ~/.llm-gateway:/home/node/.llm-gateway
     environment:
       - LLM_GATEWAY_PORT=51277
       - OLLAMA_BASE_URL=http://localhost:11434
-      - ANTHROPIC_CREDENTIALS_PATH=/home/node/.claude/.credentials.json
-      - CODEX_CREDENTIALS_PATH=/home/node/.codex/auth.json
+      # Anthropic: seed read-only from host file once, then maintain own chain in cache
+      - ANTHROPIC_SEED_PATH=/home/node/host-claude/.credentials.json
+      - ANTHROPIC_CACHE_PATH=/home/node/.llm-gateway/anthropic-credentials.json
+      # Codex: seed-only (28-day JWT, lazy refresh is a follow-up)
+      - CODEX_CREDENTIALS_PATH=/home/node/host-codex/auth.json
       - VALIDATION_FILE_PATH=/home/node/.llm-gateway/models.json

@@ -56,19 +56,33 @@ export const OLLAMA_DEFAULT_MAX_TOKENS = 4096;
 
 export const GEMINI_PROJECT_URL = "https://cloudcode-pa.googleapis.com/v1internal:loadCodeAssist";
 
-export const ANTHROPIC_CREDENTIALS_PATH =
-  env.ANTHROPIC_CREDENTIALS_PATH ?? join(homedir(), ".claude", ".credentials.json");
+/**
+ * Anthropic seed: the host's read-only `~/.claude/.credentials.json`. The container reads it
+ * once on first boot to bootstrap, then maintains its own independent OAuth chain in
+ * `ANTHROPIC_CACHE_PATH`. Never written to.
+ */
+export const ANTHROPIC_SEED_PATH =
+  env.ANTHROPIC_SEED_PATH ?? join(homedir(), ".claude", ".credentials.json");
+
+/**
+ * Anthropic cache: the container's writable copy of `{access, refresh, expires}`. Lazy refresh
+ * writes here on every successful refresh. Persists across container restarts via the
+ * `~/.llm-gateway` volume.
+ */
+export const ANTHROPIC_CACHE_PATH =
+  env.ANTHROPIC_CACHE_PATH ?? join(homedir(), ".llm-gateway", "anthropic-credentials.json");
+
 export const CODEX_CREDENTIALS_PATH =
   env.CODEX_CREDENTIALS_PATH ?? join(homedir(), ".codex", "auth.json");
 export const GEMINI_CREDENTIALS_PATH =
   env.GEMINI_CREDENTIALS_PATH ?? join(homedir(), ".gemini", "oauth_creds.json");
 
-// ── Credential Refresh ────────────────────────────────────────────────────
-
-/** How often to re-read credential files from disk (ms). Default: 30 min */
-export const CREDENTIAL_REFRESH_INTERVAL_MS = Number(
-  env.CREDENTIAL_REFRESH_INTERVAL_MS ?? 30 * 60 * 1000,
-);
+/**
+ * Skew applied when checking Anthropic token expiry. Refresh fires whenever
+ * `now > expires - ANTHROPIC_REFRESH_SKEW_MS` so we never serve a request with a
+ * token that's about to expire mid-flight.
+ */
+export const ANTHROPIC_REFRESH_SKEW_MS = Number(env.ANTHROPIC_REFRESH_SKEW_MS ?? 60_000);
 
 // ── Validation ─────────────────────────────────────────────────────────────
 

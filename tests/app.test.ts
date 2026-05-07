@@ -1,9 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 
 const MOCK_ASSISTANT_MESSAGE = {
-  role: "assistant",
-  content: [{ type: "text", text: "Mock response" }],
-  api: "openai-completions",
+  role: "assistant" as const,
+  content: [{ type: "text" as const, text: "Mock response" }],
+  api: "openai-completions" as const,
   provider: "ollama",
   model: "test-model",
   usage: {
@@ -14,7 +14,7 @@ const MOCK_ASSISTANT_MESSAGE = {
     totalTokens: 15,
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
   },
-  stopReason: "stop",
+  stopReason: "stop" as const,
   timestamp: 1700000000000,
 };
 
@@ -158,6 +158,7 @@ describe("POST /v1/chat/completions", () => {
         maxTokens: 4096,
       },
       provider: "ollama",
+      capability: "chat",
     });
 
     const res = await post("/v1/chat/completions", {
@@ -267,16 +268,19 @@ describe("GET /v1/models", () => {
     const { fetchOllamaModels } = await import("../src/lib/ollama");
     vi.mocked(fetchOllamaModels).mockResolvedValueOnce([
       {
-        id: "test-model",
-        name: "test-model",
-        api: "openai-completions",
-        provider: "ollama",
-        baseUrl: "",
-        reasoning: false,
-        input: ["text"],
-        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-        contextWindow: 8192,
-        maxTokens: 2048,
+        model: {
+          id: "test-model",
+          name: "test-model",
+          api: "openai-completions",
+          provider: "ollama",
+          baseUrl: "",
+          reasoning: false,
+          input: ["text"],
+          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+          contextWindow: 8192,
+          maxTokens: 2048,
+        },
+        capabilities: { supportsVision: false, supportsEmbedding: false, supportsCompletion: true },
       },
     ]);
     await loadRegistry();
@@ -297,28 +301,34 @@ describe("GET /v1/models", () => {
 
     vi.mocked(fetchOllamaModels).mockResolvedValueOnce([
       {
-        id: "good-model",
-        name: "good-model",
-        api: "openai-completions",
-        provider: "ollama",
-        baseUrl: "",
-        reasoning: false,
-        input: ["text"],
-        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-        contextWindow: 4096,
-        maxTokens: 4096,
+        model: {
+          id: "good-model",
+          name: "good-model",
+          api: "openai-completions",
+          provider: "ollama",
+          baseUrl: "",
+          reasoning: false,
+          input: ["text"],
+          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+          contextWindow: 4096,
+          maxTokens: 4096,
+        },
+        capabilities: { supportsVision: false, supportsEmbedding: false, supportsCompletion: true },
       },
       {
-        id: "bad-model",
-        name: "bad-model",
-        api: "openai-completions",
-        provider: "ollama",
-        baseUrl: "",
-        reasoning: false,
-        input: ["text"],
-        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-        contextWindow: 4096,
-        maxTokens: 4096,
+        model: {
+          id: "bad-model",
+          name: "bad-model",
+          api: "openai-completions",
+          provider: "ollama",
+          baseUrl: "",
+          reasoning: false,
+          input: ["text"],
+          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+          contextWindow: 4096,
+          maxTokens: 4096,
+        },
+        capabilities: { supportsVision: false, supportsEmbedding: false, supportsCompletion: true },
       },
     ]);
     await loadRegistry();
@@ -353,16 +363,19 @@ describe("GET /v1/models", () => {
 
     vi.mocked(fetchOllamaModels).mockResolvedValueOnce([
       {
-        id: "some-model",
-        name: "some-model",
-        api: "openai-completions",
-        provider: "ollama",
-        baseUrl: "",
-        reasoning: false,
-        input: ["text"],
-        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-        contextWindow: 4096,
-        maxTokens: 4096,
+        model: {
+          id: "some-model",
+          name: "some-model",
+          api: "openai-completions",
+          provider: "ollama",
+          baseUrl: "",
+          reasoning: false,
+          input: ["text"],
+          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+          contextWindow: 4096,
+          maxTokens: 4096,
+        },
+        capabilities: { supportsVision: false, supportsEmbedding: false, supportsCompletion: true },
       },
     ]);
     await loadRegistry();
@@ -385,28 +398,34 @@ describe("GET /v1/models", () => {
 
     vi.mocked(fetchOllamaModels).mockResolvedValueOnce([
       {
-        id: "known-model",
-        name: "known-model",
-        api: "openai-completions",
-        provider: "ollama",
-        baseUrl: "",
-        reasoning: false,
-        input: ["text"],
-        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-        contextWindow: 4096,
-        maxTokens: 4096,
+        model: {
+          id: "known-model",
+          name: "known-model",
+          api: "openai-completions",
+          provider: "ollama",
+          baseUrl: "",
+          reasoning: false,
+          input: ["text"],
+          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+          contextWindow: 4096,
+          maxTokens: 4096,
+        },
+        capabilities: { supportsVision: false, supportsEmbedding: false, supportsCompletion: true },
       },
       {
-        id: "new-model",
-        name: "new-model",
-        api: "openai-completions",
-        provider: "ollama",
-        baseUrl: "",
-        reasoning: false,
-        input: ["text"],
-        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-        contextWindow: 4096,
-        maxTokens: 4096,
+        model: {
+          id: "new-model",
+          name: "new-model",
+          api: "openai-completions",
+          provider: "ollama",
+          baseUrl: "",
+          reasoning: false,
+          input: ["text"],
+          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+          contextWindow: 4096,
+          maxTokens: 4096,
+        },
+        capabilities: { supportsVision: false, supportsEmbedding: false, supportsCompletion: true },
       },
     ]);
     await loadRegistry();
@@ -438,16 +457,17 @@ describe("Backend error responses", () => {
     model: {
       id: "test",
       name: "test",
-      api: "openai-completions",
+      api: "openai-completions" as const,
       provider: "ollama",
       baseUrl: "",
       reasoning: false,
-      input: ["text"],
+      input: ["text"] as ("text" | "image")[],
       cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
       contextWindow: 4096,
       maxTokens: 4096,
     },
-    provider: "ollama",
+    provider: "ollama" as const,
+    capability: "chat" as const,
   };
 
   async function mockResolveModel() {

@@ -45,3 +45,43 @@
 - pi-ai expects `apiKey` as `JSON.stringify({ token: accessToken, projectId })`
 - Token refresh uses Google OAuth2 endpoint with Gemini CLI's client_id/secret
 - `gemini-2.5-flash` responded correctly in smoke test
+
+## 5. Embeddings hotfix — add `POST /v1/embeddings` + per-capability validation
+
+**Source**: [llmgw-embeddings-hotfix.md](llmgw-embeddings-hotfix.md) — handoff doc from a homenews debugging session.
+
+**Bugs**:
+- `POST /v1/embeddings` returns 404 — route does not exist. Blocks homenews semantic search (Phase 15) end-to-end; `articles.embedding` is NULL across the board.
+- `/v1/models/validate` mis-tests embedding models by POSTing chat completions, producing false-positive `error` status for `bge-m3:latest`, `qwen3-embedding:0.6b`, `nomic-embed-text:latest`. Smoking gun: 9-78ms failures (chat-completions error path, not real inference).
+
+**Fix scope**:
+1. Add `POST /v1/embeddings` route — OpenAI schema, route by `owned_by`:
+   - `ollama` → passthrough to `${OLLAMA_BASE_URL}/v1/embeddings` (already OpenAI-compatible)
+   - `openai` → passthrough to `https://api.openai.com/v1/embeddings`
+   - `anthropic`, `openai-codex`, `google-gemini-cli` → 501 with `provider_unsupported` error
+2. Tag models with `capability: "chat" | "embedding" | "vision"` at registry discovery time. Use Ollama `/api/show` (already called for vision detection) — embedders show empty `TEMPLATE` and bert/embedding family. Hardcode for non-Ollama providers.
+3. Validator: route by capability — embedders POST to `/v1/embeddings` with `input: "test"`, assert `data[0].embedding.length > 0`, record dim in `status_detail`.
+4. (Optional) Expose `embedding_dimensions` in `/v1/models` so consumers can validate vector column dim at boot.
+
+**Why**: homenews (and any future consumer) needs embeddings through the same OpenAI-compatible seam as chat — no side channels, no per-task provider adapters. Ollama already speaks the OpenAI embedding schema, so it's a byte-for-byte passthrough.
+
+## 6. Anthropic auth hotfix — container-private credential chain + lazy refresh
+
+**Source**: [llmgw-anthropic-auth-hotfix.md](llmgw-anthropic-auth-hotfix.md) — full handoff with root-cause analysis and architecture decision.
+
+**Bugs**:
+- Production `POST /v1/chat/completions` against Anthropic models returns `Connection error.` because the container is using a stale access token.
+- `deploy/compose.yaml` single-file bind-mount (`~/.claude/.credentials.json:...:ro`) pins to an inode that the host's `claude` CLI rotates via atomic rename. Container never sees new bytes after first start.
+- `src/services/auth.ts` `loadAnthropicCredentials()` only re-reads disk; never calls `refreshAnthropicToken()`. The `setInterval` cron in `src/index.ts` fires every 30 min and re-reads the same frozen-inode file — no real OAuth refresh anywhere in the Anthropic path.
+
+**Fix scope**:
+1. `deploy/compose.yaml` — switch `~/.claude` and `~/.codex` to **directory** bind-mounts (`:ro`). Reuse the existing `~/.llm-gateway` writable volume for the container's private credential cache.
+2. `src/services/auth.ts` — container becomes its own OAuth client. On first start, seed from host file → immediately call `refreshAnthropicToken()` → write to container cache. On subsequent starts, read cache (ignore seed).
+3. Replace the `setInterval` cron with **lazy refresh + single-flight mutex** on the request path. Matches what the Claude CLI itself does. Drop `CREDENTIAL_REFRESH_INTERVAL_MS`.
+4. Tests — seed-vs-cache bootstrap, mutex deduplication on concurrent expiry, refresh write-through.
+
+**Out of scope (follow-ups)**:
+- Codex: same inode-pinning issue but JWT lasts 28 days, not currently broken. Directory mount alone keeps it working; lazy refresh via `refreshOpenAICodexToken` is a follow-up.
+- Gemini: already refreshes in-memory, but writes back to the `:ro` host file (silent failure). Follow-up to write to container cache instead.
+
+**Why**: standard OAuth supports multiple independent refresh-token chains per account. The container running its own chain is the right architecture — never touching the host file means we can't break a running `claude` CLI session, and we're not at the mercy of host-side filesystem semantics.

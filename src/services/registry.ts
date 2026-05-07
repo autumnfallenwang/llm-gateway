@@ -1,12 +1,15 @@
 import { getModels, type Model } from "@mariozechner/pi-ai";
-import { fetchOllamaModels } from "../lib/ollama.js";
+import { fetchOllamaModels, type OllamaModelCapabilities } from "../lib/ollama.js";
 import { getAnthropicKey, getCodexKey, getGeminiKey } from "./auth.js";
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
+export type Capability = "chat" | "embedding";
+
 export interface ResolvedModel {
   model: Model<string>;
   provider: "ollama" | "anthropic" | "codex" | "gemini";
+  capability: Capability;
   apiKey?: string;
 }
 
@@ -14,25 +17,47 @@ export interface RegistryConfig {
   ollamaBaseUrl?: string;
 }
 
+interface RegistryEntry {
+  model: Model<string>;
+  capability: Capability;
+}
+
 // ── Module state ────────────────────────────────────────────────────────────
 
-let ollamaModels: Model<string>[] = [];
-let anthropicModels: Model<string>[] = [];
-let codexModels: Model<string>[] = [];
-let geminiModels: Model<string>[] = [];
+let ollamaEntries: RegistryEntry[] = [];
+let anthropicEntries: RegistryEntry[] = [];
+let codexEntries: RegistryEntry[] = [];
+let geminiEntries: RegistryEntry[] = [];
+
+// ── Helpers ─────────────────────────────────────────────────────────────────
+
+function inferOllamaCapability(caps: OllamaModelCapabilities): Capability {
+  if (caps.supportsEmbedding && !caps.supportsCompletion) return "embedding";
+  return "chat";
+}
 
 // ── Public API ──────────────────────────────────────────────────────────────
 
 export async function loadRegistry(config?: RegistryConfig): Promise<void> {
-  ollamaModels = await fetchOllamaModels(config?.ollamaBaseUrl);
+  const ollamaFetched = await fetchOllamaModels(config?.ollamaBaseUrl);
+  ollamaEntries = ollamaFetched.map(({ model, capabilities }) => ({
+    model,
+    capability: inferOllamaCapability(capabilities),
+  }));
 
-  anthropicModels = getAnthropicKey() ? getModels("anthropic") : [];
-  codexModels = getCodexKey() ? getModels("openai-codex") : [];
-  geminiModels = getGeminiKey() ? getModels("google-gemini-cli") : [];
+  anthropicEntries = getAnthropicKey()
+    ? getModels("anthropic").map((m) => ({ model: m, capability: "chat" as const }))
+    : [];
+  codexEntries = getCodexKey()
+    ? getModels("openai-codex").map((m) => ({ model: m, capability: "chat" as const }))
+    : [];
+  geminiEntries = getGeminiKey()
+    ? getModels("google-gemini-cli").map((m) => ({ model: m, capability: "chat" as const }))
+    : [];
 
   // biome-ignore lint/suspicious/noConsole: intentional startup log
   console.log(
-    `[registry] Loaded ${ollamaModels.length} Ollama, ${anthropicModels.length} Anthropic, ${codexModels.length} Codex, ${geminiModels.length} Gemini models`,
+    `[registry] Loaded ${ollamaEntries.length} Ollama, ${anthropicEntries.length} Anthropic, ${codexEntries.length} Codex, ${geminiEntries.length} Gemini models`,
   );
 }
 
@@ -41,58 +66,57 @@ export function listModels(): {
   object: "model";
   created: number;
   owned_by: string;
+  capability: Capability;
   context_window?: number;
   max_tokens?: number;
 }[] {
-  const all = [
-    ...ollamaModels.map((m) => ({
-      id: m.id,
-      object: "model" as const,
-      created: 0,
-      owned_by: m.provider,
-      context_window: m.contextWindow,
-      max_tokens: m.maxTokens,
-    })),
-    ...anthropicModels.map((m) => ({
-      id: m.id,
-      object: "model" as const,
-      created: 0,
-      owned_by: m.provider,
-      context_window: m.contextWindow,
-      max_tokens: m.maxTokens,
-    })),
-    ...codexModels.map((m) => ({
-      id: m.id,
-      object: "model" as const,
-      created: 0,
-      owned_by: m.provider,
-      context_window: m.contextWindow,
-      max_tokens: m.maxTokens,
-    })),
-    ...geminiModels.map((m) => ({
-      id: m.id,
-      object: "model" as const,
-      created: 0,
-      owned_by: m.provider,
-      context_window: m.contextWindow,
-      max_tokens: m.maxTokens,
-    })),
+  const toRow = ({ model, capability }: RegistryEntry) => ({
+    id: model.id,
+    object: "model" as const,
+    created: 0,
+    owned_by: model.provider,
+    capability,
+    context_window: model.contextWindow,
+    max_tokens: model.maxTokens,
+  });
+  return [
+    ...ollamaEntries.map(toRow),
+    ...anthropicEntries.map(toRow),
+    ...codexEntries.map(toRow),
+    ...geminiEntries.map(toRow),
   ];
-  return all;
 }
 
 export function resolveModel(modelId: string): ResolvedModel | undefined {
-  const ollama = ollamaModels.find((m) => m.id === modelId);
-  if (ollama) return { model: ollama, provider: "ollama" };
+  const ollama = ollamaEntries.find((e) => e.model.id === modelId);
+  if (ollama) return { model: ollama.model, provider: "ollama", capability: ollama.capability };
 
-  const anthropic = anthropicModels.find((m) => m.id === modelId);
-  if (anthropic) return { model: anthropic, provider: "anthropic", apiKey: getAnthropicKey() };
+  const anthropic = anthropicEntries.find((e) => e.model.id === modelId);
+  if (anthropic)
+    return {
+      model: anthropic.model,
+      provider: "anthropic",
+      capability: anthropic.capability,
+      apiKey: getAnthropicKey(),
+    };
 
-  const codex = codexModels.find((m) => m.id === modelId);
-  if (codex) return { model: codex, provider: "codex", apiKey: getCodexKey() };
+  const codex = codexEntries.find((e) => e.model.id === modelId);
+  if (codex)
+    return {
+      model: codex.model,
+      provider: "codex",
+      capability: codex.capability,
+      apiKey: getCodexKey(),
+    };
 
-  const gemini = geminiModels.find((m) => m.id === modelId);
-  if (gemini) return { model: gemini, provider: "gemini", apiKey: getGeminiKey() };
+  const gemini = geminiEntries.find((e) => e.model.id === modelId);
+  if (gemini)
+    return {
+      model: gemini.model,
+      provider: "gemini",
+      capability: gemini.capability,
+      apiKey: getGeminiKey(),
+    };
 
   return undefined;
 }

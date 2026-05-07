@@ -94,12 +94,12 @@ describe("HTTPS URL fetching", () => {
   }) {
     const body = opts.body ?? JPEG_BYTES;
     const headerInit: Record<string, string> = {};
-    if (opts.contentLength !== undefined) {
+    if (opts.contentLength === undefined) {
+      headerInit["content-length"] = String(body.length);
+    } else {
       if (opts.contentLength !== null) {
         headerInit["content-length"] = opts.contentLength;
       }
-    } else {
-      headerInit["content-length"] = String(body.length);
     }
     const response = {
       ok: opts.ok ?? true,
