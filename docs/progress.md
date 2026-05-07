@@ -43,6 +43,7 @@
 - [ollama-openai-compatibility-spec.md](ollama-openai-compatibility-spec.md) — Ollama compat matrix
 - [openai-error-spec.md](openai-error-spec.md) — error format + gateway error mapping
 - [openai-vision-spec.md](openai-vision-spec.md) — vision API facts, pi-ai behavior, OpenClaw fallback policy
+- [openai-embeddings-spec.md](openai-embeddings-spec.md) — embeddings API spec + Ollama passthrough + routing decisions (Phase 5; written before route implementation)
 - [image-processing-plan.md](image-processing-plan.md) — full image processing architecture plan
 - [llmgw-embeddings-hotfix.md](llmgw-embeddings-hotfix.md) — embeddings hotfix handoff (Phase 5)
 - [llmgw-anthropic-auth-hotfix.md](llmgw-anthropic-auth-hotfix.md) — Anthropic auth hotfix handoff (Phase 6)
@@ -100,17 +101,30 @@ See [backlog.md](backlog.md) for full details and research notes.
 
 ## Phase 5: Embeddings Support
 
-Hotfix surfaced from a homenews semantic-search debugging session. See [llmgw-embeddings-hotfix.md](llmgw-embeddings-hotfix.md) for the full handoff (POC logs, schema reference, verification commands) and [backlog.md](backlog.md#5-embeddings-hotfix--add-post-v1embeddings--per-capability-validation) for scope.
+Hotfix surfaced from a homenews semantic-search debugging session. See [llmgw-embeddings-hotfix.md](llmgw-embeddings-hotfix.md) for the original handoff (POC logs, debugging context) and [backlog.md](backlog.md#5-embeddings-hotfix--add-post-v1embeddings--per-capability-validation) for scope.
 
 **Background**: `POST /v1/embeddings` does not exist (404). The validator also POSTs chat-completions to embedding models, producing false-positive `error` states. Both bugs are visible against `bge-m3:latest`, `qwen3-embedding:0.6b`, `nomic-embed-text:latest`. All three work natively against Ollama's OpenAI-compatible endpoint.
+
+**Workflow** (research → spec → implementation → tests, matching the precedent set by `openai-chat-completions-spec.md` + `openai-vision-spec.md`):
+
+1. **Research** the OpenAI `/v1/embeddings` standard (request/response schema, batch input, encoding_format, dimensions param, error envelope, streaming behavior — embeddings don't stream).
+2. **Write `docs/openai-embeddings-spec.md`** as the canonical reference (request fields, response fields, status codes, gateway-specific decisions like routing-by-`owned_by`).
+3. **Probe Ollama** `/v1/embeddings` against all three local embedders (`bge-m3:latest`, `qwen3-embedding:0.6b`, `nomic-embed-text:latest`) — confirm exact response shape, dimensions, batch behavior, error format. Append findings to the spec doc.
+4. **Implement** schemas + route + service per the spec.
+5. **Validator dispatch** by capability so embedders stop showing as false-positive `error`.
+6. **Unit + e2e tests** mirroring the spec doc's example requests.
+7. **Swagger** `/docs` exposes the new route via `@hono/zod-openapi` automatically once the route is registered with examples.
 
 | # | Task | Status | Notes |
 |---|------|--------|-------|
 | 28 | Tag models with `capability` at registry discovery | ✅ Done | `Capability = "chat" \| "embedding"` in `src/services/registry.ts`. `OllamaModelCapabilities` extended with `supportsEmbedding`/`supportsCompletion` (read from Ollama `/api/show` `capabilities` array). `fetchOllamaModels()` now returns `{ model, capabilities }[]`. `ResolvedModel` and `listModels()` carry `capability`. Anthropic/Codex/Gemini hardcoded `"chat"`. New: `bge-m3:latest` registry test, embedding/completion/hybrid tests in `ollama.test.ts`. Vision is intentionally `chat` (still routes to chat completions). |
-| 29 | Add `POST /v1/embeddings` route | ⏳ Planned | OpenAI schema. Route by `owned_by`: `ollama` → passthrough to `${OLLAMA_BASE_URL}/v1/embeddings`, `openai` → passthrough to OpenAI, `anthropic`/`openai-codex`/`google-gemini-cli` → 501 `provider_unsupported`. Mirror existing error envelope. |
-| 30 | Per-capability validation | ⏳ Planned | Validator dispatches by capability: `chat` → existing tiny chat completion, `embedding` → POST `/v1/embeddings` with `input: "test"`, assert `data[0].embedding.length > 0`, record dim in `status_detail`. |
-| 31 | Expose `embedding_dimensions` in `/v1/models` | ⏳ Planned (optional) | Optional field on `ModelObjectSchema` so consumers can validate `vector(N)` column dim at boot. |
-| 32 | Tests | ⏳ Planned | Unit tests for capability detection + embeddings route (passthrough, 501, error envelope). E2E: real `bge-m3` embedding through the gateway, batch input, dimension assertion, validator promotes embedders from `error` to `ok`. |
+| 29a | **Research**: write `docs/openai-embeddings-spec.md` | ⏳ Planned | Capture the OpenAI `/v1/embeddings` standard from `platform.openai.com/docs/api-reference/embeddings`: request fields (`model`, `input` string-or-array, `encoding_format`, `dimensions`, `user`), response shape (`object: "list"`, `data[]` with `{object, index, embedding}`, `model`, `usage{prompt_tokens, total_tokens}`), error envelope, status codes. Section "Gateway Decisions" records: route-by-`owned_by` (ollama passthrough; anthropic/codex/gemini → 501), batch-input handling (passthrough), encoding_format (passthrough — Ollama supports both `"float"` and `"base64"`), dimensions param (passthrough; only some models honor it). |
+| 29b | **POC**: probe Ollama against `bge-m3` / `qwen3-embedding` / `nomic-embed-text` | ⏳ Planned | Direct `curl` against `${OLLAMA_BASE_URL}/v1/embeddings` for single + batch input, record exact response bytes, confirm dimensions match upstream model cards (bge-m3=1024, qwen3-embedding=1024, nomic-embed-text=768), confirm error format on bad model name. Append a "POC log" appendix to the spec doc. |
+| 29c | Schemas + route + service | ⏳ Planned | `src/schemas/embeddings.ts` (request + response Zod schemas, OpenAI-shape with examples). `src/routes/embeddings.ts` (createRoute with examples for each backend — `ollama` happy path + `anthropic` 501 + invalid model 404). `src/services/embeddings.ts` (`createEmbedding(resolved, body)` — fetch passthrough to `${OLLAMA_BASE_URL}/v1/embeddings`, return upstream JSON verbatim with our error envelope on non-2xx). Wire into `src/app.ts` after the existing chat handler. |
+| 30 | Per-capability validation | ⏳ Planned | `src/services/validation.ts` dispatches by `resolved.capability`: `chat` → existing tiny chat completion, `embedding` → call new `createEmbedding()` with `input: "test"`, assert `data[0].embedding.length > 0`, record `dim` in `status_detail` (e.g., `"dim=1024"`). All three current embedders should promote from `error` → `ok`. |
+| 31 | Expose `embedding_dimensions` in `/v1/models` | ⏳ Planned (optional) | Optional field on `ModelObjectSchema`. Populated from the validator's recorded dim if available. Lets consumers (homenews) validate `vector(N)` column matches at boot. |
+| 32a | Unit tests | ⏳ Planned | `tests/embeddings.test.ts` — Ollama passthrough (mock fetch, assert request body + response forwarding), 501 for anthropic/codex/gemini, 404 for unknown model, error envelope on upstream non-2xx. `tests/validation.test.ts` extended for capability dispatch. |
+| 32b | E2E tests | ⏳ Planned | `tests/e2e.test.ts` — real embedding call against `bge-m3:latest` (single + batch input), dimension assertion, validator end-to-end (POST `/v1/models/validate` → embedders show `status: ok`). Skip cleanly if local Ollama lacks the model. |
 
 ## Phase 6: Anthropic Auth Hotfix
 

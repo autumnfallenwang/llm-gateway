@@ -6,8 +6,9 @@ import { loadCredentials } from "../src/services/auth.js";
 import { loadRegistry } from "../src/services/registry.js";
 
 let dataUriJpeg: string;
-const HTTPS_IMAGE_URL =
-  "https://upload.wikimedia.org/wikipedia/commons/thumb/4/47/PNG_transparency_demonstration_1.png/280px-PNG_transparency_demonstration_1.png";
+// Google's public WebP demo gallery — small JPEG, real photograph, no UA filtering.
+// (Wikimedia thumbnail URLs return HTTP 400 to non-browser User-Agents.)
+const HTTPS_IMAGE_URL = "https://www.gstatic.com/webp/gallery/1.jpg";
 
 let server: ServerType;
 let baseUrl: string;

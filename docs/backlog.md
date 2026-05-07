@@ -50,20 +50,21 @@
 
 **Source**: [llmgw-embeddings-hotfix.md](llmgw-embeddings-hotfix.md) — handoff doc from a homenews debugging session.
 
+**Status**: half done. Task 28 (registry-side capability tagging) shipped in commit `3b8fb30`. Tasks 29-32 (route, validator, tests, dimensions field) are still ⏳ — see `docs/progress.md` Phase 5 for the full task table.
+
 **Bugs**:
 - `POST /v1/embeddings` returns 404 — route does not exist. Blocks homenews semantic search (Phase 15) end-to-end; `articles.embedding` is NULL across the board.
 - `/v1/models/validate` mis-tests embedding models by POSTing chat completions, producing false-positive `error` status for `bge-m3:latest`, `qwen3-embedding:0.6b`, `nomic-embed-text:latest`. Smoking gun: 9-78ms failures (chat-completions error path, not real inference).
 
-**Fix scope**:
-1. Add `POST /v1/embeddings` route — OpenAI schema, route by `owned_by`:
-   - `ollama` → passthrough to `${OLLAMA_BASE_URL}/v1/embeddings` (already OpenAI-compatible)
-   - `openai` → passthrough to `https://api.openai.com/v1/embeddings`
-   - `anthropic`, `openai-codex`, `google-gemini-cli` → 501 with `provider_unsupported` error
-2. Tag models with `capability: "chat" | "embedding" | "vision"` at registry discovery time. Use Ollama `/api/show` (already called for vision detection) — embedders show empty `TEMPLATE` and bert/embedding family. Hardcode for non-Ollama providers.
-3. Validator: route by capability — embedders POST to `/v1/embeddings` with `input: "test"`, assert `data[0].embedding.length > 0`, record dim in `status_detail`.
-4. (Optional) Expose `embedding_dimensions` in `/v1/models` so consumers can validate vector column dim at boot.
+**Workflow** (matches the precedent set by chat completions + vision: research → spec doc → implementation → tests):
+1. **Research** OpenAI `/v1/embeddings` standard, write `docs/openai-embeddings-spec.md` as the canonical reference for request/response/error format. (Task 29a)
+2. **POC** against local Ollama embedders to confirm passthrough viability and record exact response bytes/dimensions. Append to spec doc. (Task 29b)
+3. **Implement** schemas + route + service per the spec. (Task 29c)
+4. **Per-capability validator dispatch** so embedders stop showing as false-positive errors. (Task 30)
+5. **Optional `embedding_dimensions`** field on `/v1/models`. (Task 31)
+6. **Unit + e2e tests** mirroring spec examples. Swagger `/docs` updates automatically via `@hono/zod-openapi`. (Tasks 32a, 32b)
 
-**Why**: homenews (and any future consumer) needs embeddings through the same OpenAI-compatible seam as chat — no side channels, no per-task provider adapters. Ollama already speaks the OpenAI embedding schema, so it's a byte-for-byte passthrough.
+**Why**: homenews (and any future consumer) needs embeddings through the same OpenAI-compatible seam as chat — no side channels, no per-task provider adapters. Ollama already speaks the OpenAI embedding schema, so it's a byte-for-byte passthrough. The spec doc step is non-negotiable: it's why we have `openai-chat-completions-spec.md` for the chat path, and skipping it last time is exactly why Phase 5 stalled at task 28 with no clear handoff between metadata work and route work.
 
 ## 6. Anthropic auth hotfix — container-private credential chain + lazy refresh
 
