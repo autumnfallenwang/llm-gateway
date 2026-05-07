@@ -5,10 +5,12 @@ import { streamSSE } from "hono/streaming";
 import { APP_DESCRIPTION, APP_NAME, APP_VERSION, LLM_GATEWAY_PORT } from "./config";
 import { BackendError } from "./errors";
 import { chatCompletionRoute } from "./routes/chat";
+import { embeddingsRoute } from "./routes/embeddings";
 import { modelsRoute } from "./routes/models";
 import { validateModelsRoute } from "./routes/validate";
 import { ensureAnthropicFresh } from "./services/auth";
 import { createCompletion, createStreamingCompletion } from "./services/completion";
+import { createEmbedding } from "./services/embeddings";
 import { VisionFallbackError } from "./services/image/fallback";
 import { ImageLoadError } from "./services/image/load";
 import { listModels, resolveModel } from "./services/registry";
@@ -52,6 +54,22 @@ app.openapi(chatCompletionRoute, async (c) => {
         },
       },
       404,
+    );
+  }
+
+  // Capability gate: embedding-only models would 5xx upstream when called via chat.
+  // Mirror of the gate in createEmbedding(); see openai-embeddings-spec.md.
+  if (resolved.capability === "embedding") {
+    return c.json(
+      {
+        error: {
+          message: `Model '${body.model}' is an embedding model. Use POST /v1/embeddings instead.`,
+          type: "invalid_request_error",
+          param: "model",
+          code: "wrong_capability",
+        },
+      },
+      400,
     );
   }
 
@@ -199,6 +217,57 @@ app.openapi(chatCompletionRoute, async (c) => {
   }
 });
 
+// Embeddings
+app.openapi(embeddingsRoute, async (c) => {
+  const body = c.req.valid("json");
+
+  const resolved = resolveModel(body.model);
+  if (!resolved) {
+    return c.json(
+      {
+        error: {
+          message: `Model '${body.model}' not found`,
+          type: "invalid_request_error",
+          param: "model",
+          code: "model_not_found",
+        },
+      },
+      404,
+    );
+  }
+
+  try {
+    const response = await createEmbedding(resolved, body);
+    return c.json(response, 200);
+  } catch (err) {
+    if (err instanceof BackendError) {
+      return c.json(
+        {
+          error: {
+            message: err.message,
+            type: err.errorType,
+            param: null,
+            code: err.errorCode,
+          },
+        },
+        err.httpStatus as 400 | 404 | 429 | 500 | 501,
+      );
+    }
+    const message = err instanceof Error ? err.message : "Unknown backend error";
+    return c.json(
+      {
+        error: {
+          message: `Backend error: ${message}`,
+          type: "server_error",
+          param: null,
+          code: null,
+        },
+      },
+      500,
+    );
+  }
+});
+
 // Models list
 app.openapi(modelsRoute, async (c) => {
   const allModels = listModels();
@@ -261,6 +330,7 @@ app.doc("/openapi.json", {
   ],
   tags: [
     { name: "Chat", description: "Chat completion endpoints" },
+    { name: "Embeddings", description: "Embedding endpoints" },
     { name: "Models", description: "Model listing and validation" },
   ],
 });
