@@ -11,7 +11,8 @@ Trigger model validation:
 
 Ops notes:
   - Single-replica only. SQLite + WAL on a ReadWriteOnce PVC won't tolerate concurrent writers.
-  - Ollama is served from the host node at {{ .Values.ollama.hostIp }}:{{ .Values.ollama.port }} via a
-    manual Service+Endpoints in this namespace. If the LAN IP changes, update `ollama.hostIp` in values.
+  - Ollama is reached directly via the host's LAN IP (set in env.OLLAMA_BASE_URL). The cluster's
+    ArgoCD installation excludes Endpoints/EndpointSlice from sync, so a Service indirection
+    silently drops; the direct URL works because the host bind was rebound to 0.0.0.0:11434.
   - PVC `{{ include "llmgw.fullname" . }}-data` survives pod restarts. Wipe it to force a fresh
     credential bootstrap (re-seeds from the host `.claude` directory on next boot).

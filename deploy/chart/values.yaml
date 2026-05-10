@@ -30,7 +30,11 @@ persistence:
 # new config knobs — the deployment template iterates over this map.
 env:
   LLM_GATEWAY_PORT: "51277"
-  OLLAMA_BASE_URL: http://ollama.llmgw:11434
+  # Direct host IP: the cluster's ArgoCD installation excludes both Endpoints
+  # and EndpointSlice from sync (UI clutter reduction default), so a manual
+  # Service+Endpoints redirection silently drops on every sync. Single-host
+  # k3s with a known LAN IP makes the indirection cosmetic anyway.
+  OLLAMA_BASE_URL: http://192.168.1.163:11434
   ANTHROPIC_SEED_PATH: /home/node/host-claude/.credentials.json
   CODEX_CREDENTIALS_PATH: /home/node/host-codex/auth.json
   LLMGW_DB_PATH: /home/node/.llm-gateway/state.db
@@ -51,12 +55,6 @@ hostMounts:
     enabled: false
     hostPath: /home/aaronwang/.gemini
     mountPath: /home/node/host-gemini
-
-# Pointer to the host Ollama daemon. After task 44 the host Ollama listens on
-# 0.0.0.0:11434 so the cluster can reach it through this manual Service+Endpoints.
-ollama:
-  hostIp: 192.168.1.163
-  port: 11434
 
 resources:
   requests:
