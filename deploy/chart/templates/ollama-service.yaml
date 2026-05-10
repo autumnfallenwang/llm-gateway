@@ -1,0 +1,32 @@
+# Manual Service + Endpoints pointing at the host Ollama daemon (port 11434).
+# Pod-to-host plumbing: the app reaches Ollama at `http://ollama.<namespace>:11434`
+# without knowing the host IP. EndpointSlice would be more idiomatic on newer
+# clusters, but v1/Endpoints is still fully supported and matches the migration plan.
+apiVersion: v1
+kind: Service
+metadata:
+  name: ollama
+  labels:
+    {{- include "llmgw.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  ports:
+    - port: {{ .Values.ollama.port }}
+      targetPort: {{ .Values.ollama.port }}
+      protocol: TCP
+      name: http
+  # No selector — Endpoints below provides the targets directly.
+---
+apiVersion: v1
+kind: Endpoints
+metadata:
+  name: ollama
+  labels:
+    {{- include "llmgw.labels" . | nindent 4 }}
+subsets:
+  - addresses:
+      - ip: {{ .Values.ollama.hostIp }}
+    ports:
+      - port: {{ .Values.ollama.port }}
+        protocol: TCP
+        name: http

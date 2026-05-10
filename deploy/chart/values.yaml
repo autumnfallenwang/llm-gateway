@@ -1,0 +1,96 @@
+# Default values for the llmgw chart.
+# Override these via `helm install --set` or a separate values file (e.g. via
+# the ArgoCD Application's spec.source.helm.parameters in arch-infra).
+
+image:
+  repository: ghcr.io/autumnfallenwang/llm-gateway
+  # CI bumps `tag` to a commit SHA in the ArgoCD Application's parameters.
+  tag: latest
+  pullPolicy: IfNotPresent
+
+# SQLite + WAL is single-writer, and the PVC is ReadWriteOnce — do not scale.
+replicaCount: 1
+
+service:
+  port: 80
+  targetPort: 51277
+
+ingress:
+  enabled: true
+  className: traefik
+  host: llmgw.arch.local
+
+persistence:
+  enabled: true
+  size: 1Gi
+  storageClass: local-path
+  mountPath: /home/node/.llm-gateway
+
+# Environment variables passed to the container. Add/override here when shipping
+# new config knobs — the deployment template iterates over this map.
+env:
+  LLM_GATEWAY_PORT: "51277"
+  OLLAMA_BASE_URL: http://ollama.llmgw:11434
+  ANTHROPIC_SEED_PATH: /home/node/host-claude/.credentials.json
+  CODEX_CREDENTIALS_PATH: /home/node/host-codex/auth.json
+  LLMGW_DB_PATH: /home/node/.llm-gateway/state.db
+
+# Read-only directory mounts from the host node. `Directory` (not `File`) so
+# atomic-rename rotations by the host CLIs don't pin the container to a stale
+# inode (Phase 6 fix).
+hostMounts:
+  claude:
+    enabled: true
+    hostPath: /home/aaronwang/.claude
+    mountPath: /home/node/host-claude
+  codex:
+    enabled: true
+    hostPath: /home/aaronwang/.codex
+    mountPath: /home/node/host-codex
+  gemini:
+    enabled: false
+    hostPath: /home/aaronwang/.gemini
+    mountPath: /home/node/host-gemini
+
+# Pointer to the host Ollama daemon. After task 44 the host Ollama listens on
+# 0.0.0.0:11434 so the cluster can reach it through this manual Service+Endpoints.
+ollama:
+  hostIp: 192.168.1.163
+  port: 11434
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    memory: 512Mi
+
+# Pod-level securityContext: applies to all containers in the pod.
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  runAsGroup: 1000
+  fsGroup: 1000
+
+# Container-level securityContext: per-container hardening. allowPrivilegeEscalation
+# only takes effect at this level — k8s drops it silently if set on the pod.
+containerSecurityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: false
+  capabilities:
+    drop:
+      - ALL
+
+probes:
+  liveness:
+    httpGet:
+      path: /
+      port: 51277
+    initialDelaySeconds: 10
+    periodSeconds: 30
+  readiness:
+    httpGet:
+      path: /
+      port: 51277
+    initialDelaySeconds: 3
+    periodSeconds: 10

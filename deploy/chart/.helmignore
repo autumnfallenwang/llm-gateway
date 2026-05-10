@@ -1,0 +1,14 @@
+# Patterns to ignore when building helm packages.
+# Match path globs relative to the chart root.
+.DS_Store
+.git/
+.gitignore
+.idea/
+.vscode/
+*.swp
+*.bak
+*.tmp
+*.orig
+*~
+OWNERS
+tests/

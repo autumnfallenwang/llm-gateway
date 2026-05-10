@@ -1,0 +1,17 @@
+llmgw release {{ .Release.Name }} (chart {{ .Chart.Version }}, app {{ .Chart.AppVersion }}) deployed.
+
+Reach the gateway:
+  curl http://{{ .Values.ingress.host }}/
+
+Tail logs:
+  kubectl logs -n {{ .Release.Namespace }} deploy/{{ include "llmgw.fullname" . }} -f
+
+Trigger model validation:
+  curl -X POST http://{{ .Values.ingress.host }}/v1/models/validate
+
+Ops notes:
+  - Single-replica only. SQLite + WAL on a ReadWriteOnce PVC won't tolerate concurrent writers.
+  - Ollama is served from the host node at {{ .Values.ollama.hostIp }}:{{ .Values.ollama.port }} via a
+    manual Service+Endpoints in this namespace. If the LAN IP changes, update `ollama.hostIp` in values.
+  - PVC `{{ include "llmgw.fullname" . }}-data` survives pod restarts. Wipe it to force a fresh
+    credential bootstrap (re-seeds from the host `.claude` directory on next boot).
