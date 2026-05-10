@@ -3,6 +3,7 @@ import { createServer, type Server } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { type AppDb, openDb, setDb } from "../src/lib/db";
 import { loadCredentials } from "../src/services/auth";
 import { listModels, loadRegistry, resolveModel } from "../src/services/registry";
 
@@ -82,22 +83,22 @@ afterAll(async () => {
 // ── Auth temp files ─────────────────────────────────────────────────────────
 
 let tempDir: string;
+let db: AppDb;
 
 beforeEach(async () => {
   tempDir = await mkdtemp(join(tmpdir(), "registry-test-"));
+  db = openDb(":memory:");
+  setDb(db);
 });
 
 afterEach(async () => {
+  db.close();
   await rm(tempDir, { recursive: true, force: true });
 });
 
-// Anthropic credentials are loaded from the writable cache path (no refresh fires).
-// The seed path points at a non-existent file in tempDir so loadCredentials has
-// nothing to bootstrap from when no cache is set up.
-function anthropicCachePath(): string {
-  return join(tempDir, "anthropic-cache.json");
-}
-
+// Anthropic creds are seeded directly into the DB; the seed path points at a
+// non-existent file so loadCredentials has nothing to bootstrap from when no DB
+// row is set up.
 function anthropicSeedPath(): string {
   return join(tempDir, "anthropic-seed-nonexistent.json");
 }
@@ -116,17 +117,12 @@ function makeJwt(payload: Record<string, unknown>): string {
   return `${header}.${body}.fakesig`;
 }
 
-async function setupAnthropicKey(): Promise<void> {
-  await writeFile(
-    anthropicCachePath(),
-    JSON.stringify({
-      claudeAiOauth: {
-        accessToken: "anthropic-tok-test",
-        refreshToken: "anthropic-refresh-test",
-        expiresAt: Date.now() + 3_600_000,
-      },
-    }),
-  );
+function setupAnthropicKey(): void {
+  db.writeCredentialChain("anthropic", {
+    access: "anthropic-tok-test",
+    refresh: "anthropic-refresh-test",
+    expires: Date.now() + 3_600_000,
+  });
 }
 
 async function setupCodexKey(): Promise<void> {
@@ -140,7 +136,6 @@ describe("loadRegistry", () => {
   it("discovers Ollama models from mock server", async () => {
     await loadCredentials({
       anthropicSeedPath: anthropicSeedPath(),
-      anthropicCachePath: anthropicCachePath(),
       codexCredentialsPath: codexPath(),
       geminiCredentialsPath: geminiPath(),
     });
@@ -153,10 +148,9 @@ describe("loadRegistry", () => {
   });
 
   it("loads Anthropic models when key is available", async () => {
-    await setupAnthropicKey();
+    setupAnthropicKey();
     await loadCredentials({
       anthropicSeedPath: anthropicSeedPath(),
-      anthropicCachePath: anthropicCachePath(),
       codexCredentialsPath: codexPath(),
       geminiCredentialsPath: geminiPath(),
     });
@@ -172,7 +166,6 @@ describe("loadRegistry", () => {
     await setupCodexKey();
     await loadCredentials({
       anthropicSeedPath: anthropicSeedPath(),
-      anthropicCachePath: anthropicCachePath(),
       codexCredentialsPath: codexPath(),
       geminiCredentialsPath: geminiPath(),
     });
@@ -186,7 +179,6 @@ describe("loadRegistry", () => {
   it("skips Anthropic models when no key", async () => {
     await loadCredentials({
       anthropicSeedPath: anthropicSeedPath(),
-      anthropicCachePath: anthropicCachePath(),
       codexCredentialsPath: codexPath(),
       geminiCredentialsPath: geminiPath(),
     });
@@ -200,7 +192,6 @@ describe("loadRegistry", () => {
   it("skips Codex models when no key", async () => {
     await loadCredentials({
       anthropicSeedPath: anthropicSeedPath(),
-      anthropicCachePath: anthropicCachePath(),
       codexCredentialsPath: codexPath(),
       geminiCredentialsPath: geminiPath(),
     });
@@ -214,7 +205,6 @@ describe("loadRegistry", () => {
   it("skips Gemini models when no key", async () => {
     await loadCredentials({
       anthropicSeedPath: anthropicSeedPath(),
-      anthropicCachePath: anthropicCachePath(),
       codexCredentialsPath: codexPath(),
       geminiCredentialsPath: geminiPath(),
     });
@@ -228,7 +218,6 @@ describe("loadRegistry", () => {
   it("detects vision-capable Ollama model", async () => {
     await loadCredentials({
       anthropicSeedPath: anthropicSeedPath(),
-      anthropicCachePath: anthropicCachePath(),
       codexCredentialsPath: codexPath(),
       geminiCredentialsPath: geminiPath(),
     });
@@ -242,7 +231,6 @@ describe("loadRegistry", () => {
   it("keeps non-vision Ollama model as text-only", async () => {
     await loadCredentials({
       anthropicSeedPath: anthropicSeedPath(),
-      anthropicCachePath: anthropicCachePath(),
       codexCredentialsPath: codexPath(),
       geminiCredentialsPath: geminiPath(),
     });
@@ -256,7 +244,6 @@ describe("loadRegistry", () => {
   it("uses context_length from /api/show", async () => {
     await loadCredentials({
       anthropicSeedPath: anthropicSeedPath(),
-      anthropicCachePath: anthropicCachePath(),
       codexCredentialsPath: codexPath(),
       geminiCredentialsPath: geminiPath(),
     });
@@ -270,7 +257,6 @@ describe("loadRegistry", () => {
   it("tags embedding Ollama model as embedding capability", async () => {
     await loadCredentials({
       anthropicSeedPath: anthropicSeedPath(),
-      anthropicCachePath: anthropicCachePath(),
       codexCredentialsPath: codexPath(),
       geminiCredentialsPath: geminiPath(),
     });
@@ -284,7 +270,6 @@ describe("loadRegistry", () => {
   it("tags chat Ollama model as chat capability", async () => {
     await loadCredentials({
       anthropicSeedPath: anthropicSeedPath(),
-      anthropicCachePath: anthropicCachePath(),
       codexCredentialsPath: codexPath(),
       geminiCredentialsPath: geminiPath(),
     });
@@ -298,7 +283,6 @@ describe("loadRegistry", () => {
   it("tags vision Ollama model as chat capability (vision is not embedding)", async () => {
     await loadCredentials({
       anthropicSeedPath: anthropicSeedPath(),
-      anthropicCachePath: anthropicCachePath(),
       codexCredentialsPath: codexPath(),
       geminiCredentialsPath: geminiPath(),
     });
@@ -312,7 +296,6 @@ describe("loadRegistry", () => {
   it("handles Ollama not running gracefully", async () => {
     await loadCredentials({
       anthropicSeedPath: anthropicSeedPath(),
-      anthropicCachePath: anthropicCachePath(),
       codexCredentialsPath: codexPath(),
       geminiCredentialsPath: geminiPath(),
     });
@@ -329,7 +312,6 @@ describe("listModels", () => {
   it("returns correct OpenAI-format objects", async () => {
     await loadCredentials({
       anthropicSeedPath: anthropicSeedPath(),
-      anthropicCachePath: anthropicCachePath(),
       codexCredentialsPath: codexPath(),
       geminiCredentialsPath: geminiPath(),
     });
@@ -352,7 +334,6 @@ describe("resolveModel", () => {
   it("resolves an Ollama model with provider='ollama'", async () => {
     await loadCredentials({
       anthropicSeedPath: anthropicSeedPath(),
-      anthropicCachePath: anthropicCachePath(),
       codexCredentialsPath: codexPath(),
       geminiCredentialsPath: geminiPath(),
     });
@@ -366,10 +347,9 @@ describe("resolveModel", () => {
   });
 
   it("resolves an Anthropic model with apiKey", async () => {
-    await setupAnthropicKey();
+    setupAnthropicKey();
     await loadCredentials({
       anthropicSeedPath: anthropicSeedPath(),
-      anthropicCachePath: anthropicCachePath(),
       codexCredentialsPath: codexPath(),
       geminiCredentialsPath: geminiPath(),
     });
@@ -386,7 +366,6 @@ describe("resolveModel", () => {
     await setupCodexKey();
     await loadCredentials({
       anthropicSeedPath: anthropicSeedPath(),
-      anthropicCachePath: anthropicCachePath(),
       codexCredentialsPath: codexPath(),
       geminiCredentialsPath: geminiPath(),
     });
@@ -405,7 +384,6 @@ describe("resolveModel", () => {
   it("returns undefined for nonexistent model", async () => {
     await loadCredentials({
       anthropicSeedPath: anthropicSeedPath(),
-      anthropicCachePath: anthropicCachePath(),
       codexCredentialsPath: codexPath(),
       geminiCredentialsPath: geminiPath(),
     });

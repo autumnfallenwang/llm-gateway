@@ -1,16 +1,30 @@
 import type { AssistantMessage, Model } from "@mariozechner/pi-ai";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { type AppDb, openDb, setDb } from "../src/lib/db";
 import type { ResolvedModel } from "../src/services/registry";
 
 const completeMock = vi.fn();
+const listModelsMock = vi.fn();
+const resolveModelMock = vi.fn();
 
 vi.mock("@mariozechner/pi-ai", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@mariozechner/pi-ai")>();
   return { ...actual, complete: completeMock };
 });
 
+vi.mock("../src/services/registry", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../src/services/registry")>();
+  return {
+    ...actual,
+    listModels: listModelsMock,
+    resolveModel: resolveModelMock,
+  };
+});
+
 // Import after mocks are set up
-const { validateSingleModel } = await import("../src/services/validation");
+const { validateSingleModel, validateAllModels, readValidationReport } = await import(
+  "../src/services/validation"
+);
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -262,5 +276,65 @@ describe("validateSingleModel: embedding capability", () => {
 
     expect(result.status).toBe("error");
     expect(result.error).toMatch(/connection refused/);
+  });
+});
+
+// ── validateAllModels / readValidationReport (DB-backed) ───────────────────
+
+describe("validateAllModels: DB persistence", () => {
+  let db: AppDb;
+
+  beforeEach(() => {
+    db = openDb(":memory:");
+    setDb(db);
+    listModelsMock.mockReset();
+    resolveModelMock.mockReset();
+  });
+
+  afterEach(() => {
+    db.close();
+  });
+
+  it("writes the report to the DB and a follow-up read returns the same payload", async () => {
+    const chatResolved = makeResolved({ capability: "chat", id: "qwen3:30b" });
+    const embedResolved = makeResolved({ capability: "embedding", id: "bge-m3:latest" });
+
+    listModelsMock.mockReturnValue([{ id: "qwen3:30b" }, { id: "bge-m3:latest" }]);
+    resolveModelMock.mockImplementation((id: string) => {
+      if (id === "qwen3:30b") return chatResolved;
+      if (id === "bge-m3:latest") return embedResolved;
+      return undefined;
+    });
+    completeMock.mockResolvedValue(chatResponse("hello"));
+    fetchMock.mockResolvedValue(embeddingResponse(1024));
+
+    const report = await validateAllModels();
+
+    expect(report.validatedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+    expect(report.models["qwen3:30b"].status).toBe("ok");
+    expect(report.models["bge-m3:latest"].status).toBe("ok");
+    expect(report.models["bge-m3:latest"].embeddingDim).toBe(1024);
+
+    // Stored row matches and survives across the read seam
+    const stored = await readValidationReport();
+    expect(stored).toEqual(report);
+  });
+
+  it("readValidationReport returns null on an unwritten DB", async () => {
+    expect(await readValidationReport()).toBeNull();
+  });
+
+  it("records unresolvable models as error rows", async () => {
+    listModelsMock.mockReturnValue([{ id: "ghost-model" }]);
+    resolveModelMock.mockReturnValue(undefined);
+
+    const report = await validateAllModels();
+
+    expect(report.models["ghost-model"]).toEqual({
+      status: "error",
+      error: "model not resolvable",
+    });
+    const stored = await readValidationReport();
+    expect(stored?.models["ghost-model"].status).toBe("error");
   });
 });

@@ -41,14 +41,15 @@ Centralized in `src/config.ts`. Key env var overrides:
 |----------|---------|-------------|
 | `LLM_GATEWAY_PORT` | `51277` | Server port |
 | `LOG_LEVEL` | `info` | pino log level (`trace`/`debug`/`info`/`warn`/`error`/`fatal`). Bump to `debug` for verbose troubleshooting. |
+| `LLMGW_DB_PATH` | `~/.llm-gateway/state.db` | SQLite path for the credential chain + model validation report. |
 | `OLLAMA_BASE_URL` | `http://localhost:11434` | Ollama API base URL |
 | `OLLAMA_NUM_CTX` | `32768` | Ollama runtime context window size (`num_ctx`) |
 | `ANTHROPIC_SEED_PATH` | `~/.claude/.credentials.json` | Read-only seed: host's Claude CLI credentials. Read once on first boot. |
-| `ANTHROPIC_CACHE_PATH` | `~/.llm-gateway/anthropic-credentials.json` | Container-private OAuth chain (writable). Lazy refresh writes here. |
+| `ANTHROPIC_CACHE_PATH` | `~/.llm-gateway/anthropic-credentials.json` | Legacy JSON; used only as a one-shot import source when `LLMGW_DB_PATH` is empty. |
 | `ANTHROPIC_REFRESH_SKEW_MS` | `60000` | Safety margin before `expiresAt` — refresh fires when `now > expires - skew`. |
 | `CODEX_CREDENTIALS_PATH` | `~/.codex/auth.json` | Codex auth file |
 | `GEMINI_CREDENTIALS_PATH` | `~/.gemini/oauth_creds.json` | Gemini auth file |
-| `VALIDATION_FILE_PATH` | `~/.llm-gateway/models.json` | Validation cache |
+| `VALIDATION_FILE_PATH` | `~/.llm-gateway/models.json` | Legacy JSON; used only as a one-shot import source when the DB has no validation rows. |
 | `VALIDATION_CONCURRENCY` | `3` | Parallel model validation limit |
 | `VALIDATION_TIMEOUT_MS` | `60000` | Per-model validation timeout |
 | `OLLAMA_SHOW_TIMEOUT_MS` | `2000` | Per-model /api/show timeout |

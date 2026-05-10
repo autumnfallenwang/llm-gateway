@@ -5,13 +5,13 @@ import {
   refreshGoogleCloudToken,
 } from "@mariozechner/pi-ai";
 import {
-  ANTHROPIC_CACHE_PATH,
   ANTHROPIC_REFRESH_SKEW_MS,
   ANTHROPIC_SEED_PATH,
   CODEX_CREDENTIALS_PATH,
   GEMINI_CREDENTIALS_PATH,
   GEMINI_PROJECT_URL,
 } from "../config.js";
+import { getDb } from "../lib/db.js";
 import { log } from "../lib/logger.js";
 
 // ── Types ───────────────────────────────────────────────────────────────────
@@ -58,8 +58,6 @@ export interface CredentialStatus {
 export interface AuthConfig {
   /** Read-only seed path (host's `~/.claude/.credentials.json` mount). */
   anthropicSeedPath?: string;
-  /** Writable cache path inside the container's `~/.llm-gateway` volume. */
-  anthropicCachePath?: string;
   codexCredentialsPath?: string;
   geminiCredentialsPath?: string;
 }
@@ -67,7 +65,6 @@ export interface AuthConfig {
 // ── Module state ────────────────────────────────────────────────────────────
 
 let anthropicCreds: AnthropicCredsState | undefined;
-let anthropicCachePath: string = ANTHROPIC_CACHE_PATH;
 let anthropicRefreshInFlight: Promise<void> | null = null;
 
 let codexAccessToken: string | undefined;
@@ -91,9 +88,9 @@ function decodeJwtExp(jwt: string): number | undefined {
   return undefined;
 }
 
-// ── Anthropic credential file I/O ──────────────────────────────────────────
+// ── Anthropic credential I/O ───────────────────────────────────────────────
 
-async function readAnthropicFile(path: string): Promise<AnthropicCredsState | undefined> {
+async function readAnthropicSeedFile(path: string): Promise<AnthropicCredsState | undefined> {
   let raw: string;
   try {
     raw = await readFile(path, "utf-8");
@@ -102,7 +99,7 @@ async function readAnthropicFile(path: string): Promise<AnthropicCredsState | un
     if (code !== "ENOENT") {
       log.warn(
         { event: "auth.file.read_failed", provider: "anthropic", path, err },
-        "Failed to read Anthropic file",
+        "Failed to read Anthropic seed file",
       );
     }
     return undefined;
@@ -113,7 +110,7 @@ async function readAnthropicFile(path: string): Promise<AnthropicCredsState | un
   } catch {
     log.warn(
       { event: "auth.file.invalid_json", provider: "anthropic", path },
-      "Anthropic credentials file is not valid JSON",
+      "Anthropic seed file is not valid JSON",
     );
     return undefined;
   }
@@ -128,20 +125,17 @@ async function readAnthropicFile(path: string): Promise<AnthropicCredsState | un
   };
 }
 
-async function writeAnthropicCache(path: string, creds: AnthropicCredsState): Promise<void> {
-  const payload: AnthropicCredentialsFile = {
-    claudeAiOauth: {
-      accessToken: creds.access,
-      refreshToken: creds.refresh,
-      expiresAt: creds.expires,
-    },
-  };
+function readAnthropicFromDb(): AnthropicCredsState | undefined {
+  return getDb().readCredentialChain("anthropic");
+}
+
+function writeAnthropicToDb(creds: AnthropicCredsState): void {
   try {
-    await writeFile(path, JSON.stringify(payload, null, 2));
+    getDb().writeCredentialChain("anthropic", creds);
   } catch (err: unknown) {
     log.warn(
-      { event: "auth.cache.write_failed", provider: "anthropic", path, err },
-      "Failed to write Anthropic cache — refresh succeeded in-memory but won't persist across restart",
+      { event: "auth.db.write_failed", provider: "anthropic", err },
+      "Failed to persist Anthropic chain to DB — refresh succeeded in-memory but won't survive restart",
     );
   }
 }
@@ -158,7 +152,7 @@ async function performAnthropicRefresh(): Promise<void> {
     refresh: refreshed.refresh,
     expires: refreshed.expires,
   };
-  await writeAnthropicCache(anthropicCachePath, anthropicCreds);
+  writeAnthropicToDb(anthropicCreds);
   log.info(
     {
       event: "auth.refresh.succeeded",
@@ -190,28 +184,26 @@ export async function ensureAnthropicFresh(): Promise<void> {
   await anthropicRefreshInFlight;
 }
 
-async function loadAnthropicCredentials(seedPath: string, cachePath: string): Promise<void> {
-  anthropicCachePath = cachePath;
-
-  // Prefer the container's cache: once we've minted our own chain, never touch the seed again.
-  const fromCache = await readAnthropicFile(cachePath);
-  if (fromCache) {
-    anthropicCreds = fromCache;
+async function loadAnthropicCredentials(seedPath: string): Promise<void> {
+  // Prefer the DB: once we've minted our own chain, never touch the seed again.
+  const fromDb = readAnthropicFromDb();
+  if (fromDb) {
+    anthropicCreds = fromDb;
     const expired = anthropicCreds.expires < Date.now();
     log.info(
       {
         event: "auth.credentials.loaded",
         provider: "anthropic",
-        source: "cache",
+        source: "db",
         expired,
       },
-      "Anthropic credentials loaded from cache",
+      "Anthropic credentials loaded from DB",
     );
     return;
   }
 
   // First boot: read the host seed, then immediately mint our own chain.
-  const fromSeed = await readAnthropicFile(seedPath);
+  const fromSeed = await readAnthropicSeedFile(seedPath);
   if (!fromSeed) {
     log.warn(
       { event: "auth.credentials.unavailable", provider: "anthropic" },
@@ -399,10 +391,7 @@ export async function loadCredentials(config?: AuthConfig): Promise<void> {
   geminiApiKey = undefined;
   geminiExpiresAt = undefined;
 
-  await loadAnthropicCredentials(
-    config?.anthropicSeedPath ?? ANTHROPIC_SEED_PATH,
-    config?.anthropicCachePath ?? ANTHROPIC_CACHE_PATH,
-  );
+  await loadAnthropicCredentials(config?.anthropicSeedPath ?? ANTHROPIC_SEED_PATH);
   await loadCodexCredentials(config?.codexCredentialsPath ?? CODEX_CREDENTIALS_PATH);
   await loadGeminiCredentials(config?.geminiCredentialsPath ?? GEMINI_CREDENTIALS_PATH);
 }

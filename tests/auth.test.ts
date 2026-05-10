@@ -1,8 +1,9 @@
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { refreshAnthropicToken } from "@mariozechner/pi-ai";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { type AppDb, getDb, openDb, setDb } from "../src/lib/db";
 import {
   ensureAnthropicFresh,
   getAnthropicKey,
@@ -25,13 +26,17 @@ const mockedRefresh = vi.mocked(refreshAnthropicToken);
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
 let tempDir: string;
+let db: AppDb;
 
 beforeEach(async () => {
   tempDir = await mkdtemp(join(tmpdir(), "auth-test-"));
+  db = openDb(":memory:");
+  setDb(db);
   mockedRefresh.mockReset();
 });
 
 afterEach(async () => {
+  db.close();
   await rm(tempDir, { recursive: true, force: true });
 });
 
@@ -43,10 +48,6 @@ function makeJwt(payload: Record<string, unknown>): string {
 
 function seedPath(): string {
   return join(tempDir, "seed.json");
-}
-
-function cachePath(): string {
-  return join(tempDir, "cache.json");
 }
 
 function codexPath(): string {
@@ -67,12 +68,12 @@ function makeAnthropicFile(opts: { access: string; refresh: string; expiresAt: n
   });
 }
 
-async function writeCache(opts: {
-  access: string;
-  refresh: string;
-  expiresAt: number;
-}): Promise<void> {
-  await writeFile(cachePath(), makeAnthropicFile(opts));
+function seedDbCreds(opts: { access: string; refresh: string; expiresAt: number }): void {
+  db.writeCredentialChain("anthropic", {
+    access: opts.access,
+    refresh: opts.refresh,
+    expires: opts.expiresAt,
+  });
 }
 
 async function writeSeed(opts: {
@@ -86,17 +87,16 @@ async function writeSeed(opts: {
 async function loadAll(): Promise<void> {
   await loadCredentials({
     anthropicSeedPath: seedPath(),
-    anthropicCachePath: cachePath(),
     codexCredentialsPath: codexPath(),
     geminiCredentialsPath: geminiPath(),
   });
 }
 
-// ── Bootstrap from cache (no refresh) ──────────────────────────────────────
+// ── Bootstrap from DB (no refresh) ─────────────────────────────────────────
 
-describe("loadCredentials: Anthropic cache bootstrap", () => {
-  it("loads from cache file when present, no refresh fires", async () => {
-    await writeCache({
+describe("loadCredentials: Anthropic DB bootstrap", () => {
+  it("loads from DB when present, no refresh fires", async () => {
+    seedDbCreds({
       access: "cached-tok",
       refresh: "cached-refresh",
       expiresAt: Date.now() + 3_600_000,
@@ -107,8 +107,8 @@ describe("loadCredentials: Anthropic cache bootstrap", () => {
     expect(mockedRefresh).not.toHaveBeenCalled();
   });
 
-  it("loads expired cached token without refreshing during bootstrap", async () => {
-    await writeCache({
+  it("loads expired DB token without refreshing during bootstrap", async () => {
+    seedDbCreds({
       access: "expired-tok",
       refresh: "cached-refresh",
       expiresAt: Date.now() - 60_000,
@@ -122,10 +122,10 @@ describe("loadCredentials: Anthropic cache bootstrap", () => {
     expect(status.anthropic.available).toBe(true);
   });
 
-  it("ignores seed when cache is present", async () => {
-    await writeCache({
-      access: "from-cache",
-      refresh: "cache-refresh",
+  it("ignores seed when DB is populated", async () => {
+    seedDbCreds({
+      access: "from-db",
+      refresh: "db-refresh",
       expiresAt: Date.now() + 3_600_000,
     });
     await writeSeed({
@@ -135,7 +135,7 @@ describe("loadCredentials: Anthropic cache bootstrap", () => {
     });
     await loadAll();
 
-    expect(getAnthropicKey()).toBe("from-cache");
+    expect(getAnthropicKey()).toBe("from-db");
     expect(mockedRefresh).not.toHaveBeenCalled();
   });
 });
@@ -143,7 +143,7 @@ describe("loadCredentials: Anthropic cache bootstrap", () => {
 // ── Bootstrap from seed (force refresh on first start) ─────────────────────
 
 describe("loadCredentials: Anthropic seed bootstrap", () => {
-  it("refreshes immediately on seed bootstrap and writes the result to cache", async () => {
+  it("refreshes immediately on seed bootstrap and writes the result to DB", async () => {
     await writeSeed({
       access: "seed-tok",
       refresh: "seed-refresh",
@@ -161,10 +161,10 @@ describe("loadCredentials: Anthropic seed bootstrap", () => {
     expect(mockedRefresh).toHaveBeenCalledWith("seed-refresh");
     expect(getAnthropicKey()).toBe("minted-tok");
 
-    // Cache file written with the new chain
-    const cached = JSON.parse(await readFile(cachePath(), "utf-8"));
-    expect(cached.claudeAiOauth.accessToken).toBe("minted-tok");
-    expect(cached.claudeAiOauth.refreshToken).toBe("minted-refresh");
+    // DB row written with the new chain
+    const stored = getDb().readCredentialChain("anthropic");
+    expect(stored?.access).toBe("minted-tok");
+    expect(stored?.refresh).toBe("minted-refresh");
   });
 
   it("falls back to seed token when initial refresh fails", async () => {
@@ -194,7 +194,7 @@ describe("loadCredentials: Anthropic seed bootstrap", () => {
     expect(mockedRefresh).not.toHaveBeenCalled();
   });
 
-  it("returns undefined when neither cache nor seed exists", async () => {
+  it("returns undefined when neither DB row nor seed exists", async () => {
     await loadAll();
 
     expect(getAnthropicKey()).toBeUndefined();
@@ -214,7 +214,7 @@ describe("loadCredentials: Anthropic seed bootstrap", () => {
 
 describe("ensureAnthropicFresh", () => {
   it("skips refresh when token is fresh", async () => {
-    await writeCache({
+    seedDbCreds({
       access: "fresh-tok",
       refresh: "fresh-refresh",
       expiresAt: Date.now() + 3_600_000,
@@ -228,7 +228,7 @@ describe("ensureAnthropicFresh", () => {
   });
 
   it("refreshes when token is past expiry", async () => {
-    await writeCache({
+    seedDbCreds({
       access: "expired-tok",
       refresh: "expired-refresh",
       expiresAt: Date.now() - 60_000,
@@ -249,7 +249,7 @@ describe("ensureAnthropicFresh", () => {
 
   it("refreshes when token is within the safety skew", async () => {
     // expires 30s from now, well inside the 60s default skew
-    await writeCache({
+    seedDbCreds({
       access: "near-expiry-tok",
       refresh: "near-refresh",
       expiresAt: Date.now() + 30_000,
@@ -268,7 +268,7 @@ describe("ensureAnthropicFresh", () => {
   });
 
   it("deduplicates concurrent refreshes via single-flight mutex", async () => {
-    await writeCache({
+    seedDbCreds({
       access: "expired",
       refresh: "expired-refresh",
       expiresAt: Date.now() - 60_000,
@@ -300,8 +300,8 @@ describe("ensureAnthropicFresh", () => {
     expect(getAnthropicKey()).toBe("single-refresh-tok");
   });
 
-  it("writes refreshed creds back to the cache file", async () => {
-    await writeCache({
+  it("writes refreshed creds back to the DB", async () => {
+    seedDbCreds({
       access: "stale",
       refresh: "stale-refresh",
       expiresAt: Date.now() - 60_000,
@@ -316,14 +316,16 @@ describe("ensureAnthropicFresh", () => {
 
     await ensureAnthropicFresh();
 
-    const cached = JSON.parse(await readFile(cachePath(), "utf-8"));
-    expect(cached.claudeAiOauth.accessToken).toBe("written-tok");
-    expect(cached.claudeAiOauth.refreshToken).toBe("written-refresh");
-    expect(cached.claudeAiOauth.expiresAt).toBe(newExpiry);
+    const stored = getDb().readCredentialChain("anthropic");
+    expect(stored).toEqual({
+      access: "written-tok",
+      refresh: "written-refresh",
+      expires: newExpiry,
+    });
   });
 
   it("is a no-op when no Anthropic credentials are loaded", async () => {
-    // No file at seed or cache path
+    // No DB row, no seed file
     await loadAll();
 
     await expect(ensureAnthropicFresh()).resolves.toBeUndefined();
@@ -331,7 +333,7 @@ describe("ensureAnthropicFresh", () => {
   });
 
   it("propagates refresh errors after clearing the in-flight mutex", async () => {
-    await writeCache({
+    seedDbCreds({
       access: "stale",
       refresh: "stale-refresh",
       expiresAt: Date.now() - 60_000,
@@ -394,11 +396,7 @@ describe("loadCredentials: Codex", () => {
 describe("getCredentialStatus", () => {
   it("reports correct shape across providers", async () => {
     const anthropicExpiry = Date.now() + 3_600_000;
-    await writeCache({
-      access: "tok-a",
-      refresh: "ref-a",
-      expiresAt: anthropicExpiry,
-    });
+    seedDbCreds({ access: "tok-a", refresh: "ref-a", expiresAt: anthropicExpiry });
 
     const codexExp = Math.floor(Date.now() / 1000) + 3600;
     const jwt = makeJwt({ sub: "user", exp: codexExp });

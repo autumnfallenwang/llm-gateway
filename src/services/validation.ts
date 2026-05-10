@@ -1,13 +1,11 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { dirname } from "node:path";
 import { complete } from "@mariozechner/pi-ai";
 import {
   DEFAULT_SYSTEM_PROMPT,
   VALIDATION_CONCURRENCY,
-  VALIDATION_FILE_PATH,
   VALIDATION_MAX_TOKENS,
   VALIDATION_TIMEOUT_MS,
 } from "../config.js";
+import { getDb } from "../lib/db.js";
 import { log } from "../lib/logger.js";
 import type { ModelValidationResult, ValidateResponse } from "../schemas/validate.js";
 import { createEmbedding } from "./embeddings.js";
@@ -16,7 +14,6 @@ import { listModels, type ResolvedModel, resolveModel } from "./registry.js";
 // ── Types ───────────────────────────────────────────────────────────────────
 
 export interface ValidationConfig {
-  validationFilePath?: string;
   concurrency?: number;
   perModelTimeoutMs?: number;
 }
@@ -132,7 +129,6 @@ async function runWithConcurrency<T>(tasks: (() => Promise<T>)[], limit: number)
 }
 
 export async function validateAllModels(config?: ValidationConfig): Promise<ValidateResponse> {
-  const filePath = config?.validationFilePath ?? VALIDATION_FILE_PATH;
   const concurrency = config?.concurrency ?? VALIDATION_CONCURRENCY;
   const timeoutMs = config?.perModelTimeoutMs ?? VALIDATION_TIMEOUT_MS;
 
@@ -175,8 +171,7 @@ export async function validateAllModels(config?: ValidationConfig): Promise<Vali
     models,
   };
 
-  await mkdir(dirname(filePath), { recursive: true });
-  await writeFile(filePath, JSON.stringify(report, null, 2));
+  getDb().writeValidationReport(report);
 
   const okCount = Object.values(models).filter((m) => m.status === "ok").length;
   log.info(
@@ -184,7 +179,7 @@ export async function validateAllModels(config?: ValidationConfig): Promise<Vali
       event: "validation.done",
       ok_count: okCount,
       total_count: allModels.length,
-      file_path: filePath,
+      db_rows: allModels.length,
     },
     "Validation done",
   );
@@ -192,17 +187,6 @@ export async function validateAllModels(config?: ValidationConfig): Promise<Vali
   return report;
 }
 
-export async function readValidationReport(
-  config?: ValidationConfig,
-): Promise<ValidateResponse | null> {
-  const filePath = config?.validationFilePath ?? VALIDATION_FILE_PATH;
-  try {
-    const raw = await readFile(filePath, "utf-8");
-    return JSON.parse(raw) as ValidateResponse;
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === "ENOENT") {
-      return null;
-    }
-    throw err;
-  }
+export function readValidationReport(): Promise<ValidateResponse | null> {
+  return Promise.resolve(getDb().readValidationReport());
 }

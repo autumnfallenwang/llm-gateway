@@ -89,9 +89,9 @@ export const ANTHROPIC_SEED_PATH =
   env.ANTHROPIC_SEED_PATH ?? join(homedir(), ".claude", ".credentials.json");
 
 /**
- * Anthropic cache: the container's writable copy of `{access, refresh, expires}`. Lazy refresh
- * writes here on every successful refresh. Persists across container restarts via the
- * `~/.llm-gateway` volume.
+ * Legacy Anthropic cache file. Used only as a one-shot import source on first boot when
+ * `LLMGW_DB_PATH` is empty — pre-PVC deploys wrote the chain here. The DB is now the
+ * source of truth for the container's `{access, refresh, expires}` chain.
  */
 export const ANTHROPIC_CACHE_PATH =
   env.ANTHROPIC_CACHE_PATH ?? join(homedir(), ".llm-gateway", "anthropic-credentials.json");
@@ -108,8 +108,20 @@ export const GEMINI_CREDENTIALS_PATH =
  */
 export const ANTHROPIC_REFRESH_SKEW_MS = Number(env.ANTHROPIC_REFRESH_SKEW_MS ?? 60_000);
 
+// ── Persistence ────────────────────────────────────────────────────────────
+
+/**
+ * SQLite database path. Backs the credential chain + model validation report.
+ * In the k3s deploy this is on the writable 1Gi `local-path` PVC.
+ */
+export const LLMGW_DB_PATH = env.LLMGW_DB_PATH ?? join(homedir(), ".llm-gateway", "state.db");
+
 // ── Validation ─────────────────────────────────────────────────────────────
 
+/**
+ * Legacy JSON validation report. Used only as a one-shot import source on first
+ * boot when `LLMGW_DB_PATH` is empty — pre-PVC deploys wrote the report here.
+ */
 export const VALIDATION_FILE_PATH =
   env.VALIDATION_FILE_PATH ?? join(homedir(), ".llm-gateway", "models.json");
 export const VALIDATION_CONCURRENCY = Number(env.VALIDATION_CONCURRENCY ?? 3);

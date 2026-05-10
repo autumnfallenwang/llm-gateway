@@ -2,6 +2,7 @@ import { type ServerType, serve } from "@hono/node-server";
 import sharp from "sharp";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import app from "../src/app.js";
+import { openDb, setDb } from "../src/lib/db.js";
 import { loadCredentials } from "../src/services/auth.js";
 import { loadRegistry } from "../src/services/registry.js";
 
@@ -14,6 +15,7 @@ let server: ServerType;
 let baseUrl: string;
 
 beforeAll(async () => {
+  setDb(openDb(":memory:"));
   await loadCredentials();
   await loadRegistry();
 
