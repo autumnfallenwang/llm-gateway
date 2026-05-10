@@ -70,7 +70,7 @@ jobs:
             exit 0
           fi
 
-          gh repo clone autumnfallenwang/arch-infra /tmp/arch-infra
+          git clone "https://x-access-token:${GH_TOKEN}@github.com/autumnfallenwang/arch-infra.git" /tmp/arch-infra
           cd /tmp/arch-infra
 
           if [ ! -f apps/llmgw.yaml ]; then
