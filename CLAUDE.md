@@ -72,5 +72,8 @@ Centralized in `src/config.ts`. Key env var overrides:
 - [docs/image-processing-plan.md](docs/image-processing-plan.md) - Image processing architecture plan
 - [docs/llmgw-embeddings-hotfix.md](docs/llmgw-embeddings-hotfix.md) - Phase 5 embeddings hotfix handoff (route + per-capability validation)
 - [docs/llmgw-anthropic-auth-hotfix.md](docs/llmgw-anthropic-auth-hotfix.md) - Phase 6 Anthropic auth hotfix handoff (container-private credential chain + lazy refresh)
+- [docs/k3s-migration/01-PLAN.md](docs/k3s-migration/01-PLAN.md) - Phase 8 k3s migration plan (Helm chart, GHA → GHCR → arch-infra, cutover)
+- [docs/k3s-migration/02-K3S_REFERENCE.md](docs/k3s-migration/02-K3S_REFERENCE.md) - Home k3s cluster reference (architecture, conventions, common ops)
+- [docs/k3s-migration/03-SESSION_MEMO.md](docs/k3s-migration/03-SESSION_MEMO.md) - Phase 8 locked decisions
 - [docs/backlog.md](docs/backlog.md) - Backlog of planned work
 - [docs/progress.md](docs/progress.md) - Current progress tracker
