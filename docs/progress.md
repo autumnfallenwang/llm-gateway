@@ -11,8 +11,8 @@
 | 5 | Completion service | ✅ Done | `src/services/completion.ts` — OpenAI ↔ pi-ai translation, Codex system prompt fallback |
 | 6 | Routes | ✅ Done | `src/routes/{chat,models,validate}.ts` — OpenAPI route defs with request examples |
 | 7 | App + server wiring | ✅ Done | All handlers wired: chat completions, models list (with validation filtering), model validation |
-| 8 | Tests | ✅ Done | 10 test files, 151 fast / 244 total tests |
-| 9 | Model validation | ✅ Done | `src/services/validation.ts` — tests every model with real completion, saves to `~/.llm-gateway/models.json` |
+| 8 | Tests | ✅ Done | 14 test files, 228 fast / 333 total tests |
+| 9 | Model validation | ✅ Done | `src/services/validation.ts` — tests every model with real completion, persists report via the SQLite `model_validation` table (Phase 8 / task 40) |
 | 10 | Streaming support | ✅ Done | SSE streaming via `stream: true` — all four backends (Ollama, Anthropic, Codex, Gemini) |
 
 ## What's Working
@@ -22,7 +22,7 @@
 - `POST /v1/chat/completions` → routes to Ollama/Anthropic/Codex/Gemini via pi-ai, returns OpenAI-format response
 - `POST /v1/chat/completions` with `stream: true` → SSE streaming with `chat.completion.chunk` objects, `data: [DONE]` sentinel
 - `GET /v1/models` → returns ALL models with `status` (`ok`/`error`/`unknown`), `status_detail`, `validated_at` fields; includes `context_window` and `max_tokens` per model
-- `POST /v1/models/validate` → tests every registered model, saves results to `~/.llm-gateway/models.json`
+- `POST /v1/models/validate` → tests every registered model, persists results to the SQLite `model_validation` table (`LLMGW_DB_PATH`, default `~/.llm-gateway/state.db`)
 - Model registry discovers Ollama, Anthropic, Codex, Gemini models at startup
 - Completion service translates OpenAI ↔ pi-ai (system prompt extraction, message conversion, usage/stopReason mapping)
 - Streaming uses pi-ai `stream()` → async generator yields OpenAI chunk JSON → Hono `streamSSE()` writes SSE events
@@ -33,8 +33,21 @@
 - `ImageLoadError` returns 400 `invalid_request_error` (not 500) in both streaming and non-streaming paths
 - Ollama `num_ctx` injection: configurable via `OLLAMA_NUM_CTX` env var (default 32768), replaces Ollama's wasteful ~4096 default
 - Gemini OAuth: token refresh via pi-ai `refreshGoogleCloudToken`, project discovery via `loadCodeAssist` API, persists refreshed tokens
-- 151 unit tests passing (fast), 244 total tests, 0 lint errors, 0 lint warnings
-- `npm run test:fast` for dev iteration (~1.7s), `npm test` for full validation
+- SQLite-backed state: `src/lib/db.ts` opens `LLMGW_DB_PATH` at startup, runs schema migration, and (idempotently) imports legacy `anthropic-credentials.json` + `models.json` into the `credentials_chain` + `model_validation` tables on first boot
+- 228 unit tests passing (fast), 14 test files, 0 lint errors, 0 lint warnings
+- `npm run test:fast` for dev iteration (~2s), `npm test` for full e2e validation against live Ollama
+
+## What's Next
+
+The remaining work is a tight, ordered sequence rather than a single next task — each step unblocks the next:
+
+1. **Phase 0 GHA prereqs** (owner-only GitHub UI): create fine-grained PAT `ARCH_INFRA_TOKEN` (Contents: write on `arch-infra` only) → add as repo secret in `llm-gateway`. The workflow tolerates these being absent (warn-skips the bump), so they can be done in parallel with step 2, but the GitOps loop only closes once they're in place.
+2. **Push `llm-gateway` main** with the Phase 8 commits (task 40–44) so GHA runs and pushes the first `ghcr.io/autumnfallenwang/llm-gateway:latest` image. Without this, the Application's first sync will `ImagePullBackOff`.
+3. **GHCR public flip + repo link** (Phase 0.3): after the first build, flip the GHCR package to public and link it to `llm-gateway` with Write role. ArgoCD pulling a private image without an imagePullSecret will fail.
+4. **Commit + push `~/github/arch-infra/apps/llmgw.yaml`** (the file drafted in task 45). ArgoCD picks it up within ~3 min and starts syncing.
+5. **Task 46 — cutover**: `kubectl get app llmgw -n argocd` shows `Synced`, smoke-test `http://llmgw.arch.local/`, `POST /v1/models/validate` returns expected models, then `cd ~/agentic/llm-gateway && docker compose -f deploy/compose.yaml down`. Confirm host port 51277 is free. Delete `deploy/llmgw` + `deploy/compose.yaml` (keep `deploy/Dockerfile` — still used by GHA).
+
+See [k3s-migration/01-PLAN.md](k3s-migration/01-PLAN.md) §0 + §4 for the cutover acceptance checklist.
 
 ## Reference Docs
 
@@ -48,6 +61,9 @@
 - [image-processing-plan.md](image-processing-plan.md) — full image processing architecture plan
 - [llmgw-embeddings-hotfix.md](llmgw-embeddings-hotfix.md) — embeddings hotfix handoff (Phase 5)
 - [llmgw-anthropic-auth-hotfix.md](llmgw-anthropic-auth-hotfix.md) — Anthropic auth hotfix handoff (Phase 6)
+- [k3s-migration/01-PLAN.md](k3s-migration/01-PLAN.md) — Phase 8 detailed migration plan (manifests, GHA, cutover)
+- [k3s-migration/02-K3S_REFERENCE.md](k3s-migration/02-K3S_REFERENCE.md) — k3s cluster reference (what's deployed, conventions, common ops)
+- [k3s-migration/03-SESSION_MEMO.md](k3s-migration/03-SESSION_MEMO.md) — Phase 8 locked decisions
 
 ## Phase 2: Image Processing
 
@@ -159,9 +175,46 @@ Migrate from 29 ad-hoc `console.log/warn/error` calls to JSON-per-line structure
 | 39e | Tests | ✅ Done | `tests/logger.test.ts` (5 tests) — module export, config (base fields/level threshold/Error serialization/ISO timestamps) using a parallel pino instance with captured stream (production logger writes via fd1, bypassing process.stdout.write). `tests/app.test.ts` middleware suite (4 tests) — `vi.mock`-spied `log.info` to assert one line per request, status passthrough, skip list, unique req_id. **210 unit tests pass total** (was 201). |
 
 **Out of scope (separate later phases)**:
-- Loki + Promtail + Grafana deployment as a separate `~/agentic/observability/` stack — multi-app concern, not specific to llmgw.
+- Loki + Promtail + Grafana deployment as a separate `~/agentic/observability/` stack — multi-app concern, not specific to llmgw. _(Superseded by Phase 8 — observability stack is already running in the k3s cluster as `observability-loki` / `observability-grafana` / `observability-alloy`. Once llmgw lands in `namespace: llmgw`, Alloy scrapes pod stdout into Loki automatically with no app changes.)_
 - Prometheus metrics + dashboards — different problem (numbers vs events); add when we want trend graphs/alerts.
 - OpenTelemetry — overkill for a single-service gateway; revisit if multi-service tracing matters.
+
+## Phase 8: k3s Migration
+
+Migrate llmgw off Docker Compose / `network_mode: host` and onto the home k3s cluster (`aaron-desktop-arch`, `192.168.1.163`). Adopts the same GitOps shape (Pattern C) as the rest of the home stack: code + Helm chart in this repo's `deploy/chart/`, ArgoCD `Application` CR in `arch-infra`, GHA pushes images to GHCR and bumps the SHA in arch-infra.
+
+**Architecture**: namespace `llmgw` with Deployment (1 replica, non-root UID 1000), Service `port: 80 → targetPort: 51277`, Ingress `llmgw.arch.local` via Traefik, 1Gi `local-path` PVC at `/home/node/.llm-gateway` for SQLite state, hostPath RO directory mounts for `~/.claude` + `~/.codex` credential seeds. Ollama stays on host (no GPU passthrough yet) — rebound to `0.0.0.0:11434` and reached from the pod via a `Service ollama` + manual `Endpoints` → `192.168.1.163:11434`. Pod talks to `http://ollama.llmgw:11434`.
+
+Source of truth for the migration lives in `docs/k3s-migration/`:
+- [k3s-migration/01-PLAN.md](k3s-migration/01-PLAN.md) — detailed phase-by-phase plan with manifests
+- [k3s-migration/02-K3S_REFERENCE.md](k3s-migration/02-K3S_REFERENCE.md) — cluster context: what's deployed, conventions, common ops
+- [k3s-migration/03-SESSION_MEMO.md](k3s-migration/03-SESSION_MEMO.md) — locked decisions (storage, networking, CI/CD shape)
+
+**Key locked decisions** (from session memo):
+- **Storage**: PVC + SQLite (`better-sqlite3`) replaces JSON files for credential cache + validation report. First-boot migration imports the legacy JSON files if present, then ignores them.
+- **CI**: GHA on PR runs `test:fast` only (no live Ollama in CI). Full `npm test` stays the pre-merge local gate. Main branch builds + pushes to GHCR + commits SHA bump to `arch-infra` via fine-grained PAT (`ARCH_INFRA_TOKEN`).
+- **CD**: ArgoCD pulls arch-infra every ~3 min. No webhook (NAT-friendly).
+- **Ollama**: rebound early (before app changes ship) so dev iteration uses the same network path as production.
+
+| # | Task | Status | Notes |
+|---|------|--------|-------|
+| 40 | SQLite storage layer | ✅ Done | `better-sqlite3@12.9.0` + `src/lib/db.ts` exposes `openDb/getDb/setDb` and typed `readCredentialChain/writeCredentialChain/readValidationReport/writeValidationReport`. Schema: `credentials_chain` (provider PK), `model_validation` (model PK), `meta` (validation batch ISO). WAL journal. `src/services/auth.ts` reads/writes Anthropic chain via DB; `src/services/validation.ts` writes the report in a transaction. `src/index.ts` opens the DB + runs `importLegacyJson()` once at startup (idempotent — skips when rows already exist) so existing pods carry forward `anthropic-credentials.json` + `models.json` into the new schema. `LLMGW_DB_PATH` env var added (default `~/.llm-gateway/state.db`). e2e + compatibility test files initialize an in-memory DB in `beforeAll`. **15 new DB tests + 3 new validation tests; 228 unit tests pass total** (`test:fast`). E2e suite green for Ollama-backed tests; 6 codex/gemini failures observed are pre-existing upstream-auth issues unrelated to this task. |
+| 41 | Dockerfile hardening | ✅ Done | `deploy/Dockerfile`: transient `apk add --virtual .build python3 make g++` for `better-sqlite3` native compile, paired with `apk del .build` after `npm ci` in the same layer; `USER node` (UID 1000) before `CMD`. Verified: image builds clean; `docker run --rm llmgw:hardened id` → `uid=1000(node) gid=1000(node)`; in-container `require('better-sqlite3')` round-trips a `:memory:` insert/select under UID 1000. Image size 789MB (+~330MB vs pre-SQLite) is `better-sqlite3` build intermediates — multi-stage build is a follow-up, out of scope for task 41. |
+| 42 | Helm chart at `deploy/chart/` | ✅ Done | `deploy/chart/{Chart.yaml,values.yaml,.helmignore}` + 7 templates: `_helpers.tpl`, `deployment.yaml` (single-replica + `Recreate` strategy so two pods never race on the SQLite WAL), `service.yaml` (port 80 → targetPort 51277), `ingress.yaml` (Traefik, `llmgw.arch.local`), `pvc.yaml` (1Gi `local-path`), `ollama-service.yaml` (Service + manual `v1/Endpoints` → `192.168.1.163:11434`), `NOTES.txt`. hostMounts RO Directory for `~/.claude` + `~/.codex`; `gemini` mount gated on `hostMounts.gemini.enabled` (off by default). securityContext split into pod-level (`runAsNonRoot/runAsUser/runAsGroup/fsGroup`) and container-level (`allowPrivilegeEscalation: false`, `capabilities: drop ALL`) — `allowPrivilegeEscalation` would be silently dropped at pod level otherwise. Verification: `helm lint deploy/chart/` clean; `helm template` renders 6 resources; `kubectl apply --dry-run=client` validates them all (only warning: v1/Endpoints deprecated in v1.33+, flagged as a follow-up to migrate to EndpointSlice). |
+| 43 | GHA + GHCR + arch-infra bump | ✅ Done (workflow shipped; Phase 0 manual steps pending) | `.github/workflows/build.yml`: `test` job (`npm ci` + `npm run lint` + `npm run test:fast`) on PR + main + `workflow_dispatch`; `build-and-deploy` job on main pushes `ghcr.io/autumnfallenwang/llm-gateway:{latest,<sha>}` via BuildKit + GHA layer cache, then clones `arch-infra` and uses `yq -i` to rewrite `apps/llmgw.yaml`'s `image.tag` parameter to `${{ github.sha }}` (more robust than the plan's greedy `sed`). Defensive guards: warn-skip when `ARCH_INFRA_TOKEN` is unset and when `apps/llmgw.yaml` is absent (lets the workflow land before Phase 0 setup and task 45's Application CR). Concurrency group `build-${{ github.ref }}` with `cancel-in-progress: false` serializes back-to-back main pushes so a slow bump never gets killed mid-`git push`. Workflow YAML parses clean; `yq` targeting logic verified locally (Python sim — `image.tag` mutates, siblings untouched). **Still pending (manual UI, owner-only)**: 0.1 create PAT `ARCH_INFRA_TOKEN` (Contents: write on `arch-infra` only); 0.2 add as repo secret in `llm-gateway`; 0.3 after first build, flip GHCR package to public + link to repo with Write role. |
+| 44 | Ollama rebind to 0.0.0.0 | ✅ Done | Shipped `deploy/host/ollama-override.conf` (systemd drop-in `Environment="OLLAMA_HOST=0.0.0.0:11434"`) + `deploy/host/README.md` runbook (install / verify / rollback / security note). Owner installed via `sudo install -d … && sudo install -m 644 … && sudo systemctl daemon-reload && sudo systemctl restart ollama`. Verified: `ss -tlnp \| grep 11434` → `*:11434`; in-cluster `kubectl run --rm test-ollama --image=alpine -- wget -qO- http://192.168.1.163:11434/api/tags` returns Ollama's models JSON; compose container's `/v1/models` still returns all 38 models (loopback still works). |
+| 45 | arch-infra registration | 🟡 Drafted locally, awaiting commit+push | `~/github/arch-infra/apps/llmgw.yaml` written: ArgoCD `Application` CR, single-source (path `deploy/chart`, targetRevision `main`, helm `releaseName: llmgw` + `valueFiles: [values.yaml]` + parameter `name: image.tag, value: "latest"`), `destination.namespace: llmgw`, `automated.prune+selfHeal`, syncOptions `CreateNamespace=true` + `ServerSideApply=true`. Verified: `kubectl apply --dry-run=client` validates schema; `helm template … --set image.tag=latest` renders all 6 resources with `image: ghcr.io/autumnfallenwang/llm-gateway:latest`. Holding the `git commit + push` to arch-infra until GHA has produced at least one image (else first sync = `ImagePullBackOff` until then). Flip to ✅ Done after the push lands and `kubectl get app llmgw -n argocd` shows `Synced`. |
+| 46 | Cutover + retire compose | ⏳ Planned | Push everything → wait for GHA → wait for ArgoCD sync (~3 min, or annotate `argocd.argoproj.io/refresh=normal`). `kubectl get pods -n llmgw` healthy. Add `192.168.1.163 llmgw.arch.local` to `/etc/hosts`. Smoke test: `curl http://llmgw.arch.local/`. Validate: `curl -X POST http://llmgw.arch.local/v1/models/validate`. Verify Loki: `{namespace="llmgw"}` in Grafana. **Then** `docker compose -f deploy/compose.yaml down`, confirm `:51277` free, delete `deploy/llmgw` + `deploy/compose.yaml` (keep `deploy/Dockerfile` — still used by GHA). Optional `deploy/k3s.sh` with kubectl shortcuts. |
+
+**Risks / open questions**:
+- **CI test scope**: GHA can't reach a live Ollama, so the build job uses `test:fast` only. The full e2e suite remains a local pre-merge gate (run via `/check` or `npm test`). If an Ollama-touching regression slips through, ArgoCD's selfHeal will still roll the broken image — the validation hit comes from `/v1/models/validate` post-cutover, not from CI. Worth re-evaluating later if we want a live-Ollama test job (self-hosted runner on the Arch box, or a lightweight Ollama sidecar in CI).
+- **First-boot data migration**: legacy JSON files (`anthropic-credentials.json`, `models.json`) exist on the host's `~/.llm-gateway` volume; the new pod will mount the same path via PVC. If we keep using the same host directory for the PVC source (or pre-seed the PVC), task 40's first-boot import path runs cleanly. Otherwise we cold-start the validation cache (recoverable but noisy on the first request).
+- **Anthropic OAuth chain transfer**: the cache file (`anthropic-credentials.json`) holds a live refresh token. Carrying it forward via the migration import means the new container resumes the existing chain instead of forcing a re-seed from `~/.claude/.credentials.json`. This avoids racing the host `claude` CLI for a fresh token at cutover.
+
+**Out of scope** (deferred):
+- Run Ollama in k3s — needs GPU passthrough, separate effort.
+- Sealed Secrets — llmgw has no DB password / API key; install when homecal/homenews land.
+- Codex / Gemini lazy refresh — same shape as the Anthropic fix from Phase 6, but neither is currently breaking.
 
 ## Previous Milestones
 
@@ -170,3 +223,5 @@ Phase 2 image processing pipeline complete. See tasks 11–20 above.
 Phase 3 context window management complete. See tasks 21–23 above.
 Phase 4 provider expansion & tooling complete. See tasks 24–27 above.
 Phase 5 embeddings support complete. See tasks 28–32 above. New `POST /v1/embeddings` route, per-capability validator dispatch, `embedding_dimensions` on `/v1/models`. Spec doc + POC at `docs/openai-embeddings-spec.md`.
+Phase 6 Anthropic auth hotfix complete. See tasks 33–37 above. Container-private credential chain via seed/cache split, lazy refresh + single-flight mutex on the request path.
+Phase 7 structured logging complete. See tasks 38–39e above. pino JSON-per-line + per-request access log middleware + Docker log size cap.
