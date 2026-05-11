@@ -8,6 +8,7 @@ import {
 import { getDb } from "../lib/db.js";
 import { log } from "../lib/logger.js";
 import type { ModelValidationResult, ValidateResponse } from "../schemas/validate.js";
+import { ensureAnthropicFresh } from "./auth.js";
 import { createEmbedding } from "./embeddings.js";
 import { listModels, type ResolvedModel, resolveModel } from "./registry.js";
 
@@ -139,6 +140,20 @@ export async function validateAllModels(config?: ValidationConfig): Promise<Vali
     { event: "validation.started", model_count: allModels.length, concurrency },
     "Starting model validation",
   );
+
+  // Validation calls pi-ai's complete()/embed() directly with the cached apiKey,
+  // bypassing the chat-completions route's lazy-refresh dance. Without this call
+  // an aged-out Anthropic access token produces a false `error` row for every
+  // Anthropic model. Refresh once up front; resolveModel() inside each task then
+  // reads the fresh cached key.
+  try {
+    await ensureAnthropicFresh();
+  } catch (err) {
+    log.warn(
+      { event: "validation.refresh_failed", provider: "anthropic", err },
+      "Anthropic refresh failed before validation — Anthropic models will report stale-token errors",
+    );
+  }
 
   const tasks = allModels.map((m) => async () => {
     const resolved = resolveModel(m.id);

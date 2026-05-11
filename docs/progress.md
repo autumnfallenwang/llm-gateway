@@ -37,10 +37,12 @@
 - 228 unit tests passing (fast), 14 test files, 0 lint errors, 0 lint warnings
 - `npm run test:fast` for dev iteration (~2s), `npm test` for full e2e validation against live Ollama
 
-## Post-Phase-8 cleanup (done in 2 follow-up commits)
+## Post-Phase-8 cleanup (done in follow-up commits)
 
 - **Legacy JSON import path dropped.** `importLegacyJson` and friends in `src/lib/db.ts`, plus `ANTHROPIC_CACHE_PATH` / `VALIDATION_FILE_PATH` in `src/config.ts`, were migration scaffolding. The k3s PVC started fresh, the import already silently no-op'd, and the path is functionally dead. Removed: ~70 lines of code, 7 tests, 2 env vars. **221 unit tests pass** (down from 228 — exactly the dropped legacy-import tests).
 - **`llmgw` CLI retired.** Compose-era deploy CLI. Under GitOps the `start/stop/restart/status/rebuild` commands are owned by ArgoCD or k8s; `logs` is replaced by Loki; `version` is trivial. `update` is replaced by Dependabot (`.github/dependabot.yml` — weekly PRs for npm/Docker/GHA, pi-ai grouped separately so new model IDs land in one focused PR). `deploy/llmgw` + `~/.local/bin/llmgw` symlink removed.
+- **Swagger/landing-page URLs point at the cluster.** `src/app.ts` OpenAPI `servers:` now lists `http://llmgw.arch.local` first, `localhost:51277` second (dev). `src/config.ts` `APP_DESCRIPTION` Python example uses the cluster URL. `src/index.ts` startup log drops the misleading `docs_url` field.
+- **Bug fix: `/v1/models/validate` now refreshes Anthropic before iterating.** Latent since Phase 6: `validateAllModels` called pi-ai's `complete()` with the cached `resolved.apiKey`, but only the chat-completions route handler in `src/app.ts` called `ensureAnthropicFresh()`. Compose-era container recycling kept the token fresh enough that validation never saw a stale one; under k3s the pod stays up indefinitely + the PVC carries the chain across rolls, so a ~9h-old expired access token caused every Anthropic model to return `unexpected stopReason: error` on validation while chat completions kept working (lazy refresh kicked in there). Fix: `validateAllModels` now awaits `ensureAnthropicFresh()` once up-front (wrapped in try/catch — a refresh failure logs `validation.refresh_failed` and continues so non-Anthropic results still ship). **2 new tests in `tests/validation.test.ts`** covering the call and the warning path. 223 unit tests pass.
 
 ## What's Next
 

@@ -6,6 +6,7 @@ import type { ResolvedModel } from "../src/services/registry";
 const completeMock = vi.fn();
 const listModelsMock = vi.fn();
 const resolveModelMock = vi.fn();
+const ensureAnthropicFreshMock = vi.fn();
 
 vi.mock("@mariozechner/pi-ai", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@mariozechner/pi-ai")>();
@@ -19,6 +20,11 @@ vi.mock("../src/services/registry", async (importOriginal) => {
     listModels: listModelsMock,
     resolveModel: resolveModelMock,
   };
+});
+
+vi.mock("../src/services/auth", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../src/services/auth")>();
+  return { ...actual, ensureAnthropicFresh: ensureAnthropicFreshMock };
 });
 
 // Import after mocks are set up
@@ -289,6 +295,8 @@ describe("validateAllModels: DB persistence", () => {
     setDb(db);
     listModelsMock.mockReset();
     resolveModelMock.mockReset();
+    ensureAnthropicFreshMock.mockReset();
+    ensureAnthropicFreshMock.mockResolvedValue(undefined);
   });
 
   afterEach(() => {
@@ -336,5 +344,28 @@ describe("validateAllModels: DB persistence", () => {
     });
     const stored = await readValidationReport();
     expect(stored?.models["ghost-model"].status).toBe("error");
+  });
+
+  it("refreshes the Anthropic OAuth chain once before validating", async () => {
+    listModelsMock.mockReturnValue([{ id: "qwen3:30b" }]);
+    resolveModelMock.mockReturnValue(makeResolved({ capability: "chat", id: "qwen3:30b" }));
+    completeMock.mockResolvedValue(chatResponse("ok"));
+
+    await validateAllModels();
+
+    expect(ensureAnthropicFreshMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("continues when the Anthropic refresh fails (Anthropic rows report error, others still tested)", async () => {
+    ensureAnthropicFreshMock.mockRejectedValueOnce(new Error("upstream 500"));
+    listModelsMock.mockReturnValue([{ id: "qwen3:30b" }]);
+    resolveModelMock.mockReturnValue(makeResolved({ capability: "chat", id: "qwen3:30b" }));
+    completeMock.mockResolvedValue(chatResponse("ok"));
+
+    const report = await validateAllModels();
+
+    // Refresh threw, but the validation still produced a complete report.
+    expect(ensureAnthropicFreshMock).toHaveBeenCalledTimes(1);
+    expect(report.models["qwen3:30b"].status).toBe("ok");
   });
 });
