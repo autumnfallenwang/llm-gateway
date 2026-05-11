@@ -11,13 +11,6 @@ setDb(openDb(LLMGW_DB_PATH));
 await loadCredentials();
 await loadRegistry();
 
-log.info(
-  {
-    event: "server.start",
-    port: LLM_GATEWAY_PORT,
-    docs_url: `http://localhost:${LLM_GATEWAY_PORT}/docs`,
-  },
-  "LLM Gateway starting",
-);
+log.info({ event: "server.start", port: LLM_GATEWAY_PORT }, "LLM Gateway starting");
 
 serve({ fetch: app.fetch, port: LLM_GATEWAY_PORT });

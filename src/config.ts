@@ -27,11 +27,13 @@ export const APP_DESCRIPTION = `Self-hosted OpenAI-compatible API gateway that r
 
 Use any OpenAI-compatible SDK with \`baseURL\` pointed at this gateway. No API key is required — authentication to upstream providers is handled server-side.
 
+The gateway is deployed at \`http://llmgw.arch.local\` (Traefik ingress on the home k3s cluster). For local dev runs use \`http://localhost:${LLM_GATEWAY_PORT}\` instead.
+
 ### Chat completions
 
 \`\`\`python
 from openai import OpenAI
-client = OpenAI(base_url="http://localhost:${LLM_GATEWAY_PORT}/v1", api_key="unused")
+client = OpenAI(base_url="http://llmgw.arch.local/v1", api_key="unused")
 response = client.chat.completions.create(
     model="qwen3:30b",  # or claude-haiku-4-5, gpt-5.1, gemini-2.5-flash
     messages=[{"role": "user", "content": "Hello!"}],
