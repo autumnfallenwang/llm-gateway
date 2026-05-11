@@ -22,16 +22,23 @@ Hono + Zod + @hono/zod-openapi + Vitest + Biome + tsx
 
 ## Deploy
 
-Docker-based deployment via `deploy/` directory. The `llmgw` CLI is symlinked to `~/.local/bin/` for global access.
+GitOps via k3s. CI in `.github/workflows/build.yml` runs on every push to `main`:
+test → build image → push `ghcr.io/autumnfallenwang/llm-gateway:{latest,<sha>}` →
+bump `image.tag` in `autumnfallenwang/arch-infra` / `apps/llmgw.yaml`. ArgoCD pulls
+the bump within ~3 min and rolls the pod. Helm chart lives at `deploy/chart/`.
+Host-side Ollama bind drop-in at `deploy/host/`.
 
-- `llmgw start` - build image + start container
-- `llmgw stop` - stop container
-- `llmgw restart` - restart container
-- `llmgw logs` - tail container logs
-- `llmgw status` - show running state
-- `llmgw rebuild` - force full rebuild + restart
-- `llmgw update` - bump all deps to latest (incl. major/minor caps via `ncu -u`), gate on `npm test`, rebuild container, validate models via `POST /v1/models/validate`, then commit + push. Rolls back package.json/package-lock.json if tests fail.
-- `llmgw version` - show version from package.json
+Common ops (no project-specific CLI needed):
+
+- `kubectl logs -n llmgw deploy/llmgw -f` — tail (or use Grafana → Explore → Loki for history)
+- `kubectl rollout restart deploy/llmgw -n llmgw` — restart pod
+- `kubectl get app llmgw -n argocd` — sync state
+- `gh workflow run build.yml` — force rebuild without a code change
+- `POST http://llmgw.arch.local/v1/models/validate` — re-run model validation
+
+Dependency upkeep is automated via `.github/dependabot.yml` (weekly PRs for npm +
+Docker base + GHA actions; pi-ai grouped separately so new model IDs land in
+one focused PR).
 
 ## Config
 

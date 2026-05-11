@@ -33,19 +33,24 @@
 - `ImageLoadError` returns 400 `invalid_request_error` (not 500) in both streaming and non-streaming paths
 - Ollama `num_ctx` injection: configurable via `OLLAMA_NUM_CTX` env var (default 32768), replaces Ollama's wasteful ~4096 default
 - Gemini OAuth: token refresh via pi-ai `refreshGoogleCloudToken`, project discovery via `loadCodeAssist` API, persists refreshed tokens
-- SQLite-backed state: `src/lib/db.ts` opens `LLMGW_DB_PATH` at startup, runs schema migration, and (idempotently) imports legacy `anthropic-credentials.json` + `models.json` into the `credentials_chain` + `model_validation` tables on first boot
+- SQLite-backed state: `src/lib/db.ts` opens `LLMGW_DB_PATH` at startup and runs schema migration. Tables: `credentials_chain` (provider PK), `model_validation` (model PK), `meta` (validation batch ISO). WAL journal.
 - 228 unit tests passing (fast), 14 test files, 0 lint errors, 0 lint warnings
 - `npm run test:fast` for dev iteration (~2s), `npm test` for full e2e validation against live Ollama
 
+## Post-Phase-8 cleanup (done in 2 follow-up commits)
+
+- **Legacy JSON import path dropped.** `importLegacyJson` and friends in `src/lib/db.ts`, plus `ANTHROPIC_CACHE_PATH` / `VALIDATION_FILE_PATH` in `src/config.ts`, were migration scaffolding. The k3s PVC started fresh, the import already silently no-op'd, and the path is functionally dead. Removed: ~70 lines of code, 7 tests, 2 env vars. **221 unit tests pass** (down from 228 — exactly the dropped legacy-import tests).
+- **`llmgw` CLI retired.** Compose-era deploy CLI. Under GitOps the `start/stop/restart/status/rebuild` commands are owned by ArgoCD or k8s; `logs` is replaced by Loki; `version` is trivial. `update` is replaced by Dependabot (`.github/dependabot.yml` — weekly PRs for npm/Docker/GHA, pi-ai grouped separately so new model IDs land in one focused PR). `deploy/llmgw` + `~/.local/bin/llmgw` symlink removed.
+
 ## What's Next
 
-**Phase 8 is complete** — the gateway runs on k3s, ArgoCD watches arch-infra, GHA closes the GitOps loop. After a stability bake (a few days), delete `deploy/compose.yaml` + `deploy/llmgw` to retire the legacy deploy. Keep `deploy/Dockerfile` (still used by GHA).
+**Phase 8 is complete** — the gateway runs on k3s, ArgoCD watches arch-infra, GHA closes the GitOps loop. After a stability bake (a few days), delete `deploy/compose.yaml` to retire the last compose-era artifact. Keep `deploy/Dockerfile` (still used by GHA).
 
 Next likely targets, in priority order:
 1. **Bake** the new deployment. Let it run for ≥ 2-3 days under normal use and watch Grafana/Loki for unexpected errors before pruning compose.
 2. **Multi-stage Docker build** — current image is ~789MB because `better-sqlite3` leaves ~330MB of `node_modules/*/build/` intermediates. A copy-from builder stage would reclaim most of it. Plan-only follow-up.
 3. **Codex/Gemini lazy refresh** — same shape as the Phase 6 Anthropic fix, but neither is breaking today (subscriptions paused). Re-evaluate when subscriptions return.
-4. **GHA Node 20 → 24** — GitHub forces the upgrade on June 2nd, 2026. Bump `actions/checkout`, `actions/setup-node`, and `docker/*` in one batch closer to that deadline.
+4. **GHA Node 20 → 24** — GitHub forces the upgrade on June 2nd, 2026. Dependabot's weekly PRs should surface action bumps automatically before then.
 
 See [k3s-migration/01-PLAN.md](k3s-migration/01-PLAN.md) for the full Phase 8 reference if anything needs a re-deploy.
 

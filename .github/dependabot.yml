@@ -1,0 +1,33 @@
+version: 2
+updates:
+  # npm: pi-ai ships new Anthropic/Codex/Gemini model IDs over time; weekly bumps
+  # keep /v1/models current without manual `ncu -u` runs.
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    groups:
+      pi-ai:
+        patterns:
+          - "@mariozechner/pi-ai"
+      hono:
+        patterns:
+          - "hono"
+          - "@hono/*"
+
+  # Docker base image (node:22-alpine → security backports, eventually node:24).
+  - package-ecosystem: docker
+    directory: /deploy
+    schedule:
+      interval: weekly
+      day: monday
+
+  # GHA actions (checkout/setup-node/docker-* — drift starts forcing Node 24 on
+  # 2026-06-02; bumps will surface before then).
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
