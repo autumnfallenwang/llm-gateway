@@ -17,7 +17,7 @@ The contract for log output from llm-gateway. Pinned here so the design is locke
 2. **Universal format.** Output works against Loki today, ELK or Datadog tomorrow, with no app-side change.
 3. **Per-request access logs.** Currently invisible — we don't even log that a request happened. New Hono middleware fixes this.
 4. **Tier of detail via levels.** Quiet by default in prod (`info`); `LOG_LEVEL=debug` for deep dives without redeployment.
-5. **No new ops surface.** Stays "console + Docker + `llmgw logs`" — Loki/Promtail layer on top via Docker's existing log capture, not via app changes.
+5. **No new ops surface.** Stays "stdout JSON-per-line" — Loki/Alloy/Grafana layer on top via the runtime's existing log capture, not via app changes.
 
 ## Non-goals
 
@@ -236,24 +236,27 @@ services:
 ## Verification (post-deploy)
 
 ```bash
-# 1. Container emits structured JSON
-llmgw logs | head -5
+# 1. Pod emits structured JSON
+kubectl logs -n llmgw deploy/llmgw --tail=5
 # expect: lines parseable as JSON, each with time/level/msg/service/version
 
 # 2. Levels respect LOG_LEVEL
-docker exec llm-gateway sh -c 'env | grep LOG_LEVEL'
-# (expect default 'info' or whatever compose.yaml sets)
+kubectl exec -n llmgw deploy/llmgw -- sh -c 'env | grep LOG_LEVEL'
+# (expect default 'info' or whatever the chart's values set)
 
 # 3. Per-request log shows up
-curl -X POST http://localhost:51277/v1/chat/completions \
+curl -X POST http://llmgw.arch.local/v1/chat/completions \
   -H 'Content-Type: application/json' \
   -d '{"model":"qwen3:30b","messages":[{"role":"user","content":"ping"}],"max_tokens":4}'
-llmgw logs | tail -3
+kubectl logs -n llmgw deploy/llmgw --tail=3
 # expect: one line with event=http.request, status=200, latency_ms=...
 
-# 4. Once Loki is deployed (separate plan):
-curl -G -s 'http://localhost:3100/loki/api/v1/query_range' \
-  --data-urlencode 'query={container="llm-gateway"} | json | event="http.request"'
+# 4. Loki end-to-end (Alloy ships from the pod via the cluster's observability stack):
+curl -sG http://loki.arch.local/loki/api/v1/query_range \
+  --data-urlencode 'query={namespace="llmgw"} | json | event="http.request"' \
+  --data-urlencode "start=$(date -u -d '-10 min' +%s)000000000" \
+  --data-urlencode "end=$(date -u +%s)000000000"
+# expect: matching http.request lines for recent traffic
 ```
 
 ## Open question deferred

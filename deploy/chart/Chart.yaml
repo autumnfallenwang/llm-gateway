@@ -3,5 +3,6 @@ name: llmgw
 description: Self-hosted OpenAI-compatible API gateway routing to Ollama/Anthropic/Codex/Gemini
 type: application
 version: 0.1.0
-# appVersion mirrors package.json:version; the `llmgw update` CLI bumps both together.
+# appVersion mirrors package.json:version; bump manually when releasing a new
+# semver-significant change (Dependabot PRs don't touch this).
 appVersion: "0.3.2"

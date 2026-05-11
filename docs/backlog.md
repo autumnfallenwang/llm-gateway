@@ -16,12 +16,14 @@
 
 **Why**: Hiding broken models loses information. Clients should see full picture and decide themselves. Completion endpoint already allows requests to any registered model regardless of validation status.
 
-## 3. `llmgw update` — full dependency update pipeline ✅ Done (extended 2026-05-06)
+## 3. `llmgw update` — full dependency update pipeline ✅ Done 2026-05-06, retired in Phase 8
 
 **What**: `update` subcommand on the `llmgw` CLI.
 **Flow**: `ncu -u` (cross caret/tilde caps) → `npm install` → `npm test` (gate, rolls back package.json + lockfile on failure) → `npm version patch` → rebuild container → wait for ready → `POST /v1/models/validate` → commit + push.
 **Scope**: All deps, not just pi-ai. Single command, fully automatic downstream — type one thing, walk away.
 **Why**: pi-ai updates bring new Anthropic/Codex models, but their `^0.x` caret means `npm update` alone gets stuck at the minor cap. `ncu -u` rewrites the spec so we follow latest. Test gate prevents broken updates from reaching the deployed container; auto-validate ensures `/v1/models` reflects upstream availability without a separate manual call.
+
+**Retired in Phase 8**: under GitOps the rebuild/wait/validate steps belong to GHA + ArgoCD, not a host CLI. Replaced by `.github/dependabot.yml` — weekly PRs for npm + Docker base + GHA actions, pi-ai grouped on its own so new model IDs land in a focused PR. CI gates merges; push triggers GHA + ArgoCD; manual validate via `POST http://llmgw.arch.local/v1/models/validate` post-deploy if you want fresh status numbers.
 
 ## 4. Add Gemini provider support
 
