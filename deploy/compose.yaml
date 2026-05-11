@@ -24,9 +24,9 @@ services:
     environment:
       - LLM_GATEWAY_PORT=51277
       - OLLAMA_BASE_URL=http://localhost:11434
-      # Anthropic: seed read-only from host file once, then maintain own chain in cache
+      # Anthropic: seed read-only from host file once, then DB-backed chain.
       - ANTHROPIC_SEED_PATH=/home/node/host-claude/.credentials.json
-      - ANTHROPIC_CACHE_PATH=/home/node/.llm-gateway/anthropic-credentials.json
       # Codex: seed-only (28-day JWT, lazy refresh is a follow-up)
       - CODEX_CREDENTIALS_PATH=/home/node/host-codex/auth.json
-      - VALIDATION_FILE_PATH=/home/node/.llm-gateway/models.json
+      # SQLite state (credential chain + model_validation report)
+      - LLMGW_DB_PATH=/home/node/.llm-gateway/state.db

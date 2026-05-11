@@ -88,14 +88,6 @@ export const GEMINI_PROJECT_URL = "https://cloudcode-pa.googleapis.com/v1interna
 export const ANTHROPIC_SEED_PATH =
   env.ANTHROPIC_SEED_PATH ?? join(homedir(), ".claude", ".credentials.json");
 
-/**
- * Legacy Anthropic cache file. Used only as a one-shot import source on first boot when
- * `LLMGW_DB_PATH` is empty — pre-PVC deploys wrote the chain here. The DB is now the
- * source of truth for the container's `{access, refresh, expires}` chain.
- */
-export const ANTHROPIC_CACHE_PATH =
-  env.ANTHROPIC_CACHE_PATH ?? join(homedir(), ".llm-gateway", "anthropic-credentials.json");
-
 export const CODEX_CREDENTIALS_PATH =
   env.CODEX_CREDENTIALS_PATH ?? join(homedir(), ".codex", "auth.json");
 export const GEMINI_CREDENTIALS_PATH =
@@ -118,12 +110,6 @@ export const LLMGW_DB_PATH = env.LLMGW_DB_PATH ?? join(homedir(), ".llm-gateway"
 
 // ── Validation ─────────────────────────────────────────────────────────────
 
-/**
- * Legacy JSON validation report. Used only as a one-shot import source on first
- * boot when `LLMGW_DB_PATH` is empty — pre-PVC deploys wrote the report here.
- */
-export const VALIDATION_FILE_PATH =
-  env.VALIDATION_FILE_PATH ?? join(homedir(), ".llm-gateway", "models.json");
 export const VALIDATION_CONCURRENCY = Number(env.VALIDATION_CONCURRENCY ?? 3);
 export const VALIDATION_TIMEOUT_MS = Number(env.VALIDATION_TIMEOUT_MS ?? 60_000);
 export const VALIDATION_MAX_TOKENS = 32;

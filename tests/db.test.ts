@@ -1,20 +1,14 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { type AppDb, importLegacyJson, openDb } from "../src/lib/db";
+import { type AppDb, openDb } from "../src/lib/db";
 
 let db: AppDb;
-let tempDir: string;
 
-beforeEach(async () => {
+beforeEach(() => {
   db = openDb(":memory:");
-  tempDir = await mkdtemp(join(tmpdir(), "db-test-"));
 });
 
-afterEach(async () => {
+afterEach(() => {
   db.close();
-  await rm(tempDir, { recursive: true, force: true });
 });
 
 // ── Schema ──────────────────────────────────────────────────────────────────
@@ -111,134 +105,5 @@ describe("validation report", () => {
 
   it("returns null on an empty DB", () => {
     expect(db.readValidationReport()).toBeNull();
-  });
-});
-
-// ── Legacy import ───────────────────────────────────────────────────────────
-
-// biome-ignore lint/security/noSecrets: false positive — describe block name not a secret
-describe("importLegacyJson", () => {
-  function anthropicLegacyPath() {
-    return join(tempDir, "anthropic-credentials.json");
-  }
-  function validationLegacyPath() {
-    return join(tempDir, "models.json");
-  }
-
-  it("imports an anthropic-credentials.json into the DB on first boot", async () => {
-    await writeFile(
-      anthropicLegacyPath(),
-      JSON.stringify({
-        claudeAiOauth: {
-          accessToken: "legacy-access",
-          refreshToken: "legacy-refresh",
-          expiresAt: 999_000,
-        },
-      }),
-    );
-
-    importLegacyJson(db, { anthropicCachePath: anthropicLegacyPath() });
-
-    expect(db.readCredentialChain("anthropic")).toEqual({
-      access: "legacy-access",
-      refresh: "legacy-refresh",
-      expires: 999_000,
-    });
-  });
-
-  it("imports a models.json validation report", async () => {
-    await writeFile(
-      validationLegacyPath(),
-      JSON.stringify({
-        validatedAt: "2026-04-01T12:00:00Z",
-        models: {
-          "qwen3:30b": { status: "ok", latencyMs: 250 },
-          "bge-m3:latest": { status: "ok", latencyMs: 50, embeddingDim: 1024 },
-        },
-      }),
-    );
-
-    importLegacyJson(db, { validationFilePath: validationLegacyPath() });
-
-    expect(db.readValidationReport()).toEqual({
-      validatedAt: "2026-04-01T12:00:00Z",
-      models: {
-        "qwen3:30b": { status: "ok", latencyMs: 250 },
-        "bge-m3:latest": { status: "ok", latencyMs: 50, embeddingDim: 1024 },
-      },
-    });
-  });
-
-  it("is idempotent: skips when a credential row already exists", async () => {
-    db.writeCredentialChain("anthropic", { access: "db-access", refresh: "db-r", expires: 1 });
-    await writeFile(
-      anthropicLegacyPath(),
-      JSON.stringify({
-        claudeAiOauth: {
-          accessToken: "would-overwrite",
-          refreshToken: "would-overwrite-r",
-          expiresAt: 2,
-        },
-      }),
-    );
-
-    importLegacyJson(db, { anthropicCachePath: anthropicLegacyPath() });
-
-    expect(db.readCredentialChain("anthropic")?.access).toBe("db-access");
-  });
-
-  it("is idempotent: skips when a validation report already exists", async () => {
-    db.writeValidationReport({
-      validatedAt: "db-stamp",
-      models: { existing: { status: "ok" } },
-    });
-    await writeFile(
-      validationLegacyPath(),
-      JSON.stringify({
-        validatedAt: "would-overwrite",
-        models: { other: { status: "error", error: "x" } },
-      }),
-    );
-
-    importLegacyJson(db, { validationFilePath: validationLegacyPath() });
-
-    const report = db.readValidationReport();
-    expect(report?.validatedAt).toBe("db-stamp");
-    expect(Object.keys(report?.models ?? {})).toEqual(["existing"]);
-  });
-
-  it("no-ops when legacy files are missing", () => {
-    importLegacyJson(db, {
-      anthropicCachePath: join(tempDir, "absent-1.json"),
-      validationFilePath: join(tempDir, "absent-2.json"),
-    });
-
-    expect(db.readCredentialChain("anthropic")).toBeUndefined();
-    expect(db.readValidationReport()).toBeNull();
-  });
-
-  it("no-ops on malformed JSON without throwing", async () => {
-    await writeFile(anthropicLegacyPath(), "not json{{{");
-    await writeFile(validationLegacyPath(), "<<broken>>");
-
-    expect(() =>
-      importLegacyJson(db, {
-        anthropicCachePath: anthropicLegacyPath(),
-        validationFilePath: validationLegacyPath(),
-      }),
-    ).not.toThrow();
-    expect(db.readCredentialChain("anthropic")).toBeUndefined();
-    expect(db.readValidationReport()).toBeNull();
-  });
-
-  it("no-ops on legacy anthropic file that's missing refresh token", async () => {
-    await writeFile(
-      anthropicLegacyPath(),
-      JSON.stringify({ claudeAiOauth: { accessToken: "lone-access" } }),
-    );
-
-    importLegacyJson(db, { anthropicCachePath: anthropicLegacyPath() });
-
-    expect(db.readCredentialChain("anthropic")).toBeUndefined();
   });
 });
