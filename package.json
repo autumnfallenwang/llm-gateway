@@ -17,7 +17,7 @@
     "@hono/node-server": "^1.19.9",
     "@hono/swagger-ui": "^0.5.3",
     "@hono/zod-openapi": "^1.2.1",
-    "@mariozechner/pi-ai": "^0.52.9",
+    "@mariozechner/pi-ai": "^0.73.1",
     "better-sqlite3": "^12.9.0",
     "hono": "^4.11.9",
     "pino": "^10.3.1",
