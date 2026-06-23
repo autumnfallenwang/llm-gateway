@@ -355,6 +355,91 @@ describe("ensureAnthropicFresh", () => {
   });
 });
 
+// ── Auto-heal: re-seed from host file when the refresh token is dead ────────
+
+const INVALID_GRANT = new Error(
+  'Anthropic token refresh failed: {"error": "invalid_grant", "error_description": "Refresh token not found or invalid"}',
+);
+
+describe("ensureAnthropicFresh: invalid_grant self-heal", () => {
+  it("re-seeds from the host file when the stored refresh token is dead", async () => {
+    // DB chain present but expired; its refresh token has been rotated out upstream.
+    seedDbCreds({ access: "dead-tok", refresh: "db-refresh", expiresAt: Date.now() - 60_000 });
+    await writeSeed({
+      access: "seed-tok",
+      refresh: "seed-refresh",
+      expiresAt: Date.now() + 3_600_000,
+    });
+    await loadAll();
+
+    mockedRefresh.mockRejectedValueOnce(INVALID_GRANT).mockResolvedValueOnce({
+      access: "reseeded-tok",
+      refresh: "reseeded-refresh",
+      expires: Date.now() + 2_700_000,
+    });
+
+    await ensureAnthropicFresh();
+
+    // First attempt used the dead DB token, then we re-seeded and refreshed the host token.
+    expect(mockedRefresh).toHaveBeenNthCalledWith(1, "db-refresh");
+    expect(mockedRefresh).toHaveBeenNthCalledWith(2, "seed-refresh");
+    expect(getAnthropicKey()).toBe("reseeded-tok");
+
+    // The freshly minted chain is persisted so it survives a restart.
+    const stored = getDb().readCredentialChain("anthropic");
+    expect(stored?.refresh).toBe("reseeded-refresh");
+  });
+
+  it("surfaces an actionable error when the host seed carries the same dead token", async () => {
+    // DB and seed share the same (now-dead) refresh token — the host login itself expired.
+    seedDbCreds({ access: "dead", refresh: "shared-dead", expiresAt: Date.now() - 60_000 });
+    await writeSeed({
+      access: "seed-tok",
+      refresh: "shared-dead",
+      expiresAt: Date.now() + 3_600_000,
+    });
+    await loadAll();
+
+    mockedRefresh.mockRejectedValue(INVALID_GRANT);
+
+    await expect(ensureAnthropicFresh()).rejects.toThrow(/host seed is stale/);
+    // Detected the seed is stale without burning a second refresh round-trip.
+    expect(mockedRefresh).toHaveBeenCalledTimes(1);
+  });
+
+  it("surfaces the error when the re-seeded token is also rejected", async () => {
+    // Host login genuinely dead: seed carries a different token, but it too is invalid.
+    seedDbCreds({ access: "dead", refresh: "db-refresh", expiresAt: Date.now() - 60_000 });
+    await writeSeed({
+      access: "seed-tok",
+      refresh: "seed-refresh",
+      expiresAt: Date.now() + 3_600_000,
+    });
+    await loadAll();
+
+    mockedRefresh.mockRejectedValue(INVALID_GRANT);
+
+    await expect(ensureAnthropicFresh()).rejects.toThrow(/invalid_grant/);
+    expect(mockedRefresh).toHaveBeenCalledTimes(2); // tried DB token, then seed token
+  });
+
+  it("does not re-seed for non-invalid_grant errors", async () => {
+    seedDbCreds({ access: "stale", refresh: "db-refresh", expiresAt: Date.now() - 60_000 });
+    await writeSeed({
+      access: "seed-tok",
+      refresh: "seed-refresh",
+      expiresAt: Date.now() + 3_600_000,
+    });
+    await loadAll();
+
+    mockedRefresh.mockRejectedValue(new Error("upstream 500"));
+
+    await expect(ensureAnthropicFresh()).rejects.toThrow("upstream 500");
+    // A transient upstream failure must not consume the seed's single-use refresh token.
+    expect(mockedRefresh).toHaveBeenCalledTimes(1);
+  });
+});
+
 // ── Codex (unchanged: seed-only, no refresh) ───────────────────────────────
 
 describe("loadCredentials: Codex", () => {

@@ -66,6 +66,8 @@ export interface AuthConfig {
 
 let anthropicCreds: AnthropicCredsState | undefined;
 let anthropicRefreshInFlight: Promise<void> | null = null;
+/** Seed path captured at load time so lazy re-seed (on a dead refresh token) can reach it. */
+let anthropicSeedPath: string | undefined;
 
 let codexAccessToken: string | undefined;
 let codexExpiresAt: number | undefined;
@@ -142,7 +144,14 @@ function writeAnthropicToDb(creds: AnthropicCredsState): void {
 
 // ── Anthropic refresh + lazy ensure ────────────────────────────────────────
 
-async function performAnthropicRefresh(): Promise<void> {
+/** True when a refresh error means the refresh token itself is dead (rotated/consumed). */
+function isInvalidGrant(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err);
+  return msg.includes("invalid_grant") || msg.includes("Refresh token not found");
+}
+
+/** Single raw refresh of the in-memory chain. Updates state + DB. Throws on failure. */
+async function refreshAnthropicChain(): Promise<void> {
   if (!anthropicCreds) {
     throw new Error("[auth] cannot refresh — no Anthropic credentials loaded");
   }
@@ -160,6 +169,52 @@ async function performAnthropicRefresh(): Promise<void> {
       expires_in_min: Math.round((anthropicCreds.expires - Date.now()) / 60_000),
     },
     "Anthropic token refreshed",
+  );
+}
+
+/**
+ * Refresh the Anthropic chain, self-healing if its refresh token is dead.
+ *
+ * Anthropic refresh tokens are single-use and rotate on every refresh. If the stored chain's
+ * token is rejected with `invalid_grant` — e.g. a refresh was lost across a pod restart, or the
+ * host re-logged-in and rotated our chain out — we re-read the read-only host seed and mint a
+ * brand-new chain from it. This turns what used to be a hard outage (requiring a manual DB wipe +
+ * pod restart) into a sub-second automatic recovery on the very next request.
+ *
+ * The only case this can't fix is the host seed *itself* being dead (the desktop login expired):
+ * then the seed's refresh also fails `invalid_grant` and we surface an actionable error.
+ */
+async function performAnthropicRefresh(): Promise<void> {
+  try {
+    await refreshAnthropicChain();
+    return;
+  } catch (err) {
+    if (!isInvalidGrant(err)) throw err;
+    log.warn(
+      { event: "auth.refresh.invalid_grant", provider: "anthropic", err },
+      "Anthropic refresh token rejected (invalid_grant) — attempting re-seed from host file",
+    );
+  }
+
+  const deadRefresh = anthropicCreds?.refresh;
+  const fromSeed = anthropicSeedPath ? await readAnthropicSeedFile(anthropicSeedPath) : undefined;
+  if (!fromSeed) {
+    throw new Error(
+      "Anthropic refresh token is invalid and no host seed is available to re-seed from",
+    );
+  }
+  if (fromSeed.refresh === deadRefresh) {
+    // The host seed carries the same dead token — the host login itself has expired.
+    throw new Error(
+      "Anthropic refresh token is invalid and the host seed is stale — re-login on the host (run `claude` and sign in)",
+    );
+  }
+
+  anthropicCreds = fromSeed;
+  await refreshAnthropicChain();
+  log.info(
+    { event: "auth.reseed.succeeded", provider: "anthropic" },
+    "Anthropic chain re-seeded from host file after invalid_grant",
   );
 }
 
@@ -185,6 +240,9 @@ export async function ensureAnthropicFresh(): Promise<void> {
 }
 
 async function loadAnthropicCredentials(seedPath: string): Promise<void> {
+  // Remember the seed path so a lazy re-seed (dead refresh token) can find it later.
+  anthropicSeedPath = seedPath;
+
   // Prefer the DB: once we've minted our own chain, never touch the seed again.
   const fromDb = readAnthropicFromDb();
   if (fromDb) {
@@ -386,6 +444,7 @@ export async function loadCredentials(config?: AuthConfig): Promise<void> {
   // Reset state
   anthropicCreds = undefined;
   anthropicRefreshInFlight = null;
+  anthropicSeedPath = undefined;
   codexAccessToken = undefined;
   codexExpiresAt = undefined;
   geminiApiKey = undefined;
