@@ -60,6 +60,9 @@ vi.mock("../src/services/validation", async (importOriginal) => {
   return {
     ...actual,
     readValidationReport: vi.fn().mockResolvedValue(null),
+    validateAllModels: vi
+      .fn()
+      .mockResolvedValue({ validatedAt: "2026-01-01T00:00:00.000Z", models: {} }),
   };
 });
 
@@ -68,17 +71,23 @@ vi.mock("../src/services/registry", async (importOriginal) => {
   return {
     ...actual,
     resolveModel: vi.fn(actual.resolveModel),
+    // Spy that calls through to the real impl, so existing tests that call loadRegistry()
+    // to populate the registry still work, while the validate-route tests can assert it fired.
+    loadRegistry: vi.fn(actual.loadRegistry),
   };
 });
 
 // Spy on log.info to capture middleware emissions without mocking the whole module
-// (which would break the rest of the app's logging path).
+// (which would break the rest of the app's logging path). `log` is a pino instance whose
+// methods live on the prototype, so we layer over it with Object.create — that keeps
+// warn/error/debug reachable while overriding only info. (A plain `{ ...actual.log }`
+// spread would drop the prototype methods and make log.warn undefined.)
 const logInfoMock = vi.fn();
 vi.mock("../src/lib/logger", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../src/lib/logger")>();
   return {
     ...actual,
-    log: { ...actual.log, info: logInfoMock },
+    log: Object.assign(Object.create(actual.log), { info: logInfoMock }),
   };
 });
 
@@ -659,5 +668,37 @@ describe("Request access log middleware", () => {
     const ids = httpCalls.map((c) => (c[0] as Record<string, unknown>).req_id);
     expect(ids).toHaveLength(2);
     expect(ids[0]).not.toBe(ids[1]);
+  });
+});
+
+describe("POST /v1/models/validate", () => {
+  it("reloads the registry before validating so new models are picked up", async () => {
+    const { loadRegistry } = await import("../src/services/registry");
+    const { validateAllModels } = await import("../src/services/validation");
+    vi.mocked(loadRegistry).mockClear();
+    vi.mocked(validateAllModels).mockClear();
+
+    const res = await app.request("/v1/models/validate", { method: "POST" });
+    expect(res.status).toBe(200);
+
+    expect(loadRegistry).toHaveBeenCalledTimes(1);
+    expect(validateAllModels).toHaveBeenCalledTimes(1);
+    // Reload must happen before validation, not after.
+    expect(vi.mocked(loadRegistry).mock.invocationCallOrder[0]).toBeLessThan(
+      vi.mocked(validateAllModels).mock.invocationCallOrder[0],
+    );
+  });
+
+  it("still validates the current registry if the reload fails (non-fatal)", async () => {
+    const { loadRegistry } = await import("../src/services/registry");
+    const { validateAllModels } = await import("../src/services/validation");
+    vi.mocked(loadRegistry).mockClear();
+    vi.mocked(loadRegistry).mockRejectedValueOnce(new Error("ollama unreachable"));
+    vi.mocked(validateAllModels).mockClear();
+
+    const res = await app.request("/v1/models/validate", { method: "POST" });
+    expect(res.status).toBe(200);
+    // Reload failure is swallowed; validation of the already-loaded set still runs.
+    expect(validateAllModels).toHaveBeenCalledTimes(1);
   });
 });

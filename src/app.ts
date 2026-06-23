@@ -14,7 +14,7 @@ import { createCompletion, createStreamingCompletion } from "./services/completi
 import { createEmbedding } from "./services/embeddings";
 import { VisionFallbackError } from "./services/image/fallback";
 import { ImageLoadError } from "./services/image/load";
-import { listModels, resolveModel } from "./services/registry";
+import { listModels, loadRegistry, resolveModel } from "./services/registry";
 import { readValidationReport, validateAllModels } from "./services/validation";
 
 type AppVariables = { req_id: string };
@@ -327,6 +327,18 @@ app.openapi(modelsRoute, async (c) => {
 // Model validation
 app.openapi(validateModelsRoute, async (c) => {
   try {
+    // Reload the registry first so a validate run also picks up models that became
+    // available since boot — e.g. an `ollama pull`, or new provider model IDs after a
+    // pi-ai bump. The registry is otherwise only built at startup. Non-fatal: if the
+    // reload hiccups (e.g. Ollama briefly unreachable) we still validate the current set.
+    try {
+      await loadRegistry();
+    } catch (err) {
+      log.warn(
+        { event: "validation.registry_reload_failed", err },
+        "Registry reload before validation failed — validating the currently-loaded models",
+      );
+    }
     const report = await validateAllModels();
     return c.json(report, 200);
   } catch (err) {
