@@ -1,6 +1,6 @@
 # LLM Gateway
 
-Self-hosted OpenAI-compatible API gateway. Routes requests to Ollama, Anthropic, Codex, Gemini via pi-ai.
+Self-hosted OpenAI-compatible API gateway. Routes requests to Ollama, Anthropic, Codex via pi-ai.
 
 ## Stack
 
@@ -54,15 +54,14 @@ Centralized in `src/config.ts`. Key env var overrides:
 | `ANTHROPIC_SEED_PATH` | `~/.claude/.credentials.json` | Read-only seed: host's Claude CLI credentials. Read once on first boot, then DB-backed. |
 | `ANTHROPIC_REFRESH_SKEW_MS` | `60000` | Safety margin before `expiresAt` — refresh fires when `now > expires - skew`. |
 | `CODEX_CREDENTIALS_PATH` | `~/.codex/auth.json` | Codex auth file |
-| `GEMINI_CREDENTIALS_PATH` | `~/.gemini/oauth_creds.json` | Gemini auth file |
+| `CODEX_ENABLED` | `true` | Load Codex credentials + register Codex models. Cluster sets `false` (no subscription) so Codex models don't surface as validation errors; flip to re-enable. |
 | `VALIDATION_CONCURRENCY` | `3` | Parallel model validation limit |
 | `VALIDATION_TIMEOUT_MS` | `60000` | Per-model validation timeout |
 | `OLLAMA_SHOW_TIMEOUT_MS` | `2000` | Per-model /api/show timeout |
 | `VISION_FALLBACK_OLLAMA` | `qwen3-vl:8b` | Ollama family vision fallback model |
 | `VISION_FALLBACK_ANTHROPIC` | `claude-haiku-4-5` | Anthropic family vision fallback model |
 | `VISION_FALLBACK_OPENAI` | `gpt-4o-mini` | OpenAI family vision fallback model |
-| `VISION_FALLBACK_GEMINI` | `gemini-2.0-flash` | Gemini family vision fallback model |
-| `VISION_FALLBACK_GENERAL` | `qwen3-vl:8b,claude-haiku-4-5,gpt-4o-mini,gemini-2.0-flash` | General fallback chain (comma-separated) |
+| `VISION_FALLBACK_GENERAL` | `qwen3-vl:8b,claude-haiku-4-5,gpt-4o-mini` | General fallback chain (comma-separated) |
 | `VISION_FALLBACK_MAX_DESCRIPTION_CHARS` | `1000` | Max chars for vision description |
 | `VISION_FALLBACK_TIMEOUT_MS` | `30000` | Vision fallback model timeout |
 

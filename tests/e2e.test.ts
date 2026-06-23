@@ -65,7 +65,6 @@ describe("infrastructure", () => {
     expect(owners).toContain("ollama");
     expect(owners).toContain("anthropic");
     expect(owners).toContain("openai-codex");
-    expect(owners).toContain("google-gemini-cli");
     expect(json.data.length).toBeGreaterThan(0);
   });
 });
@@ -120,17 +119,6 @@ describe("completions", () => {
   it("codex completion", { timeout: 60_000 }, async () => {
     const res = await post("/v1/chat/completions", {
       model: "gpt-5.1",
-      messages: [{ role: "user", content: "Say hello in one word." }],
-      max_tokens: 32,
-    });
-    expect(res.status).toBe(200);
-    const json = await res.json();
-    expectCompletionShape(json);
-  });
-
-  it("gemini completion", { timeout: 60_000 }, async () => {
-    const res = await post("/v1/chat/completions", {
-      model: "gemini-2.5-flash",
       messages: [{ role: "user", content: "Say hello in one word." }],
       max_tokens: 32,
     });
@@ -226,26 +214,6 @@ describe("streaming", () => {
   it("codex streaming completion", { timeout: 60_000 }, async () => {
     const res = await post("/v1/chat/completions", {
       model: "gpt-5.1",
-      messages: [{ role: "user", content: "Say hello in one word." }],
-      max_tokens: 32,
-      stream: true,
-    });
-    expect(res.status).toBe(200);
-    expect(res.headers.get("content-type")).toContain("text/event-stream");
-
-    const text = await res.text();
-    const dataLines = parseSSE(text);
-    expect(dataLines.length).toBeGreaterThanOrEqual(3);
-    expect(dataLines[dataLines.length - 1]).toBe("[DONE]");
-
-    const first = JSON.parse(dataLines[0]);
-    expectChunkShape(first);
-    expect(first.choices[0].delta.role).toBe("assistant");
-  });
-
-  it("gemini streaming completion", { timeout: 60_000 }, async () => {
-    const res = await post("/v1/chat/completions", {
-      model: "gemini-2.5-flash",
       messages: [{ role: "user", content: "Say hello in one word." }],
       max_tokens: 32,
       stream: true,
@@ -411,28 +379,6 @@ describe("image: direct vision", () => {
   it("codex vision + HTTPS URL", { timeout: 60_000 }, async () => {
     const res = await post("/v1/chat/completions", {
       model: "gpt-5.1",
-      messages: [imageMessage(HTTPS_IMAGE_URL, "Describe this image briefly.")],
-      max_tokens: 64,
-    });
-    expect(res.status).toBe(200);
-    const json = await res.json();
-    expectCompletionShape(json);
-  });
-
-  it("gemini vision + data URI", { timeout: 60_000 }, async () => {
-    const res = await post("/v1/chat/completions", {
-      model: "gemini-2.0-flash",
-      messages: [imageMessage(dataUriJpeg, "Describe this image briefly.")],
-      max_tokens: 64,
-    });
-    expect(res.status).toBe(200);
-    const json = await res.json();
-    expectCompletionShape(json);
-  });
-
-  it("gemini vision + HTTPS URL", { timeout: 60_000 }, async () => {
-    const res = await post("/v1/chat/completions", {
-      model: "gemini-2.0-flash",
       messages: [imageMessage(HTTPS_IMAGE_URL, "Describe this image briefly.")],
       max_tokens: 64,
     });

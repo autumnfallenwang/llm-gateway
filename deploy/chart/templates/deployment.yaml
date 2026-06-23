@@ -35,10 +35,6 @@ spec:
             - name: {{ $key }}
               value: {{ $value | quote }}
             {{- end }}
-            {{- if .Values.hostMounts.gemini.enabled }}
-            - name: GEMINI_CREDENTIALS_PATH
-              value: {{ printf "%s/oauth_creds.json" .Values.hostMounts.gemini.mountPath | quote }}
-            {{- end }}
           livenessProbe:
             {{- toYaml .Values.probes.liveness | nindent 12 }}
           readinessProbe:
@@ -60,11 +56,6 @@ spec:
               mountPath: {{ .Values.hostMounts.codex.mountPath }}
               readOnly: true
             {{- end }}
-            {{- if .Values.hostMounts.gemini.enabled }}
-            - name: host-gemini
-              mountPath: {{ .Values.hostMounts.gemini.mountPath }}
-              readOnly: true
-            {{- end }}
       volumes:
         {{- if .Values.persistence.enabled }}
         - name: data
@@ -81,11 +72,5 @@ spec:
         - name: host-codex
           hostPath:
             path: {{ .Values.hostMounts.codex.hostPath }}
-            type: Directory
-        {{- end }}
-        {{- if .Values.hostMounts.gemini.enabled }}
-        - name: host-gemini
-          hostPath:
-            path: {{ .Values.hostMounts.gemini.hostPath }}
             type: Directory
         {{- end }}

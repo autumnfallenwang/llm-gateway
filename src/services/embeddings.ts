@@ -7,7 +7,6 @@ const PROVIDER_LABELS: Record<string, string> = {
   ollama: "ollama",
   anthropic: "anthropic",
   codex: "openai-codex",
-  gemini: "google-gemini-cli",
 };
 
 interface UpstreamError {
@@ -23,8 +22,8 @@ export async function createEmbedding(
   body: EmbeddingsRequest,
   options?: EmbeddingsOptions,
 ): Promise<EmbeddingsResponse> {
-  // Provider gate: only Ollama is wired up today. Anthropic has no embeddings API; Codex
-  // and Gemini OAuth providers don't expose embedding models. See openai-embeddings-spec.md.
+  // Provider gate: only Ollama is wired up today. Anthropic has no embeddings API; the Codex
+  // OAuth provider doesn't expose embedding models. See openai-embeddings-spec.md.
   if (resolved.provider !== "ollama") {
     const label = PROVIDER_LABELS[resolved.provider] ?? resolved.provider;
     throw new BackendError(
@@ -55,7 +54,7 @@ export async function createEmbedding(
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Unknown fetch error";
-    // biome-ignore lint/nursery/useErrorCause: cause is passed as the 5th positional arg below; biome's heuristic only checks the 2nd arg
+    // biome-ignore lint/style/useErrorCause: cause is passed as the 5th positional arg below; biome's heuristic only checks the 2nd arg
     throw new BackendError(
       `Ollama embeddings request failed: ${message}`,
       500,

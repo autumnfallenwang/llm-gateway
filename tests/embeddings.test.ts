@@ -86,15 +86,6 @@ describe("createEmbedding: provider gate", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
-  it("rejects gemini with 501 provider_unsupported", async () => {
-    const resolved = makeResolved({ provider: "gemini", capability: "chat" });
-
-    await expect(createEmbedding(resolved, { model: "x", input: "hi" })).rejects.toMatchObject({
-      httpStatus: 501,
-      errorCode: "provider_unsupported",
-    });
-  });
-
   it("error message names the canonical provider label", async () => {
     const resolved = makeResolved({ provider: "codex", capability: "chat" });
 

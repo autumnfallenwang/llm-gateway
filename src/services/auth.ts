@@ -1,15 +1,11 @@
-import { readFile, writeFile } from "node:fs/promises";
-import {
-  geminiCliOAuthProvider,
-  refreshAnthropicToken,
-  refreshGoogleCloudToken,
-} from "@mariozechner/pi-ai";
+import { readFile } from "node:fs/promises";
+// OAuth helpers moved to the `/oauth` subpath in pi-ai 0.73 (no longer root-exported).
+import { refreshAnthropicToken } from "@mariozechner/pi-ai/oauth";
 import {
   ANTHROPIC_REFRESH_SKEW_MS,
   ANTHROPIC_SEED_PATH,
   CODEX_CREDENTIALS_PATH,
-  GEMINI_CREDENTIALS_PATH,
-  GEMINI_PROJECT_URL,
+  CODEX_ENABLED,
 } from "../config.js";
 import { getDb } from "../lib/db.js";
 import { log } from "../lib/logger.js";
@@ -30,12 +26,6 @@ interface CodexCredentialsFile {
   };
 }
 
-interface GeminiCredentialsFile {
-  access_token?: string;
-  refresh_token?: string;
-  expiry_date?: number; // ms epoch
-}
-
 /** In-memory Anthropic OAuth state. Mirrors pi-ai's `OAuthCredentials` shape. */
 interface AnthropicCredsState {
   access: string;
@@ -52,14 +42,12 @@ export interface BackendCredentialStatus {
 export interface CredentialStatus {
   anthropic: BackendCredentialStatus;
   codex: BackendCredentialStatus;
-  gemini: BackendCredentialStatus;
 }
 
 export interface AuthConfig {
   /** Read-only seed path (host's `~/.claude/.credentials.json` mount). */
   anthropicSeedPath?: string;
   codexCredentialsPath?: string;
-  geminiCredentialsPath?: string;
 }
 
 // ── Module state ────────────────────────────────────────────────────────────
@@ -71,8 +59,6 @@ let anthropicSeedPath: string | undefined;
 
 let codexAccessToken: string | undefined;
 let codexExpiresAt: number | undefined;
-let geminiApiKey: string | undefined;
-let geminiExpiresAt: number | undefined;
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -322,121 +308,9 @@ async function loadCodexCredentials(path: string): Promise<void> {
   }
 }
 
-// ── Gemini OAuth (delegates to pi-ai) ───────────────────────────────────────
-
-async function discoverGeminiProjectId(accessToken: string): Promise<string | undefined> {
-  try {
-    const res = await fetch(GEMINI_PROJECT_URL, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({}),
-      signal: AbortSignal.timeout(10_000),
-    });
-    if (!res.ok) return undefined;
-    const data = (await res.json()) as {
-      cloudaicompanionProject?: string;
-    };
-    return data.cloudaicompanionProject;
-  } catch {
-    return undefined;
-  }
-}
-
-async function refreshGeminiAccessToken(
-  data: GeminiCredentialsFile,
-  geminiPath: string,
-): Promise<{ token: string; expiryDate: number } | undefined> {
-  if (!data.refresh_token) return undefined;
-  try {
-    // refreshGoogleCloudToken only needs refreshToken for the HTTP call;
-    // projectId is just passed through in the return value
-    const refreshed = await refreshGoogleCloudToken(data.refresh_token, "");
-    // Persist refreshed token back to credentials file
-    try {
-      const updated = { ...data, access_token: refreshed.access, expiry_date: refreshed.expires };
-      await writeFile(geminiPath, JSON.stringify(updated, null, 2));
-    } catch {
-      // Non-fatal: token works even if we can't persist
-    }
-    return { token: refreshed.access, expiryDate: refreshed.expires };
-  } catch {
-    return undefined;
-  }
-}
-
-async function loadGeminiCredentials(geminiPath: string): Promise<void> {
-  try {
-    const raw = await readFile(geminiPath, "utf-8");
-    const data: GeminiCredentialsFile = JSON.parse(raw);
-    let token = data.access_token;
-    let expiryDate = data.expiry_date;
-
-    if (!token && !data.refresh_token) {
-      log.warn(
-        { event: "auth.credentials.malformed", provider: "gemini" },
-        "Gemini credentials file found but missing tokens",
-      );
-      return;
-    }
-
-    // Refresh token first if expired (must happen before project discovery)
-    const expired = expiryDate !== undefined && expiryDate < Date.now();
-    if (!token || expired) {
-      const refreshed = await refreshGeminiAccessToken(data, geminiPath);
-      if (refreshed) {
-        token = refreshed.token;
-        expiryDate = refreshed.expiryDate;
-      }
-    }
-
-    if (!token) {
-      log.warn(
-        { event: "auth.refresh.failed", provider: "gemini", phase: "initial" },
-        "Gemini credentials file found but token refresh failed",
-      );
-      return;
-    }
-
-    // Discover projectId with a valid (possibly refreshed) token
-    const projectId = await discoverGeminiProjectId(token);
-
-    geminiApiKey = geminiCliOAuthProvider.getApiKey({
-      refresh: data.refresh_token ?? "",
-      access: token,
-      expires: expiryDate ?? 0,
-      projectId: projectId ?? "",
-    });
-    geminiExpiresAt = expiryDate;
-
-    if (projectId) {
-      log.info(
-        { event: "auth.credentials.loaded", provider: "gemini", project_id: projectId },
-        "Gemini credentials loaded",
-      );
-    } else {
-      log.warn(
-        { event: "auth.project_discovery.failed", provider: "gemini" },
-        "Gemini token loaded but project discovery failed",
-      );
-    }
-  } catch (err: unknown) {
-    const code = (err as NodeJS.ErrnoException).code;
-    if (code === "ENOENT") {
-      log.warn(
-        { event: "auth.credentials.unavailable", provider: "gemini" },
-        "Gemini credentials not found — backend unavailable",
-      );
-    } else {
-      log.warn(
-        { event: "auth.file.read_failed", provider: "gemini", err },
-        "Failed to read Gemini credentials",
-      );
-    }
-  }
-}
+// Gemini backend removed in the pi-ai 0.73 upgrade: pi-ai dropped its Google/Gemini
+// OAuth helpers (geminiCliOAuthProvider / refreshGoogleCloudToken), and the gateway has
+// no Gemini subscription. Re-add via pi-ai's generic OAuth provider system if needed.
 
 // ── Public API ──────────────────────────────────────────────────────────────
 
@@ -447,12 +321,18 @@ export async function loadCredentials(config?: AuthConfig): Promise<void> {
   anthropicSeedPath = undefined;
   codexAccessToken = undefined;
   codexExpiresAt = undefined;
-  geminiApiKey = undefined;
-  geminiExpiresAt = undefined;
 
   await loadAnthropicCredentials(config?.anthropicSeedPath ?? ANTHROPIC_SEED_PATH);
-  await loadCodexCredentials(config?.codexCredentialsPath ?? CODEX_CREDENTIALS_PATH);
-  await loadGeminiCredentials(config?.geminiCredentialsPath ?? GEMINI_CREDENTIALS_PATH);
+  // Codex is gated by CODEX_ENABLED (the cluster sets it false — no active subscription).
+  // Skipping the load leaves codexAccessToken undefined, so Codex models never register.
+  if (CODEX_ENABLED) {
+    await loadCodexCredentials(config?.codexCredentialsPath ?? CODEX_CREDENTIALS_PATH);
+  } else {
+    log.info(
+      { event: "auth.credentials.disabled", provider: "codex" },
+      "Codex disabled via CODEX_ENABLED=false — skipping credential load",
+    );
+  }
 }
 
 export function getAnthropicKey(): string | undefined {
@@ -461,10 +341,6 @@ export function getAnthropicKey(): string | undefined {
 
 export function getCodexKey(): string | undefined {
   return codexAccessToken;
-}
-
-export function getGeminiKey(): string | undefined {
-  return geminiApiKey;
 }
 
 export function getCredentialStatus(): CredentialStatus {
@@ -479,11 +355,6 @@ export function getCredentialStatus(): CredentialStatus {
       available: codexAccessToken !== undefined,
       expired: codexExpiresAt !== undefined && codexExpiresAt < now,
       expiresAt: codexExpiresAt,
-    },
-    gemini: {
-      available: geminiApiKey !== undefined,
-      expired: geminiExpiresAt !== undefined && geminiExpiresAt < now,
-      expiresAt: geminiExpiresAt,
     },
   };
 }

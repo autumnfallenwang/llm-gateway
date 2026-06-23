@@ -1,7 +1,7 @@
 import { getModels, type Model } from "@mariozechner/pi-ai";
 import { log } from "../lib/logger.js";
 import { fetchOllamaModels, type OllamaModelCapabilities } from "../lib/ollama.js";
-import { getAnthropicKey, getCodexKey, getGeminiKey } from "./auth.js";
+import { getAnthropicKey, getCodexKey } from "./auth.js";
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -9,7 +9,7 @@ export type Capability = "chat" | "embedding";
 
 export interface ResolvedModel {
   model: Model<string>;
-  provider: "ollama" | "anthropic" | "codex" | "gemini";
+  provider: "ollama" | "anthropic" | "codex";
   capability: Capability;
   apiKey?: string;
 }
@@ -28,7 +28,6 @@ interface RegistryEntry {
 let ollamaEntries: RegistryEntry[] = [];
 let anthropicEntries: RegistryEntry[] = [];
 let codexEntries: RegistryEntry[] = [];
-let geminiEntries: RegistryEntry[] = [];
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -52,9 +51,6 @@ export async function loadRegistry(config?: RegistryConfig): Promise<void> {
   codexEntries = getCodexKey()
     ? getModels("openai-codex").map((m) => ({ model: m, capability: "chat" as const }))
     : [];
-  geminiEntries = getGeminiKey()
-    ? getModels("google-gemini-cli").map((m) => ({ model: m, capability: "chat" as const }))
-    : [];
 
   log.info(
     {
@@ -62,7 +58,6 @@ export async function loadRegistry(config?: RegistryConfig): Promise<void> {
       ollama: ollamaEntries.length,
       anthropic: anthropicEntries.length,
       codex: codexEntries.length,
-      gemini: geminiEntries.length,
     },
     "Model registry loaded",
   );
@@ -86,12 +81,7 @@ export function listModels(): {
     context_window: model.contextWindow,
     max_tokens: model.maxTokens,
   });
-  return [
-    ...ollamaEntries.map(toRow),
-    ...anthropicEntries.map(toRow),
-    ...codexEntries.map(toRow),
-    ...geminiEntries.map(toRow),
-  ];
+  return [...ollamaEntries.map(toRow), ...anthropicEntries.map(toRow), ...codexEntries.map(toRow)];
 }
 
 export function resolveModel(modelId: string): ResolvedModel | undefined {
@@ -114,15 +104,6 @@ export function resolveModel(modelId: string): ResolvedModel | undefined {
       provider: "codex",
       capability: codex.capability,
       apiKey: getCodexKey(),
-    };
-
-  const gemini = geminiEntries.find((e) => e.model.id === modelId);
-  if (gemini)
-    return {
-      model: gemini.model,
-      provider: "gemini",
-      capability: gemini.capability,
-      apiKey: getGeminiKey(),
     };
 
   return undefined;

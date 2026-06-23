@@ -1,7 +1,7 @@
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { refreshAnthropicToken } from "@mariozechner/pi-ai";
+import { refreshAnthropicToken } from "@mariozechner/pi-ai/oauth";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { type AppDb, getDb, openDb, setDb } from "../src/lib/db";
 import {
@@ -9,12 +9,11 @@ import {
   getAnthropicKey,
   getCodexKey,
   getCredentialStatus,
-  getGeminiKey,
   loadCredentials,
 } from "../src/services/auth";
 
-vi.mock("@mariozechner/pi-ai", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@mariozechner/pi-ai")>();
+vi.mock("@mariozechner/pi-ai/oauth", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@mariozechner/pi-ai/oauth")>();
   return {
     ...actual,
     refreshAnthropicToken: vi.fn(),
@@ -54,10 +53,6 @@ function codexPath(): string {
   return join(tempDir, "codex.json");
 }
 
-function geminiPath(): string {
-  return join(tempDir, "gemini.json");
-}
-
 function makeAnthropicFile(opts: { access: string; refresh: string; expiresAt: number }): string {
   return JSON.stringify({
     claudeAiOauth: {
@@ -88,7 +83,6 @@ async function loadAll(): Promise<void> {
   await loadCredentials({
     anthropicSeedPath: seedPath(),
     codexCredentialsPath: codexPath(),
-    geminiCredentialsPath: geminiPath(),
   });
 }
 
@@ -500,44 +494,5 @@ describe("getCredentialStatus", () => {
     expect(status.codex.available).toBe(true);
     expect(status.codex.expired).toBe(false);
     expect(status.codex.expiresAt).toBe(codexExp * 1000);
-
-    expect(status.gemini).toEqual({
-      available: false,
-      expired: false,
-      expiresAt: undefined,
-    });
-  });
-});
-
-// ── Gemini (unchanged) ─────────────────────────────────────────────────────
-
-describe("loadCredentials: Gemini", () => {
-  it("returns undefined for missing Gemini file without throwing", async () => {
-    await loadAll();
-    expect(getGeminiKey()).toBeUndefined();
-  });
-
-  it("returns undefined for malformed Gemini JSON without throwing", async () => {
-    await writeFile(geminiPath(), "not json{{{");
-    await loadAll();
-    expect(getGeminiKey()).toBeUndefined();
-  });
-
-  it("returns key when Gemini file is present (project discovery may fail with fake token)", async () => {
-    await writeFile(
-      geminiPath(),
-      JSON.stringify({
-        access_token: "fake-gemini-token",
-        expiry_date: Date.now() + 3_600_000,
-      }),
-    );
-
-    await loadAll();
-
-    const key = getGeminiKey();
-    if (key) {
-      const parsed = JSON.parse(key);
-      expect(parsed.token).toBe("fake-gemini-token");
-    }
   });
 });
