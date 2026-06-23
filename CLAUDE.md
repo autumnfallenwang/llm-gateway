@@ -34,7 +34,7 @@ Common ops (no project-specific CLI needed):
 - `kubectl rollout restart deploy/llmgw -n llmgw` — restart pod
 - `kubectl get app llmgw -n argocd` — sync state
 - `gh workflow run build.yml` — force rebuild without a code change
-- `POST http://llmgw.arch.local/v1/models/validate` — re-run model validation
+- `POST http://llmgw.arch.local/v1/models/validate` — reload the registry (picks up new `ollama pull` models / new provider IDs since boot) + re-run model validation
 
 Dependency upkeep is automated via `.github/dependabot.yml` (weekly PRs for npm +
 Docker base + GHA actions; pi-ai grouped separately so new model IDs land in
