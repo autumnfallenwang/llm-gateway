@@ -37,6 +37,10 @@ env:
   OLLAMA_BASE_URL: http://192.168.1.163:11434
   ANTHROPIC_SEED_PATH: /home/node/host-claude/.credentials.json
   CODEX_CREDENTIALS_PATH: /home/node/host-codex/auth.json
+  # No active Codex subscription — gate it off so its models don't surface as
+  # validation errors. Flip to "true" to re-enable (the host-codex mount stays
+  # wired below, so no other change is needed).
+  CODEX_ENABLED: "false"
   LLMGW_DB_PATH: /home/node/.llm-gateway/state.db
 
 # Read-only directory mounts from the host node. `Directory` (not `File`) so
@@ -47,14 +51,12 @@ hostMounts:
     enabled: true
     hostPath: /home/aaronwang/.claude
     mountPath: /home/node/host-claude
+  # Codex is gated off via CODEX_ENABLED=false (no subscription), but the mount stays
+  # wired so re-enabling is a one-line env flip with no chart change.
   codex:
     enabled: true
     hostPath: /home/aaronwang/.codex
     mountPath: /home/node/host-codex
-  gemini:
-    enabled: false
-    hostPath: /home/aaronwang/.gemini
-    mountPath: /home/node/host-gemini
 
 resources:
   requests:
