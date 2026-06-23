@@ -8,7 +8,7 @@ export const embeddingsRoute = createRoute({
   operationId: "createEmbedding",
   summary: "Create embeddings",
   description:
-    "Generates embedding vectors for one or more inputs. Currently routes to Ollama embedding models (`bge-m3`, `qwen3-embedding`, `nomic-embed-text`, etc.). Anthropic, Codex, and Gemini providers return 501 — they do not offer embeddings APIs through their OAuth-based access paths. See `docs/openai-embeddings-spec.md` for the full contract.",
+    "Generates embedding vectors for one or more inputs. Currently routes to Ollama embedding models (`bge-m3`, `qwen3-embedding`, `nomic-embed-text`, etc.). Anthropic and Codex providers return 501 — they do not offer embeddings APIs through their OAuth-based access paths. See `docs/openai-embeddings-spec.md` for the full contract.",
   tags: ["Embeddings"],
   request: {
     body: {
@@ -189,7 +189,7 @@ export const embeddingsRoute = createRoute({
         },
       },
       description:
-        "Provider does not offer an embeddings API (Anthropic, Codex, Gemini in current OAuth paths).",
+        "Provider does not offer an embeddings API (Anthropic, Codex in current OAuth paths).",
     },
   },
 });
