@@ -366,7 +366,7 @@ app.doc("/openapi.json", {
     description: APP_DESCRIPTION,
   },
   servers: [
-    { url: "http://llmgw.arch.local", description: "Cluster (k3s, Traefik ingress)" },
+    { url: "http://llmgw.arch.internal", description: "Cluster (k3s, Traefik ingress)" },
     { url: `http://localhost:${LLM_GATEWAY_PORT}`, description: "Local dev (npm run dev)" },
   ],
   tags: [

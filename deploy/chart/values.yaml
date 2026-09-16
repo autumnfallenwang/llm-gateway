@@ -18,7 +18,7 @@ service:
 ingress:
   enabled: true
   className: traefik
-  host: llmgw.arch.local
+  host: llmgw.arch.internal
 
 persistence:
   enabled: true
