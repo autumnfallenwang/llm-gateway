@@ -29,7 +29,7 @@ Comprehensive picture of the home k3s setup: architecture, what's deployed, conv
 │         ──► applies manifests                          │
 │         ──► pulls images from ghcr.io                  │
 │                                                        │
-│  Traefik (bundled) ──► routes *.arch.local by host     │
+│  Traefik (bundled) ──► routes *.arch.internal by host     │
 │                                                        │
 │  Namespaces:                                           │
 │    argocd / observability / llmgw / homecal / homenews │
@@ -70,7 +70,7 @@ arch-infra/
 │   │   ├── install.yaml              # snapshot from upstream stable
 │   │   ├── namespace.yaml
 │   │   ├── kustomization.yaml
-│   │   ├── ingress.yaml              # argocd.arch.local
+│   │   ├── ingress.yaml              # argocd.arch.internal
 │   │   ├── patches/cmd-params.yaml   # server.insecure: "true"
 │   │   └── README.md
 │   └── root-app.yaml                 # ArgoCD root Application → apps/
@@ -90,13 +90,13 @@ arch-infra/
 
 | Namespace | Component | Purpose | Access |
 |---|---|---|---|
-| argocd | Argo CD | GitOps CD | http://argocd.arch.local |
-| observability | Loki | Log store | http://loki.arch.local (HTTP API) |
-| observability | Grafana | UI for logs/metrics | http://grafana.arch.local |
+| argocd | Argo CD | GitOps CD | http://argocd.arch.internal |
+| observability | Loki | Log store | http://loki.arch.internal (HTTP API) |
+| observability | Grafana | UI for logs/metrics | http://grafana.arch.internal |
 | observability | Alloy (DaemonSet) | Log shipper, scrapes all pod logs | (no UI) |
 | kube-system | Traefik | Ingress controller | host :80 / :443 (LoadBalancer) |
 | kube-system | CoreDNS, metrics-server, local-path, klipper-lb | k3s built-ins | — |
-| llmgw | LLM Gateway | OpenAI-compatible API → Ollama/Anthropic (Codex gated, Gemini dropped) | http://llmgw.arch.local |
+| llmgw | LLM Gateway | OpenAI-compatible API → Ollama/Anthropic (Codex gated, Gemini dropped) | http://llmgw.arch.internal |
 
 ### Loki retention policy
 
@@ -120,7 +120,7 @@ root-app.yaml (applied by hand once)
 ### Networking
 
 - **Each app gets its own hostname.** No more port-as-identity.
-- **External (LAN/browser):** `https://<app>.arch.local` (Traefik on :80/:443).
+- **External (LAN/browser):** `http://<app>.arch.internal` (Traefik on :80/:443).
 - **Internal (pod-to-pod):** `http://<svc>.<ns>` — Service exposes :80, no port in URL.
 - **Container's actual port** lives in `targetPort` of the Service. Implementation detail.
 - **Service shape:** `port: 80`, `targetPort: <native>`.
@@ -161,13 +161,13 @@ Criterion: *"do all apps consume this the same way?"* — yes → platform; no �
 
 ```bash
 # Argo CD UI
-http://argocd.arch.local                     # admin / <your reset password>
+http://argocd.arch.internal                     # admin / <your reset password>
 
 # Grafana UI (Loki Explore for logs)
-http://grafana.arch.local                    # admin / g12jaCS8nuRJFTf1f8KMefk4uRKfDpz3J97ulYBO (reset)
+http://grafana.arch.internal                    # admin / g12jaCS8nuRJFTf1f8KMefk4uRKfDpz3J97ulYBO (reset)
 
 # Loki HTTP API (curl-friendly)
-curl -sG http://loki.arch.local/loki/api/v1/query_range \
+curl -sG http://loki.arch.internal/loki/api/v1/query_range \
   --data-urlencode 'query={namespace="argocd"}' \
   --data-urlencode "start=$(date -u -d '-10 min' +%s)000000000" \
   --data-urlencode "end=$(date -u +%s)000000000" \
@@ -207,7 +207,7 @@ ss -tlnp | grep -E ':80 |:443 '          # may not show — klipper-lb uses ipta
 1. ✅ Create `arch-infra` repo
 2. ✅ Install k3s
 3. ✅ Install Argo CD (vendored manifests in arch-infra)
-4. ✅ Argo CD Ingress (argocd.arch.local)
+4. ✅ Argo CD Ingress (argocd.arch.internal)
 5. ✅ App-of-apps root
 6. ✅ Observability stack (Loki + Grafana + Alloy)
 7. ✅ Migrate llmgw (2026-05-10 → 2026-05-11; full GitOps loop verified)
@@ -261,13 +261,17 @@ For each host-resident dependency the pod needs:
 2. `git -C ~/github/arch-infra fetch origin main && git -C ~/github/arch-infra log -1 apps/<app>.yaml` to confirm the bump landed.
 3. `kubectl annotate app root -n argocd argocd.argoproj.io/refresh=normal --overwrite` to skip the 3-min poll.
 4. Watch the pod come up: `kubectl get pod -n <app> -w`. First sync creates namespace + PVC + Service + Deployment + Ingress in one shot.
-5. Add `192.168.1.163 <app>.arch.local` to `/etc/hosts` on the dev box.
+5. Add `<app>.arch.internal` -> `192.168.1.163` to the router's DNS table
+   (Advanced -> Network Settings -> DNS Server). No `/etc/hosts` edit: `.local`
+   is reserved for mDNS (RFC 6762) so it never reaches a unicast resolver, which
+   is why every device used to need its own hosts entry. `.internal` resolves
+   LAN-wide for every device, including ones that cannot hold a hosts file.
 6. Smoke test:
-   - Health: `curl -fsS http://<app>.arch.local/`
+   - Health: `curl -fsS http://<app>.arch.internal/`
    - Whatever the app's `/v1/models`-equivalent surface is
    - Real end-to-end request through the Ingress
    - `kubectl logs -n <app> deploy/<app>` for boot log sanity
-   - Loki: `curl -sG http://loki.arch.local/loki/api/v1/query_range --data-urlencode 'query={namespace="<app>"} | json' --data-urlencode "start=$(date -u -d '-5 min' +%s)000000000" --data-urlencode "end=$(date -u +%s)000000000"`
+   - Loki: `curl -sG http://loki.arch.internal/loki/api/v1/query_range --data-urlencode 'query={namespace="<app>"} | json' --data-urlencode "start=$(date -u -d '-5 min' +%s)000000000" --data-urlencode "end=$(date -u +%s)000000000"`
 7. Stop the legacy deploy (docker compose down, etc.); confirm host ports freed.
 8. Retain the legacy `deploy/compose.yaml` (or equivalent) for ≥2-3 days as a rollback option before deleting.
 
@@ -293,15 +297,15 @@ A working example to pattern the next app after. All paths/commands real and liv
 - Image: `ghcr.io/autumnfallenwang/llm-gateway:<sha>` (public)
 
 **Network surface:**
-- External (LAN/Mac): `http://llmgw.arch.local/` (Traefik) — add `192.168.1.163 llmgw.arch.local` to `/etc/hosts` on each client
+- External (LAN/Mac): `http://llmgw.arch.internal/` (Traefik) — add `192.168.1.163 llmgw.arch.internal` to `/etc/hosts` on each client
 - Internal (other namespaces): `http://llmgw.llmgw/` (Service `llmgw` port 80 → targetPort 51277)
-- Swagger UI: `http://llmgw.arch.local/docs`
+- Swagger UI: `http://llmgw.arch.internal/docs`
 
 **Cluster shape (rendered from `deploy/chart/`):**
 - Namespace: `llmgw`
 - Deployment: `llmgw` (1 replica, `Recreate` strategy, UID 1000)
 - Service: `llmgw` (ClusterIP, port 80 → targetPort 51277)
-- Ingress: `llmgw` (Traefik, host `llmgw.arch.local`)
+- Ingress: `llmgw` (Traefik, host `llmgw.arch.internal`)
 - PVC: `llmgw-data` (1Gi `local-path`, mount `/home/node/.llm-gateway`, holds `state.db` SQLite)
 - hostPath RO mounts: `~/.claude` → `/home/node/host-claude`, `~/.codex` → `/home/node/host-codex`
 
@@ -321,7 +325,7 @@ A working example to pattern the next app after. All paths/commands real and liv
 kubectl logs -n llmgw deploy/llmgw -f
 
 # Loki history (all pods across rolls, 30d retention)
-curl -sG http://loki.arch.local/loki/api/v1/query_range \
+curl -sG http://loki.arch.internal/loki/api/v1/query_range \
   --data-urlencode 'query={namespace="llmgw"} | json | event="http.request"' \
   --data-urlencode "start=$(date -u -d '-30 min' +%s)000000000" \
   --data-urlencode "end=$(date -u +%s)000000000"
@@ -336,7 +340,7 @@ kubectl annotate app llmgw -n argocd argocd.argoproj.io/refresh=normal --overwri
 gh workflow run build.yml --repo autumnfallenwang/llm-gateway
 
 # App-specific: re-run model validation
-curl -X POST http://llmgw.arch.local/v1/models/validate
+curl -X POST http://llmgw.arch.internal/v1/models/validate
 
 # Inspect on-disk state (SQLite + WAL)
 kubectl exec -n llmgw deploy/llmgw -- ls -la /home/node/.llm-gateway/

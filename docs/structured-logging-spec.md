@@ -245,14 +245,14 @@ kubectl exec -n llmgw deploy/llmgw -- sh -c 'env | grep LOG_LEVEL'
 # (expect default 'info' or whatever the chart's values set)
 
 # 3. Per-request log shows up
-curl -X POST http://llmgw.arch.local/v1/chat/completions \
+curl -X POST http://llmgw.arch.internal/v1/chat/completions \
   -H 'Content-Type: application/json' \
   -d '{"model":"qwen3:30b","messages":[{"role":"user","content":"ping"}],"max_tokens":4}'
 kubectl logs -n llmgw deploy/llmgw --tail=3
 # expect: one line with event=http.request, status=200, latency_ms=...
 
 # 4. Loki end-to-end (Alloy ships from the pod via the cluster's observability stack):
-curl -sG http://loki.arch.local/loki/api/v1/query_range \
+curl -sG http://loki.arch.internal/loki/api/v1/query_range \
   --data-urlencode 'query={namespace="llmgw"} | json | event="http.request"' \
   --data-urlencode "start=$(date -u -d '-10 min' +%s)000000000" \
   --data-urlencode "end=$(date -u +%s)000000000"
