@@ -2,6 +2,10 @@
 
 Self-hosted OpenAI-compatible API gateway. Routes requests to Ollama, Anthropic, Codex via pi-ai.
 
+Supports OpenAI tool calling (`tools`, `tool_choice`, `tool` messages). `src/lib/pi.ts` is the only
+file that imports pi-ai (`@earendil-works/pi-ai`); everything else imports from it, so a pi-ai API
+change stays in one file.
+
 ## Stack
 
 Hono + Zod + @hono/zod-openapi + Vitest + Biome + tsx
@@ -10,7 +14,9 @@ Hono + Zod + @hono/zod-openapi + Vitest + Biome + tsx
 
 - `npm run dev` - start dev server with hot-reload (port 51277)
 - `npm run test:fast` - unit tests only, excludes e2e/compatibility (~0.5s)
-- `npm test` - full suite including e2e/compatibility (~90s)
+- `npm test` - full suite including e2e/compatibility (~5 min). On a dev machine run it as
+  `ANTHROPIC_SEED_PATH=/nonexistent npm test`: otherwise the e2e suites seed from and refresh
+  `~/.claude/.credentials.json`, rotating the host's own Claude login (refresh tokens are single-use)
 - `npm run lint` - lint check
 - `npm run lint:fix` - auto-fix lint
 

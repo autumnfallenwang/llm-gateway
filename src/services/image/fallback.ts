@@ -1,10 +1,10 @@
-import { complete, type Model } from "@mariozechner/pi-ai";
 import {
   VISION_FALLBACK_FAMILY,
   VISION_FALLBACK_GENERAL,
   VISION_FALLBACK_MAX_DESCRIPTION_CHARS,
   VISION_FALLBACK_TIMEOUT_MS,
 } from "../../config.js";
+import { complete, type Model } from "../../lib/pi.js";
 import type { ChatCompletionRequest } from "../../routes/chat.js";
 import type { ContentPart } from "../../schemas/chat.js";
 import type { ResolvedModel } from "../registry.js";

@@ -1,6 +1,6 @@
-import type { AssistantMessage, Model } from "@mariozechner/pi-ai";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { type AppDb, openDb, setDb } from "../src/lib/db";
+import type { AssistantMessage, Model } from "../src/lib/pi";
 import type { ResolvedModel } from "../src/services/registry";
 
 const completeMock = vi.fn();
@@ -8,8 +8,8 @@ const listModelsMock = vi.fn();
 const resolveModelMock = vi.fn();
 const ensureAnthropicFreshMock = vi.fn();
 
-vi.mock("@mariozechner/pi-ai", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@mariozechner/pi-ai")>();
+vi.mock("../src/lib/pi", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../src/lib/pi")>();
   return { ...actual, complete: completeMock };
 });
 

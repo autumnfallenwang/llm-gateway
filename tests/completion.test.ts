@@ -1,14 +1,14 @@
-import type { AssistantMessage, Context } from "@mariozechner/pi-ai";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { BackendError } from "../src/errors";
+import type { AssistantMessage, Context } from "../src/lib/pi";
 
 const completeMock = vi.fn();
 const isContextOverflowMock = vi.fn();
 const loadImageMock = vi.fn();
 const preprocessImageMock = vi.fn();
 
-vi.mock("@mariozechner/pi-ai", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@mariozechner/pi-ai")>();
+vi.mock("../src/lib/pi", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../src/lib/pi")>();
   return { ...actual, complete: completeMock, isContextOverflow: isContextOverflowMock };
 });
 

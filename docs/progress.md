@@ -20,6 +20,7 @@
 - `npm run dev` → `:51277`, Swagger UI at `/docs`
 - Full request validation with OpenAI-format errors (`message`, `type`, `param`, `code`)
 - `POST /v1/chat/completions` → routes to Ollama/Anthropic/Codex/Gemini via pi-ai, returns OpenAI-format response
+- `POST /v1/chat/completions` with `tools` → OpenAI function calling on Claude and Ollama models (`tool_calls` out, `tool` messages back in), streaming included
 - `POST /v1/chat/completions` with `stream: true` → SSE streaming with `chat.completion.chunk` objects, `data: [DONE]` sentinel
 - `GET /v1/models` → returns ALL models with `status` (`ok`/`error`/`unknown`), `status_detail`, `validated_at` fields; includes `context_window` and `max_tokens` per model
 - `POST /v1/models/validate` → tests every registered model, persists results to the SQLite `model_validation` table (`LLMGW_DB_PATH`, default `~/.llm-gateway/state.db`)
@@ -46,7 +47,7 @@
 
 ## What's Next
 
-**Phase 8 is complete** — the gateway runs on k3s, ArgoCD watches arch-infra, GHA closes the GitOps loop. After a stability bake (a few days), delete `deploy/compose.yaml` to retire the last compose-era artifact. Keep `deploy/Dockerfile` (still used by GHA).
+**Phase 9 is complete**: Claude 5 models and OpenAI tool calling (see below). **Phase 8 is complete** — the gateway runs on k3s, ArgoCD watches arch-infra, GHA closes the GitOps loop. After a stability bake (a few days), delete `deploy/compose.yaml` to retire the last compose-era artifact. Keep `deploy/Dockerfile` (still used by GHA).
 
 Next likely targets, in priority order:
 1. **Bake** the new deployment. Let it run for ≥ 2-3 days under normal use and watch Grafana/Loki for unexpected errors before pruning compose.
@@ -185,6 +186,17 @@ Migrate from 29 ad-hoc `console.log/warn/error` calls to JSON-per-line structure
 - Loki + Promtail + Grafana deployment as a separate `~/agentic/observability/` stack — multi-app concern, not specific to llmgw. _(Superseded by Phase 8 — observability stack is already running in the k3s cluster as `observability-loki` / `observability-grafana` / `observability-alloy`. Once llmgw lands in `namespace: llmgw`, Alloy scrapes pod stdout into Loki automatically with no app changes.)_
 - Prometheus metrics + dashboards — different problem (numbers vs events); add when we want trend graphs/alerts.
 - OpenTelemetry — overkill for a single-service gateway; revisit if multi-service tracing matters.
+
+## Phase 9: Claude 5 Models + Tool Calling
+
+Two gaps blocked agent use (an app that hands the model tools, runs them, and sends the results back): the Claude 5 models were missing, and tool calling was silently dropped. `tools` wasn't in the request schema, so Zod stripped it, and `tool` / assistant `tool_calls` messages failed with 400. The response side already mapped pi-ai tool calls.
+
+| # | Task | Status | Notes |
+|---|------|--------|-------|
+| 47 | pi-ai 0.73 → `@earendil-works/pi-ai` 1.3 | ✅ Done | The package was renamed; `@mariozechner/pi-ai` stopped at 0.73.1 (2026-05), which is why `/v1/models` topped out at `claude-opus-4-7`. 1.x replaced the global registry with provider collections and made its OAuth helpers private, so **`src/lib/pi.ts` is now the only file that imports pi-ai**: per-API `stream()` dispatch on `model.api` (anthropic-messages, openai-completions, openai-codex-responses) with an explicit `apiKey`, `complete()` = `stream().result()`, the static catalog via `getBuiltinModels`, and the Anthropic refresh via `anthropicProvider().auth.oauth.refresh`. The gateway keeps its own credential chain (Phase 6); pi-ai's credential store isn't used. The Anthropic catalog is now the 4.5+ line plus **`claude-opus-5-5`, `claude-sonnet-5-5`, `claude-haiku-5-5`, `claude-fable-5-1`** (and `-5` variants). The 3.x/4.0/4.1 IDs are gone (they were failing validation anyway). pi-ai drops `temperature` for models that refuse it (Opus 5.5). |
+| 48 | OpenAI tool calling | ✅ Done | Request: `tools` (function tools; names `^[a-zA-Z0-9_-]{1,64}$`), `tool_choice` (`auto`/`none`/`required`/`{type:"function",function:{name}}`, mapped to Anthropic's `auto`/`none`/`any`/`{type:"tool",name}`, passed through to OpenAI-compatible backends, ignored without tools), `parallel_tool_calls` (accepted, ignored), assistant messages with `tool_calls` and null/absent `content`, `tool` messages (`tool_call_id`, string or text parts), and `developer` as an alias of `system`. A tool message must answer an earlier call (400 `invalid_tool_call_id`); arguments must be a JSON object (400 `invalid_tool_arguments`). Responses and SSE already carried `tool_calls`/`finish_reason: "tool_calls"`. **18 new tests** (`tests/tool-calling.test.ts`); 242 fast tests pass. Live, through a local instance: `qwen3:30b` did a full round trip (call → result → answer) and streamed a tool call. Full `npm test` with no Claude/Codex credentials: 330 pass, and the 12 failures are the live Claude/Codex e2e cases. |
+
+**Local testing and the Claude login.** `tests/e2e.test.ts` and `tests/compatibility.test.ts` call `loadCredentials()` with the defaults, so on a machine whose `~/.llm-gateway` DB has no chain they **seed from `~/.claude/.credentials.json` and refresh it**. Anthropic refresh tokens are single-use, so that rotates the host's own Claude login out from under it. Run them with `ANTHROPIC_SEED_PATH=/nonexistent npm test` unless you mean to mint a new chain.
 
 ## Phase 8: k3s Migration
 

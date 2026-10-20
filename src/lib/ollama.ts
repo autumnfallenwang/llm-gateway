@@ -1,4 +1,3 @@
-import type { Model } from "@mariozechner/pi-ai";
 import {
   OLLAMA_BASE_URL,
   OLLAMA_DEFAULT_CONTEXT_WINDOW,
@@ -7,6 +6,7 @@ import {
   OLLAMA_SHOW_TIMEOUT_MS,
 } from "../config.js";
 import { log } from "./logger.js";
+import type { Model } from "./pi.js";
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
