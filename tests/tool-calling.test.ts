@@ -323,6 +323,57 @@ describe("tool_choice", () => {
   });
 });
 
+// Anthropic rejects a forced tool while the model thinks, and Claude 5 thinks by default.
+describe("tool_choice on a thinking Claude model", () => {
+  const base = { tools: [LAB_TOOL], messages: [{ role: "user", content: "hi" }] };
+  const named = { type: "function", function: { name: "get_latest_lab" } };
+
+  function thinking(off?: null) {
+    const resolved = makeResolved();
+    return {
+      ...resolved,
+      model: { ...resolved.model, reasoning: true, thinkingLevelMap: off === null ? { off } : {} },
+    };
+  }
+
+  async function optionsFor(resolved: ReturnType<typeof thinking>, toolChoice: unknown) {
+    completeMock.mockResolvedValue(reply());
+    await createCompletion(resolved, request({ ...base, tool_choice: toolChoice }));
+    return (completeMock.mock.calls[0] as unknown[])[2] as Record<string, unknown>;
+  }
+
+  it("turns thinking off to force a tool", async () => {
+    for (const choice of ["required", named]) {
+      expect(await optionsFor(thinking(), choice)).toHaveProperty("thinkingEnabled", false);
+      vi.clearAllMocks();
+    }
+  });
+
+  it("leaves thinking alone for auto and none", async () => {
+    for (const choice of ["auto", "none"]) {
+      expect(await optionsFor(thinking(), choice)).not.toHaveProperty("thinkingEnabled");
+      vi.clearAllMocks();
+    }
+  });
+
+  it("rejects forcing a tool on a model that always thinks", async () => {
+    for (const choice of ["required", named]) {
+      const err = await createCompletion(
+        thinking(null),
+        request({ ...base, tool_choice: choice }),
+      ).catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(BackendError);
+      expect((err as BackendError).httpStatus).toBe(400);
+      expect((err as BackendError).errorCode).toBe("unsupported_tool_choice");
+    }
+    expect(completeMock).not.toHaveBeenCalled();
+  });
+
+  it("still allows auto on a model that always thinks", async () => {
+    expect(await optionsFor(thinking(null), "auto")).toHaveProperty("toolChoice", "auto");
+  });
+});
+
 // ── pi-ai response → OpenAI response ───────────────────────────────────────
 
 describe("tool calls in the response", () => {
