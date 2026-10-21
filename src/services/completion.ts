@@ -228,16 +228,6 @@ async function buildContext(
   return { systemPrompt, messages, ...(tools?.length ? { tools } : {}) };
 }
 
-/** OpenAI's tool_choice in the form each backend API expects. */
-function toolChoiceFor(api: string, choice: ChatToolChoice): unknown {
-  if (api === "anthropic-messages") {
-    if (typeof choice === "string") return choice === "required" ? "any" : choice;
-    return { type: "tool", name: choice.function.name };
-  }
-  if (api === "openai-completions") return choice;
-  return undefined;
-}
-
 /** The single tool a forced tool_choice comes down to, if it comes down to one. */
 function forcedToolName(choice: ChatToolChoice, tools: ChatTool[]): string | undefined {
   if (typeof choice === "object") return choice.function.name;
@@ -245,38 +235,33 @@ function forcedToolName(choice: ChatToolChoice, tools: ChatTool[]): string | und
 }
 
 /**
- * Asks for a forced tool in words, for Claude models that can't stop thinking: Anthropic
- * accepts only tool_choice "auto" or "none" while a model thinks. The tool is offered on
- * its own with "auto" and the system prompt says to call it (named-tool calls came back
- * 24/24 live on Sonnet 5.5, Opus 5.5 and Fable 5/5.1). "required" over several tools
- * can't be pinned down this way (14/24 live), so it's rejected.
+ * Why a backend can't take a forced tool_choice as a parameter, or undefined when it can.
+ * Ollama ignores tool_choice. Anthropic accepts only "auto" or "none" while a model
+ * thinks, and Sonnet 5.5, Opus 5.5 and Fable 5/5.1 can't stop (`thinkingLevelMap.off`
+ * is null); the other thinking Claude models get thinking turned off instead.
  */
-function askForTool(
-  model: ResolvedModel["model"],
-  choice: ChatToolChoice,
-  tools: ChatTool[],
-  context: Context,
-): Context {
-  const name = forcedToolName(choice, tools);
-  if (!name) {
-    throw invalidRequest(
-      `model '${model.id}' always thinks, and while a model thinks Anthropic can only be told which tool to call, not to call one of several; name the tool in tool_choice, use "auto", or use a model that can stop thinking such as claude-haiku-5-5`,
-      "unsupported_tool_choice",
-    );
+function cannotForce(model: ResolvedModel["model"]): string | undefined {
+  if (model.provider === "ollama") return "Ollama ignores tool_choice";
+  if (
+    model.api === "anthropic-messages" &&
+    model.reasoning &&
+    model.thinkingLevelMap?.off === null
+  ) {
+    return `model '${model.id}' always thinks, and Anthropic won't force a tool while a model thinks`;
   }
-  const instruction = `You must respond by calling the \`${name}\` tool. Do not reply with text alone.`;
-  return {
-    ...context,
-    systemPrompt: context.systemPrompt ? `${context.systemPrompt}\n\n${instruction}` : instruction,
-    tools: context.tools?.filter((t) => t.name === name),
-  };
+  return undefined;
 }
 
 /**
- * Applies tool_choice to the call. pi-ai turns thinking on by default for the Claude 5
- * models, and Anthropic refuses a forced tool while a model thinks, so a forced choice
- * turns thinking off where the model allows it (`thinkingLevelMap.off` isn't null) and
- * is asked for in words where it doesn't.
+ * Applies tool_choice to the call, as each backend can honour it (all checked live):
+ * - A forced single tool (a named function, or "required" with one tool) is offered on
+ *   its own. With only that tool, Anthropic's "any" pins the call; a named Anthropic
+ *   tool_choice alone was ignored by Opus 5 and Haiku 5.5. Where the choice can't be
+ *   sent (see cannotForce), the system prompt asks for the tool instead: 24/24 calls on
+ *   the always-thinking Claude models, 6/6 on gemma4 and qwen3.
+ * - "required" over several tools goes to Anthropic as "any"; where it can't be sent,
+ *   asking in words got 14/24 (Claude) and 3/6 (Ollama), so it's a 400.
+ * - "none" withholds the tools from Ollama, which otherwise calls them anyway.
  */
 function withToolChoice(
   body: ChatCompletionRequest,
@@ -286,7 +271,10 @@ function withToolChoice(
 ): { context: Context; options: Record<string, unknown> } {
   const tools = body.tools ?? [];
   const choice = body.tool_choice;
-  if (tools.length === 0 || !choice) return { context, options };
+  // Codex has never been sent tool_choice; it's disabled on the cluster, so leave it be.
+  if (tools.length === 0 || !choice || resolved.model.api === "openai-codex-responses") {
+    return { context, options };
+  }
   if (typeof choice === "object" && !tools.some((t) => t.function.name === choice.function.name)) {
     throw invalidRequest(
       `tool_choice names '${choice.function.name}', which isn't one of the request's tools`,
@@ -295,19 +283,40 @@ function withToolChoice(
   }
 
   const { model } = resolved;
-  const forces = choice === "required" || typeof choice === "object";
-  let opts = options;
-  if (model.api === "anthropic-messages" && model.reasoning && forces) {
-    if (model.thinkingLevelMap?.off === null) {
-      return {
-        context: askForTool(model, choice, tools, context),
-        options: { ...options, toolChoice: "auto" },
-      };
+  const anthropic = model.api === "anthropic-messages";
+  if (choice === "auto" || choice === "none") {
+    if (choice === "none" && model.provider === "ollama") {
+      return { context: { ...context, tools: undefined }, options };
     }
-    opts = { ...opts, thinkingEnabled: false };
+    return { context, options: { ...options, toolChoice: choice } };
   }
-  const toolChoice = toolChoiceFor(model.api, choice);
-  return { context, options: toolChoice === undefined ? opts : { ...opts, toolChoice } };
+
+  const name = forcedToolName(choice, tools);
+  const pinned = name
+    ? { ...context, tools: context.tools?.filter((t) => t.name === name) }
+    : context;
+  const reason = cannotForce(model);
+  if (reason) {
+    if (!name) {
+      throw invalidRequest(
+        `${reason}, and asking for "one of several tools" in words isn't reliable; name the tool in tool_choice or use "auto"`,
+        "unsupported_tool_choice",
+      );
+    }
+    const instruction = `You must respond by calling the \`${name}\` tool. Do not reply with text alone.`;
+    const systemPrompt = pinned.systemPrompt
+      ? `${pinned.systemPrompt}\n\n${instruction}`
+      : instruction;
+    return {
+      context: { ...pinned, systemPrompt },
+      options: anthropic ? { ...options, toolChoice: "auto" } : options,
+    };
+  }
+  if (anthropic) {
+    const thinkingOff = model.reasoning ? { thinkingEnabled: false } : {};
+    return { context: pinned, options: { ...options, ...thinkingOff, toolChoice: "any" } };
+  }
+  return { context, options: { ...options, toolChoice: choice } };
 }
 
 function buildOptions(
