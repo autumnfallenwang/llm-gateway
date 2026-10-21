@@ -567,6 +567,31 @@ describe("backend error handling", () => {
     });
   });
 
+  it("throws 400 BackendError when the backend rejects the request", async () => {
+    isContextOverflowMock.mockReturnValue(false);
+    completeMock.mockResolvedValue(
+      makeAssistantMessage({
+        stopReason: "error",
+        errorMessage:
+          '400 {"type":"error","error":{"type":"invalid_request_error","message":"bad field"}}',
+      }),
+    );
+
+    await expect(
+      createCompletion(makeResolved(), {
+        model: "test-model",
+        messages: [{ role: "user", content: "Hi" }],
+        stream: false,
+      }),
+    ).rejects.toSatisfy((err: BackendError) => {
+      expect(err).toBeInstanceOf(BackendError);
+      expect(err.httpStatus).toBe(400);
+      expect(err.errorType).toBe("invalid_request_error");
+      expect(err.errorCode).toBe("invalid_input");
+      return true;
+    });
+  });
+
   it("throws 500 BackendError for generic backend errors", async () => {
     isContextOverflowMock.mockReturnValue(false);
     completeMock.mockResolvedValue(

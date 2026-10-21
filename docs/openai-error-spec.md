@@ -66,7 +66,10 @@ The gateway emits these additional codes that aren't in OpenAI's vocabulary but 
 | `anthropic_auth_failed` | 500 | `server_error` | Container could not refresh Anthropic OAuth | `/v1/chat/completions` (Phase 6) |
 | `provider_unsupported` | 501 | `invalid_request_error` | Provider does not offer this endpoint (e.g. Anthropic embeddings) | `/v1/embeddings` (Phase 5) |
 | `wrong_capability` | 400 | `invalid_request_error` | Embedding model used at chat endpoint, or chat model used at embeddings endpoint | both routes (Phase 5) |
-| `invalid_input` | 400 | `invalid_request_error` | Upstream Ollama rejected the input (e.g. empty array, token-array form) | `/v1/embeddings` (Phase 5) |
+| `invalid_input` | 400 | `invalid_request_error` | The upstream rejected the request (e.g. an empty embeddings array, or an Anthropic `400 invalid_request_error`) | `/v1/embeddings` (Phase 5), `/v1/chat/completions` (Phase 9) |
+| `unsupported_tool_choice` | 400 | `invalid_request_error` | `tool_choice` forces a tool on a Claude model that always thinks (Anthropic allows only `auto`/`none` while thinking) | `/v1/chat/completions` (Phase 9) |
+| `invalid_tool_call_id` | 400 | `invalid_request_error` | A `tool` message answers a call no earlier assistant message made | `/v1/chat/completions` (Phase 9) |
+| `invalid_tool_arguments` | 400 | `invalid_request_error` | An assistant `tool_calls` entry has arguments that aren't a JSON object | `/v1/chat/completions` (Phase 9) |
 
 Note: OpenAI's error codes are not exhaustively documented. The `code` field is often `null` for simple validation errors. New codes may appear as the API evolves.
 

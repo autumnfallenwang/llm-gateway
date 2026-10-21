@@ -36,6 +36,8 @@ const EMPTY_USAGE: Usage = {
 };
 
 const RATE_LIMIT_PATTERN = /rate.limit|usage.limit|too many requests|429/i;
+// The provider SDKs prefix API errors with the HTTP status: `400 {"type":"error",...}`.
+const BAD_REQUEST_PATTERN = /^400\b|invalid_request_error/;
 
 function throwIfBackendError(result: AssistantMessage): void {
   if (result.stopReason !== "error") return;
@@ -47,6 +49,9 @@ function throwIfBackendError(result: AssistantMessage): void {
   }
   if (RATE_LIMIT_PATTERN.test(msg)) {
     throw new BackendError(msg, 429, "rate_limit_exceeded", "rate_limit_exceeded");
+  }
+  if (BAD_REQUEST_PATTERN.test(msg)) {
+    throw new BackendError(msg, 400, "invalid_request_error", "invalid_input");
   }
   throw new BackendError(msg, 500, "server_error", "server_error");
 }
@@ -223,6 +228,25 @@ function toolChoiceFor(api: string, choice: ChatToolChoice): unknown {
   return undefined;
 }
 
+/**
+ * Anthropic accepts only tool_choice "auto" or "none" while a model thinks, and pi-ai
+ * turns thinking on by default for the Claude 5 models. So forcing a tool turns
+ * thinking off, and a model that can't stop thinking (`thinkingLevelMap.off: null`)
+ * can't be forced.
+ */
+function stopThinkingForForcedTool(resolved: ResolvedModel, choice: ChatToolChoice): boolean {
+  const { model } = resolved;
+  const forces = choice === "required" || typeof choice === "object";
+  if (model.api !== "anthropic-messages" || !model.reasoning || !forces) return false;
+  if (model.thinkingLevelMap?.off === null) {
+    throw invalidRequest(
+      `model '${model.id}' always thinks, and Anthropic allows only tool_choice "auto" or "none" while a model thinks; use "auto", or a model that can stop thinking such as claude-haiku-5-5`,
+      "unsupported_tool_choice",
+    );
+  }
+  return true;
+}
+
 function buildOptions(
   body: ChatCompletionRequest,
   resolved: ResolvedModel,
@@ -234,6 +258,7 @@ function buildOptions(
   if (body.tools?.length && body.tool_choice) {
     const toolChoice = toolChoiceFor(resolved.model.api, body.tool_choice);
     if (toolChoice !== undefined) opts.toolChoice = toolChoice;
+    if (stopThinkingForForcedTool(resolved, body.tool_choice)) opts.thinkingEnabled = false;
   }
 
   if (resolved.provider === "ollama") {
