@@ -1,5 +1,6 @@
 import { DEFAULT_SYSTEM_PROMPT, OLLAMA_NUM_CTX } from "../config.js";
 import { BackendError } from "../errors.js";
+import { log } from "../lib/logger.js";
 import {
   type AssistantMessage,
   type Context,
@@ -43,6 +44,15 @@ function throwIfBackendError(result: AssistantMessage): void {
   if (result.stopReason !== "error") return;
 
   const msg = result.errorMessage ?? "Unknown backend error";
+  log.warn(
+    {
+      event: "completion.backend_error",
+      provider: result.provider,
+      model: result.model,
+      err_message: msg.slice(0, 2000),
+    },
+    "Backend call failed",
+  );
 
   if (isContextOverflow(result)) {
     throw new BackendError(msg, 400, "invalid_request_error", "context_length_exceeded");
@@ -228,23 +238,76 @@ function toolChoiceFor(api: string, choice: ChatToolChoice): unknown {
   return undefined;
 }
 
+/** The single tool a forced tool_choice comes down to, if it comes down to one. */
+function forcedToolName(choice: ChatToolChoice, tools: ChatTool[]): string | undefined {
+  if (typeof choice === "object") return choice.function.name;
+  return choice === "required" && tools.length === 1 ? tools[0]?.function.name : undefined;
+}
+
 /**
- * Anthropic accepts only tool_choice "auto" or "none" while a model thinks, and pi-ai
- * turns thinking on by default for the Claude 5 models. So forcing a tool turns
- * thinking off, and a model that can't stop thinking (`thinkingLevelMap.off: null`)
- * can't be forced.
+ * Asks for a forced tool in words, for Claude models that can't stop thinking: Anthropic
+ * accepts only tool_choice "auto" or "none" while a model thinks. The tool is offered on
+ * its own with "auto" and the system prompt says to call it (named-tool calls came back
+ * 24/24 live on Sonnet 5.5, Opus 5.5 and Fable 5/5.1). "required" over several tools
+ * can't be pinned down this way (14/24 live), so it's rejected.
  */
-function stopThinkingForForcedTool(resolved: ResolvedModel, choice: ChatToolChoice): boolean {
-  const { model } = resolved;
-  const forces = choice === "required" || typeof choice === "object";
-  if (model.api !== "anthropic-messages" || !model.reasoning || !forces) return false;
-  if (model.thinkingLevelMap?.off === null) {
+function askForTool(
+  model: ResolvedModel["model"],
+  choice: ChatToolChoice,
+  tools: ChatTool[],
+  context: Context,
+): Context {
+  const name = forcedToolName(choice, tools);
+  if (!name) {
     throw invalidRequest(
-      `model '${model.id}' always thinks, and Anthropic allows only tool_choice "auto" or "none" while a model thinks; use "auto", or a model that can stop thinking such as claude-haiku-5-5`,
+      `model '${model.id}' always thinks, and while a model thinks Anthropic can only be told which tool to call, not to call one of several; name the tool in tool_choice, use "auto", or use a model that can stop thinking such as claude-haiku-5-5`,
       "unsupported_tool_choice",
     );
   }
-  return true;
+  const instruction = `You must respond by calling the \`${name}\` tool. Do not reply with text alone.`;
+  return {
+    ...context,
+    systemPrompt: context.systemPrompt ? `${context.systemPrompt}\n\n${instruction}` : instruction,
+    tools: context.tools?.filter((t) => t.name === name),
+  };
+}
+
+/**
+ * Applies tool_choice to the call. pi-ai turns thinking on by default for the Claude 5
+ * models, and Anthropic refuses a forced tool while a model thinks, so a forced choice
+ * turns thinking off where the model allows it (`thinkingLevelMap.off` isn't null) and
+ * is asked for in words where it doesn't.
+ */
+function withToolChoice(
+  body: ChatCompletionRequest,
+  resolved: ResolvedModel,
+  context: Context,
+  options: Record<string, unknown>,
+): { context: Context; options: Record<string, unknown> } {
+  const tools = body.tools ?? [];
+  const choice = body.tool_choice;
+  if (tools.length === 0 || !choice) return { context, options };
+  if (typeof choice === "object" && !tools.some((t) => t.function.name === choice.function.name)) {
+    throw invalidRequest(
+      `tool_choice names '${choice.function.name}', which isn't one of the request's tools`,
+      "invalid_tool_choice",
+    );
+  }
+
+  const { model } = resolved;
+  const forces = choice === "required" || typeof choice === "object";
+  let opts = options;
+  if (model.api === "anthropic-messages" && model.reasoning && forces) {
+    if (model.thinkingLevelMap?.off === null) {
+      return {
+        context: askForTool(model, choice, tools, context),
+        options: { ...options, toolChoice: "auto" },
+      };
+    }
+    opts = { ...opts, thinkingEnabled: false };
+  }
+  const toolChoice = toolChoiceFor(model.api, choice);
+  return { context, options: toolChoice === undefined ? opts : { ...opts, toolChoice } };
 }
 
 function buildOptions(
@@ -255,11 +318,6 @@ function buildOptions(
   if (body.temperature !== undefined) opts.temperature = body.temperature;
   if (body.max_tokens !== undefined) opts.maxTokens = body.max_tokens;
   opts.apiKey = resolved.apiKey ?? "ollama";
-  if (body.tools?.length && body.tool_choice) {
-    const toolChoice = toolChoiceFor(resolved.model.api, body.tool_choice);
-    if (toolChoice !== undefined) opts.toolChoice = toolChoice;
-    if (stopThinkingForForcedTool(resolved, body.tool_choice)) opts.thinkingEnabled = false;
-  }
 
   if (resolved.provider === "ollama") {
     opts.onPayload = (payload: Record<string, unknown>) => {
@@ -320,8 +378,12 @@ export async function createCompletion(
   body: ChatCompletionRequest,
 ): Promise<ChatCompletionResponse> {
   const effectiveBody = await applyVisionFallback(body, resolved);
-  const context = await buildContext(effectiveBody, resolved);
-  const options = buildOptions(body, resolved);
+  const { context, options } = withToolChoice(
+    body,
+    resolved,
+    await buildContext(effectiveBody, resolved),
+    buildOptions(body, resolved),
+  );
   const result = await complete(resolved.model, context, options);
   throwIfBackendError(result);
   return formatResponse(result, body.model);
@@ -332,8 +394,12 @@ export async function* createStreamingCompletion(
   body: ChatCompletionRequest,
 ): AsyncGenerator<string> {
   const effectiveBody = await applyVisionFallback(body, resolved);
-  const context = await buildContext(effectiveBody, resolved);
-  const options = buildOptions(body, resolved);
+  const { context, options } = withToolChoice(
+    body,
+    resolved,
+    await buildContext(effectiveBody, resolved),
+    buildOptions(body, resolved),
+  );
   const eventStream = stream(resolved.model, context, options);
 
   const id = `chatcmpl-${Date.now()}`;

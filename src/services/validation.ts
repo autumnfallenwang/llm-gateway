@@ -129,15 +129,17 @@ async function runWithConcurrency<T>(tasks: (() => Promise<T>)[], limit: number)
   return results;
 }
 
-export async function validateAllModels(config?: ValidationConfig): Promise<ValidateResponse> {
+async function validateModels(
+  ids: string[],
+  scope: "all" | "new",
+  config?: ValidationConfig,
+): Promise<ValidateResponse["models"]> {
   const concurrency = config?.concurrency ?? VALIDATION_CONCURRENCY;
   const timeoutMs = config?.perModelTimeoutMs ?? VALIDATION_TIMEOUT_MS;
-
-  const allModels = listModels();
-  const models: Record<string, ModelValidationResult> = {};
+  const models: ValidateResponse["models"] = {};
 
   log.info(
-    { event: "validation.started", model_count: allModels.length, concurrency },
+    { event: "validation.started", scope, model_count: ids.length, concurrency },
     "Starting model validation",
   );
 
@@ -155,17 +157,17 @@ export async function validateAllModels(config?: ValidationConfig): Promise<Vali
     );
   }
 
-  const tasks = allModels.map((m) => async () => {
-    const resolved = resolveModel(m.id);
+  const tasks = ids.map((id) => async () => {
+    const resolved = resolveModel(id);
     if (!resolved) {
-      return { id: m.id, result: { status: "error" as const, error: "model not resolvable" } };
+      return { id, result: { status: "error" as const, error: "model not resolvable" } };
     }
-    log.debug({ event: "validation.testing", model: m.id }, "Testing model");
+    log.debug({ event: "validation.testing", model: id }, "Testing model");
     const result = await validateSingleModel(resolved, timeoutMs);
     log.info(
       {
         event: "validation.completed",
-        model: m.id,
+        model: id,
         status: result.status,
         latency_ms: result.latencyMs,
         ...(result.error && { err_message: result.error }),
@@ -173,7 +175,7 @@ export async function validateAllModels(config?: ValidationConfig): Promise<Vali
       },
       "Model validation completed",
     );
-    return { id: m.id, result };
+    return { id, result };
   });
 
   const results = await runWithConcurrency(tasks, concurrency);
@@ -181,25 +183,39 @@ export async function validateAllModels(config?: ValidationConfig): Promise<Vali
     models[id] = result;
   }
 
-  const report: ValidateResponse = {
-    validatedAt: new Date().toISOString(),
-    models,
-  };
-
-  getDb().writeValidationReport(report);
-
   const okCount = Object.values(models).filter((m) => m.status === "ok").length;
   log.info(
-    {
-      event: "validation.done",
-      ok_count: okCount,
-      total_count: allModels.length,
-      db_rows: allModels.length,
-    },
+    { event: "validation.done", scope, ok_count: okCount, total_count: ids.length },
     "Validation done",
   );
+  return models;
+}
 
+export async function validateAllModels(config?: ValidationConfig): Promise<ValidateResponse> {
+  const models = await validateModels(
+    listModels().map((m) => m.id),
+    "all",
+    config,
+  );
+  const report: ValidateResponse = { validatedAt: new Date().toISOString(), models };
+  getDb().writeValidationReport(report);
   return report;
+}
+
+/**
+ * Validates only the registered models with no stored result (new Ollama pulls, new
+ * pi-ai catalog IDs) and merges them into the report, so already-checked models (and
+ * Ollama's GPU) are left alone. Returns the IDs it validated.
+ */
+export async function validateUnvalidatedModels(config?: ValidationConfig): Promise<string[]> {
+  const known = getDb().readValidationReport()?.models ?? {};
+  const ids = listModels()
+    .map((m) => m.id)
+    .filter((id) => !(id in known));
+  if (ids.length === 0) return [];
+  const models = await validateModels(ids, "new", config);
+  getDb().mergeValidationResults(models, new Date().toISOString());
+  return ids;
 }
 
 export function readValidationReport(): Promise<ValidateResponse | null> {

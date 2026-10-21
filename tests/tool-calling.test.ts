@@ -356,17 +356,67 @@ describe("tool_choice on a thinking Claude model", () => {
     }
   });
 
-  it("rejects forcing a tool on a model that always thinks", async () => {
-    for (const choice of ["required", named]) {
-      const err = await createCompletion(
-        thinking(null),
-        request({ ...base, tool_choice: choice }),
-      ).catch((e: unknown) => e);
-      expect(err).toBeInstanceOf(BackendError);
-      expect((err as BackendError).httpStatus).toBe(400);
-      expect((err as BackendError).errorCode).toBe("unsupported_tool_choice");
-    }
+  const MEDS_TOOL = {
+    type: "function" as const,
+    function: { name: "list_medications", description: "Active medications" },
+  };
+
+  async function callFor(resolved: ReturnType<typeof thinking>, body: Record<string, unknown>) {
+    completeMock.mockResolvedValue(reply());
+    await createCompletion(resolved, request(body));
+    const [, context, options] = completeMock.mock.calls[0] as [
+      unknown,
+      Context,
+      Record<string, unknown>,
+    ];
+    return { context, options };
+  }
+
+  it("asks for a named tool in words on a model that always thinks", async () => {
+    const { context, options } = await callFor(thinking(null), {
+      tools: [LAB_TOOL, MEDS_TOOL],
+      tool_choice: { type: "function", function: { name: "list_medications" } },
+      messages: [
+        { role: "system", content: "Be brief." },
+        { role: "user", content: "hi" },
+      ],
+    });
+    expect(options.toolChoice).toBe("auto");
+    expect(options).not.toHaveProperty("thinkingEnabled");
+    expect(context.tools?.map((t) => t.name)).toEqual(["list_medications"]);
+    expect(context.systemPrompt).toBe(
+      "Be brief.\n\nYou must respond by calling the `list_medications` tool. Do not reply with text alone.",
+    );
+  });
+
+  it("treats required over a single tool as naming it", async () => {
+    const { context, options } = await callFor(thinking(null), {
+      ...base,
+      tool_choice: "required",
+    });
+    expect(options.toolChoice).toBe("auto");
+    expect(context.tools?.map((t) => t.name)).toEqual(["get_latest_lab"]);
+    expect(context.systemPrompt).toContain("calling the `get_latest_lab` tool");
+  });
+
+  it("rejects required over several tools on a model that always thinks", async () => {
+    const err = await createCompletion(
+      thinking(null),
+      request({ ...base, tools: [LAB_TOOL, MEDS_TOOL], tool_choice: "required" }),
+    ).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(BackendError);
+    expect((err as BackendError).httpStatus).toBe(400);
+    expect((err as BackendError).errorCode).toBe("unsupported_tool_choice");
     expect(completeMock).not.toHaveBeenCalled();
+  });
+
+  it("rejects a tool_choice naming a tool the request doesn't have", async () => {
+    const err = await rejection({
+      ...base,
+      tool_choice: { type: "function", function: { name: "delete_record" } },
+    });
+    expect(err.httpStatus).toBe(400);
+    expect(err.errorCode).toBe("invalid_tool_choice");
   });
 
   it("still allows auto on a model that always thinks", async () => {

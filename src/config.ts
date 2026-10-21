@@ -118,6 +118,8 @@ export const LLMGW_DB_PATH = env.LLMGW_DB_PATH ?? join(homedir(), ".llm-gateway"
 export const VALIDATION_CONCURRENCY = Number(env.VALIDATION_CONCURRENCY ?? 3);
 export const VALIDATION_TIMEOUT_MS = Number(env.VALIDATION_TIMEOUT_MS ?? 60_000);
 export const VALIDATION_MAX_TOKENS = 32;
+/** At startup, validate the registered models that have no stored result yet (in the background). */
+export const VALIDATE_NEW_MODELS_ON_BOOT = env.VALIDATE_NEW_MODELS_ON_BOOT !== "false";
 
 // ── Image Loading ─────────────────────────────────────────────────────────
 export const IMAGE_FETCH_TIMEOUT_MS = Number(env.IMAGE_FETCH_TIMEOUT_MS ?? 30_000);

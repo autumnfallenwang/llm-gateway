@@ -28,9 +28,8 @@ vi.mock("../src/services/auth", async (importOriginal) => {
 });
 
 // Import after mocks are set up
-const { validateSingleModel, validateAllModels, readValidationReport } = await import(
-  "../src/services/validation"
-);
+const { validateSingleModel, validateAllModels, validateUnvalidatedModels, readValidationReport } =
+  await import("../src/services/validation");
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -367,5 +366,54 @@ describe("validateAllModels: DB persistence", () => {
     // Refresh threw, but the validation still produced a complete report.
     expect(ensureAnthropicFreshMock).toHaveBeenCalledTimes(1);
     expect(report.models["qwen3:30b"].status).toBe("ok");
+  });
+});
+
+describe("validateUnvalidatedModels", () => {
+  let db: AppDb;
+
+  beforeEach(() => {
+    db = openDb(":memory:");
+    setDb(db);
+    listModelsMock.mockReset();
+    resolveModelMock.mockReset();
+    completeMock.mockReset();
+    ensureAnthropicFreshMock.mockReset();
+    ensureAnthropicFreshMock.mockResolvedValue(undefined);
+  });
+
+  afterEach(() => {
+    db.close();
+  });
+
+  it("validates only the models with no stored result and keeps the rest", async () => {
+    db.writeValidationReport({
+      validatedAt: "2026-06-23T10:51:14.000Z",
+      models: { "qwen3:30b": { status: "ok", latencyMs: 412 } },
+    });
+    listModelsMock.mockReturnValue([{ id: "qwen3:30b" }, { id: "claude-sonnet-5-5" }]);
+    resolveModelMock.mockImplementation((id: string) => makeResolved({ capability: "chat", id }));
+    completeMock.mockResolvedValue(chatResponse("hello"));
+
+    expect(await validateUnvalidatedModels()).toEqual(["claude-sonnet-5-5"]);
+
+    expect(completeMock).toHaveBeenCalledTimes(1);
+    const stored = await readValidationReport();
+    expect(stored?.validatedAt).toBe("2026-06-23T10:51:14.000Z");
+    expect(stored?.models["qwen3:30b"]).toEqual({ status: "ok", latencyMs: 412 });
+    expect(stored?.models["claude-sonnet-5-5"]?.status).toBe("ok");
+    expect(stored?.models["claude-sonnet-5-5"]?.validatedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+  });
+
+  it("does nothing when every model has a result", async () => {
+    db.writeValidationReport({
+      validatedAt: "2026-06-23T10:51:14.000Z",
+      models: { "qwen3:30b": { status: "ok" } },
+    });
+    listModelsMock.mockReturnValue([{ id: "qwen3:30b" }]);
+
+    expect(await validateUnvalidatedModels()).toEqual([]);
+    expect(completeMock).not.toHaveBeenCalled();
+    expect(ensureAnthropicFreshMock).not.toHaveBeenCalled();
   });
 });

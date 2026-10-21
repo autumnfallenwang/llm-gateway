@@ -106,4 +106,37 @@ describe("validation report", () => {
   it("returns null on an empty DB", () => {
     expect(db.readValidationReport()).toBeNull();
   });
+
+  it("merges new models in without touching the batch, each with its own time", () => {
+    db.writeValidationReport({
+      validatedAt: "2026-06-23T10:51:14.000Z",
+      models: { "qwen3:30b": { status: "ok", latencyMs: 412 } },
+    });
+    db.mergeValidationResults(
+      { "claude-sonnet-5-5": { status: "ok", latencyMs: 900 } },
+      "2026-10-21T05:00:00.000Z",
+    );
+
+    expect(db.readValidationReport()).toEqual({
+      validatedAt: "2026-06-23T10:51:14.000Z",
+      models: {
+        "qwen3:30b": { status: "ok", latencyMs: 412 },
+        "claude-sonnet-5-5": {
+          status: "ok",
+          latencyMs: 900,
+          validatedAt: "2026-10-21T05:00:00.000Z",
+        },
+      },
+    });
+  });
+
+  it("replaces a merged model's earlier row", () => {
+    db.mergeValidationResults({ a: { status: "error", error: "x" } }, "2026-10-21T05:00:00.000Z");
+    db.mergeValidationResults({ a: { status: "ok" } }, "2026-10-22T05:00:00.000Z");
+    // The first merge into an empty DB set the batch time, so the later row reports its own.
+    expect(db.readValidationReport()?.models.a).toEqual({
+      status: "ok",
+      validatedAt: "2026-10-22T05:00:00.000Z",
+    });
+  });
 });
