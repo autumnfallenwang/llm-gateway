@@ -37,8 +37,8 @@ function createMockEventStream() {
 
 const isContextOverflowMock = vi.fn().mockReturnValue(false);
 
-vi.mock("@mariozechner/pi-ai", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@mariozechner/pi-ai")>();
+vi.mock("../src/lib/pi", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../src/lib/pi")>();
   return {
     ...actual,
     complete: vi.fn().mockResolvedValue(MOCK_ASSISTANT_MESSAGE),
@@ -557,7 +557,7 @@ describe("Backend error responses", () => {
 
   it("returns 400 for context overflow errors", async () => {
     await mockResolveModel();
-    const { complete } = await import("@mariozechner/pi-ai");
+    const { complete } = await import("../src/lib/pi");
     vi.mocked(complete).mockResolvedValueOnce({
       ...MOCK_ASSISTANT_MESSAGE,
       stopReason: "error",
@@ -575,7 +575,7 @@ describe("Backend error responses", () => {
 
   it("returns 429 for rate limit errors", async () => {
     await mockResolveModel();
-    const { complete } = await import("@mariozechner/pi-ai");
+    const { complete } = await import("../src/lib/pi");
     vi.mocked(complete).mockResolvedValueOnce({
       ...MOCK_ASSISTANT_MESSAGE,
       stopReason: "error",
@@ -592,7 +592,7 @@ describe("Backend error responses", () => {
 
   it("returns 500 for generic backend errors", async () => {
     await mockResolveModel();
-    const { complete } = await import("@mariozechner/pi-ai");
+    const { complete } = await import("../src/lib/pi");
     vi.mocked(complete).mockResolvedValueOnce({
       ...MOCK_ASSISTANT_MESSAGE,
       stopReason: "error",

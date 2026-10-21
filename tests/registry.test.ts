@@ -153,7 +153,15 @@ describe("loadRegistry", () => {
     const models = listModels();
     const anthropicIds = models.filter((m) => m.owned_by === "anthropic").map((m) => m.id);
     expect(anthropicIds.length).toBeGreaterThan(0);
-    expect(anthropicIds).toContain("claude-3-5-haiku-20241022");
+    // The current Claude 5 family, straight from pi-ai's catalog.
+    for (const id of [
+      "claude-opus-5-5",
+      "claude-sonnet-5-5",
+      "claude-haiku-5-5",
+      "claude-fable-5-1",
+    ]) {
+      expect(anthropicIds).toContain(id);
+    }
   });
 
   it("loads Codex models when key is available", async () => {
@@ -323,7 +331,7 @@ describe("resolveModel", () => {
     });
     await loadRegistry({ ollamaBaseUrl: "http://localhost:1" });
 
-    const resolved = resolveModel("claude-3-5-haiku-20241022");
+    const resolved = resolveModel("claude-sonnet-5-5");
     expect(resolved).toBeDefined();
     expect(resolved?.provider).toBe("anthropic");
     expect(resolved?.apiKey).toBe("anthropic-tok-test");

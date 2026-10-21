@@ -1,4 +1,3 @@
-import { complete } from "@mariozechner/pi-ai";
 import {
   DEFAULT_SYSTEM_PROMPT,
   VALIDATION_CONCURRENCY,
@@ -7,6 +6,7 @@ import {
 } from "../config.js";
 import { getDb } from "../lib/db.js";
 import { log } from "../lib/logger.js";
+import { complete } from "../lib/pi.js";
 import type { ModelValidationResult, ValidateResponse } from "../schemas/validate.js";
 import { ensureAnthropicFresh } from "./auth.js";
 import { createEmbedding } from "./embeddings.js";

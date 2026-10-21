@@ -1,9 +1,9 @@
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { refreshAnthropicToken } from "@mariozechner/pi-ai/oauth";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { type AppDb, getDb, openDb, setDb } from "../src/lib/db";
+import { refreshAnthropicToken } from "../src/lib/pi";
 import {
   ensureAnthropicFresh,
   getAnthropicKey,
@@ -12,8 +12,8 @@ import {
   loadCredentials,
 } from "../src/services/auth";
 
-vi.mock("@mariozechner/pi-ai/oauth", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@mariozechner/pi-ai/oauth")>();
+vi.mock("../src/lib/pi", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../src/lib/pi")>();
   return {
     ...actual,
     refreshAnthropicToken: vi.fn(),

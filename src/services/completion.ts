@@ -1,3 +1,5 @@
+import { DEFAULT_SYSTEM_PROMPT, OLLAMA_NUM_CTX } from "../config.js";
+import { BackendError } from "../errors.js";
 import {
   type AssistantMessage,
   type Context,
@@ -7,12 +9,12 @@ import {
   type Message,
   stream,
   type TextContent,
+  type Tool,
+  type ToolCall,
   type Usage,
-} from "@mariozechner/pi-ai";
-import { DEFAULT_SYSTEM_PROMPT, OLLAMA_NUM_CTX } from "../config.js";
-import { BackendError } from "../errors.js";
+} from "../lib/pi.js";
 import type { ChatCompletionRequest, ChatCompletionResponse } from "../routes/chat.js";
-import type { ContentPart } from "../schemas/chat.js";
+import type { ChatMessage, ChatTool, ChatToolChoice, ContentPart } from "../schemas/chat.js";
 import { applyVisionFallback } from "./image/fallback.js";
 import { loadImage } from "./image/load.js";
 import { preprocessImage } from "./image/preprocess.js";
@@ -70,15 +72,108 @@ async function processImagePart(
   };
 }
 
+function invalidRequest(message: string, code: string, cause?: unknown): BackendError {
+  return new BackendError(message, 400, "invalid_request_error", code, { cause });
+}
+
+type AssistantChatMessage = Extract<ChatMessage, { role: "assistant" }>;
+type RequestToolCall = NonNullable<AssistantChatMessage["tool_calls"]>[number];
+
+function parseToolArguments(call: RequestToolCall): ToolCall["arguments"] {
+  const raw = call.function.arguments.trim();
+  if (!raw) return {};
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (err) {
+    throw invalidRequest(
+      `tool call '${call.id}' has arguments that aren't valid JSON`,
+      "invalid_tool_arguments",
+      err,
+    );
+  }
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+    throw invalidRequest(
+      `tool call '${call.id}' arguments must be a JSON object`,
+      "invalid_tool_arguments",
+    );
+  }
+  return parsed as ToolCall["arguments"];
+}
+
+function toTool(tool: ChatTool): Tool {
+  return {
+    name: tool.function.name,
+    description: tool.function.description ?? "",
+    // JSON Schema at runtime; pi-ai types it as a TypeBox schema.
+    parameters: (tool.function.parameters ?? {
+      type: "object",
+      properties: {},
+    }) as Tool["parameters"],
+  };
+}
+
+type ToolChatMessage = Extract<ChatMessage, { role: "tool" }>;
+
+function toAssistantMessage(
+  msg: AssistantChatMessage,
+  resolved: ResolvedModel,
+  toolNames: Map<string, string>,
+): Message {
+  const text = msg.content == null ? "" : extractTextContent(msg.content);
+  const calls = msg.tool_calls ?? [];
+  const content: (TextContent | ToolCall)[] = [];
+  if (text || calls.length === 0) content.push({ type: "text", text });
+  for (const call of calls) {
+    toolNames.set(call.id, call.function.name);
+    content.push({
+      type: "toolCall",
+      id: call.id,
+      name: call.function.name,
+      arguments: parseToolArguments(call),
+    });
+  }
+  return {
+    role: "assistant",
+    content,
+    api: resolved.model.api,
+    provider: resolved.model.provider,
+    model: resolved.model.id,
+    usage: EMPTY_USAGE,
+    stopReason: calls.length > 0 ? "toolUse" : "stop",
+    timestamp: Date.now(),
+  };
+}
+
+function toToolResult(msg: ToolChatMessage, toolNames: Map<string, string>): Message {
+  const toolName = toolNames.get(msg.tool_call_id);
+  if (!toolName) {
+    throw invalidRequest(
+      `tool message answers '${msg.tool_call_id}', which no earlier assistant message called`,
+      "invalid_tool_call_id",
+    );
+  }
+  return {
+    role: "toolResult",
+    toolCallId: msg.tool_call_id,
+    toolName,
+    content: [{ type: "text", text: extractTextContent(msg.content) }],
+    isError: false,
+    timestamp: Date.now(),
+  };
+}
+
 async function buildContext(
   body: ChatCompletionRequest,
   resolved: ResolvedModel,
 ): Promise<Context> {
   let systemPrompt: string | undefined;
   const messages: Message[] = [];
+  // A tool result names only the call it answers; the backends also want the tool's name.
+  const toolNames = new Map<string, string>();
 
   for (const msg of body.messages) {
-    if (msg.role === "system") {
+    if (msg.role === "system" || msg.role === "developer") {
       systemPrompt ??= extractTextContent(msg.content);
       continue;
     }
@@ -103,16 +198,9 @@ async function buildContext(
         timestamp: Date.now(),
       });
     } else if (msg.role === "assistant") {
-      messages.push({
-        role: "assistant",
-        content: [{ type: "text", text: extractTextContent(msg.content) }],
-        api: resolved.model.api,
-        provider: resolved.model.provider,
-        model: resolved.model.id,
-        usage: EMPTY_USAGE,
-        stopReason: "stop",
-        timestamp: Date.now(),
-      });
+      messages.push(toAssistantMessage(msg, resolved, toolNames));
+    } else {
+      messages.push(toToolResult(msg, toolNames));
     }
   }
 
@@ -121,7 +209,18 @@ async function buildContext(
     systemPrompt = DEFAULT_SYSTEM_PROMPT;
   }
 
-  return { systemPrompt, messages };
+  const tools = body.tools?.map(toTool);
+  return { systemPrompt, messages, ...(tools?.length ? { tools } : {}) };
+}
+
+/** OpenAI's tool_choice in the form each backend API expects. */
+function toolChoiceFor(api: string, choice: ChatToolChoice): unknown {
+  if (api === "anthropic-messages") {
+    if (typeof choice === "string") return choice === "required" ? "any" : choice;
+    return { type: "tool", name: choice.function.name };
+  }
+  if (api === "openai-completions") return choice;
+  return undefined;
 }
 
 function buildOptions(
@@ -132,6 +231,10 @@ function buildOptions(
   if (body.temperature !== undefined) opts.temperature = body.temperature;
   if (body.max_tokens !== undefined) opts.maxTokens = body.max_tokens;
   opts.apiKey = resolved.apiKey ?? "ollama";
+  if (body.tools?.length && body.tool_choice) {
+    const toolChoice = toolChoiceFor(resolved.model.api, body.tool_choice);
+    if (toolChoice !== undefined) opts.toolChoice = toolChoice;
+  }
 
   if (resolved.provider === "ollama") {
     opts.onPayload = (payload: Record<string, unknown>) => {

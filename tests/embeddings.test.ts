@@ -1,6 +1,6 @@
-import type { Model } from "@mariozechner/pi-ai";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { BackendError } from "../src/errors";
+import type { Model } from "../src/lib/pi";
 import { createEmbedding } from "../src/services/embeddings";
 import type { ResolvedModel } from "../src/services/registry";
 

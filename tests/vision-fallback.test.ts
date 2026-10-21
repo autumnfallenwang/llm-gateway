@@ -1,5 +1,5 @@
-import type { AssistantMessage } from "@mariozechner/pi-ai";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type { AssistantMessage } from "../src/lib/pi";
 import type { ChatCompletionRequest } from "../src/routes/chat";
 import type { ResolvedModel } from "../src/services/registry";
 
@@ -10,8 +10,8 @@ const resolveModelMock = vi.fn();
 const loadImageMock = vi.fn();
 const preprocessImageMock = vi.fn();
 
-vi.mock("@mariozechner/pi-ai", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@mariozechner/pi-ai")>();
+vi.mock("../src/lib/pi", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../src/lib/pi")>();
   return { ...actual, complete: completeMock };
 });
 

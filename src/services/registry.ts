@@ -1,6 +1,6 @@
-import { getModels, type Model } from "@mariozechner/pi-ai";
 import { log } from "../lib/logger.js";
 import { fetchOllamaModels, type OllamaModelCapabilities } from "../lib/ollama.js";
+import { getModels, type Model } from "../lib/pi.js";
 import { getAnthropicKey, getCodexKey } from "./auth.js";
 
 // ── Types ───────────────────────────────────────────────────────────────────

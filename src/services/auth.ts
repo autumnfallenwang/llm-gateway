@@ -1,6 +1,4 @@
 import { readFile } from "node:fs/promises";
-// OAuth helpers moved to the `/oauth` subpath in pi-ai 0.73 (no longer root-exported).
-import { refreshAnthropicToken } from "@mariozechner/pi-ai/oauth";
 import {
   ANTHROPIC_REFRESH_SKEW_MS,
   ANTHROPIC_SEED_PATH,
@@ -9,6 +7,7 @@ import {
 } from "../config.js";
 import { getDb } from "../lib/db.js";
 import { log } from "../lib/logger.js";
+import { refreshAnthropicToken } from "../lib/pi.js";
 
 // ── Types ───────────────────────────────────────────────────────────────────
 

@@ -12,7 +12,7 @@ export const chatCompletionRoute = createRoute({
   operationId: "createChatCompletion",
   summary: "Create a chat completion",
   description:
-    "Generates a model response for the given conversation. Supports Ollama, Anthropic, and Codex backends. Set stream=true for Server-Sent Events streaming.",
+    "Generates a model response for the given conversation. Supports Ollama, Anthropic, and Codex backends, and OpenAI tool calling (tools, tool_choice, tool messages). Set stream=true for Server-Sent Events streaming.",
   tags: ["Chat"],
   request: {
     body: {
@@ -42,6 +42,28 @@ export const chatCompletionRoute = createRoute({
                 model: "gpt-5.1",
                 messages: [{ role: "user", content: "Explain black holes in two sentences." }],
                 max_tokens: 128,
+              },
+            },
+            "anthropic-tools": {
+              summary: "Anthropic tool calling — Claude Sonnet 5.5",
+              value: {
+                model: "claude-sonnet-5-5",
+                messages: [{ role: "user", content: "What's the weather in Boston?" }],
+                tools: [
+                  {
+                    type: "function",
+                    function: {
+                      name: "get_weather",
+                      description: "Current weather for a city",
+                      parameters: {
+                        type: "object",
+                        properties: { city: { type: "string" } },
+                        required: ["city"],
+                      },
+                    },
+                  },
+                ],
+                max_tokens: 256,
               },
             },
             "ollama-stream": {
