@@ -40,7 +40,7 @@ Common ops (no project-specific CLI needed):
 - `kubectl rollout restart deploy/llmgw -n llmgw` — restart pod
 - `kubectl get app llmgw -n argocd` — sync state
 - `gh workflow run build.yml` — force rebuild without a code change
-- `POST http://llmgw.arch.internal/v1/models/validate` — reload the registry (picks up new `ollama pull` models / new provider IDs since boot) + re-run model validation
+- `POST http://llmgw.arch.internal/v1/models/validate` — reload the registry (picks up new `ollama pull` models / new provider IDs since boot) + re-run validation for **every** model (loads each Ollama model on the GPU). A restart validates just the models with no result yet
 
 Dependency upkeep is automated via `.github/dependabot.yml` (weekly PRs for npm +
 Docker base + GHA actions; pi-ai grouped separately so new model IDs land in
@@ -62,6 +62,7 @@ Centralized in `src/config.ts`. Key env var overrides:
 | `CODEX_CREDENTIALS_PATH` | `~/.codex/auth.json` | Codex auth file |
 | `CODEX_ENABLED` | `true` | Load Codex credentials + register Codex models. Cluster sets `false` (no subscription) so Codex models don't surface as validation errors; flip to re-enable. |
 | `VALIDATION_CONCURRENCY` | `3` | Parallel model validation limit |
+| `VALIDATE_NEW_MODELS_ON_BOOT` | `true` | At startup, validate (in the background) only the models with no stored result, so new Ollama pulls and pi-ai IDs don't sit at `status: "unknown"`. `false` to skip. |
 | `VALIDATION_TIMEOUT_MS` | `60000` | Per-model validation timeout |
 | `OLLAMA_SHOW_TIMEOUT_MS` | `2000` | Per-model /api/show timeout |
 | `VISION_FALLBACK_OLLAMA` | `qwen3-vl:8b` | Ollama family vision fallback model |

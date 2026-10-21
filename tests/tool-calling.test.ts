@@ -291,27 +291,79 @@ describe("a tool-call round trip", () => {
 
 describe("tool_choice", () => {
   const base = { tools: [LAB_TOOL], messages: [{ role: "user", content: "hi" }] };
+  const MEDS = {
+    type: "function" as const,
+    function: { name: "list_medications", description: "Active medications" },
+  };
+  const named = { type: "function", function: { name: "list_medications" } };
+  const toolNames = (context: Context) => context.tools?.map((t) => t.name);
 
-  it("maps to Anthropic's names", async () => {
-    for (const [choice, expected] of [
-      ["auto", "auto"],
-      ["none", "none"],
-      ["required", "any"],
-      [
-        { type: "function", function: { name: "get_latest_lab" } },
-        { type: "tool", name: "get_latest_lab" },
-      ],
-    ] as const) {
-      const { options } = await contextFor({ ...base, tool_choice: choice });
-      expect(options.toolChoice).toEqual(expected);
+  it("passes auto and none to Anthropic", async () => {
+    for (const choice of ["auto", "none"] as const) {
+      const { context, options } = await contextFor({ ...base, tool_choice: choice });
+      expect(options.toolChoice).toBe(choice);
+      expect(toolNames(context)).toEqual(["get_latest_lab"]);
       vi.clearAllMocks();
     }
   });
 
-  it("passes OpenAI's form through to OpenAI-compatible backends", async () => {
-    const choice = { type: "function", function: { name: "get_latest_lab" } };
-    const { options } = await contextFor({ ...base, tool_choice: choice }, "openai-completions");
-    expect(options.toolChoice).toEqual(choice);
+  it("sends required over several tools to Anthropic as any", async () => {
+    const { context, options } = await contextFor({
+      ...base,
+      tools: [LAB_TOOL, MEDS],
+      tool_choice: "required",
+    });
+    expect(options.toolChoice).toBe("any");
+    expect(toolNames(context)).toEqual(["get_latest_lab", "list_medications"]);
+  });
+
+  // Opus 5 and Haiku 5.5 ignored a named Anthropic tool_choice live; one tool plus "any" pins it.
+  it("offers a named tool on its own to Anthropic, with any", async () => {
+    const { context, options } = await contextFor({
+      ...base,
+      tools: [LAB_TOOL, MEDS],
+      tool_choice: named,
+    });
+    expect(options.toolChoice).toBe("any");
+    expect(toolNames(context)).toEqual(["list_medications"]);
+    expect(context.systemPrompt).toBeUndefined();
+  });
+
+  it("passes auto through to Ollama", async () => {
+    const { options } = await contextFor({ ...base, tool_choice: "auto" }, "openai-completions");
+    expect(options.toolChoice).toBe("auto");
+  });
+
+  it("withholds the tools from Ollama for none, which it ignores", async () => {
+    const { context, options } = await contextFor(
+      { ...base, tool_choice: "none" },
+      "openai-completions",
+    );
+    expect(context.tools).toBeUndefined();
+    expect(options).not.toHaveProperty("toolChoice");
+  });
+
+  it("asks Ollama for a named tool in words, with that tool alone", async () => {
+    const { context, options } = await contextFor(
+      { ...base, tools: [LAB_TOOL, MEDS], tool_choice: named },
+      "openai-completions",
+    );
+    expect(options).not.toHaveProperty("toolChoice");
+    expect(toolNames(context)).toEqual(["list_medications"]);
+    expect(context.systemPrompt).toBe(
+      "You must respond by calling the `list_medications` tool. Do not reply with text alone.",
+    );
+  });
+
+  it("rejects required over several tools on Ollama", async () => {
+    completeMock.mockResolvedValue(reply());
+    const err = await createCompletion(
+      makeResolved("openai-completions"),
+      request({ ...base, tools: [LAB_TOOL, MEDS], tool_choice: "required" }),
+    ).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(BackendError);
+    expect((err as BackendError).errorCode).toBe("unsupported_tool_choice");
+    expect(completeMock).not.toHaveBeenCalled();
   });
 
   it("is ignored when there are no tools", async () => {
@@ -356,17 +408,67 @@ describe("tool_choice on a thinking Claude model", () => {
     }
   });
 
-  it("rejects forcing a tool on a model that always thinks", async () => {
-    for (const choice of ["required", named]) {
-      const err = await createCompletion(
-        thinking(null),
-        request({ ...base, tool_choice: choice }),
-      ).catch((e: unknown) => e);
-      expect(err).toBeInstanceOf(BackendError);
-      expect((err as BackendError).httpStatus).toBe(400);
-      expect((err as BackendError).errorCode).toBe("unsupported_tool_choice");
-    }
+  const MEDS_TOOL = {
+    type: "function" as const,
+    function: { name: "list_medications", description: "Active medications" },
+  };
+
+  async function callFor(resolved: ReturnType<typeof thinking>, body: Record<string, unknown>) {
+    completeMock.mockResolvedValue(reply());
+    await createCompletion(resolved, request(body));
+    const [, context, options] = completeMock.mock.calls[0] as [
+      unknown,
+      Context,
+      Record<string, unknown>,
+    ];
+    return { context, options };
+  }
+
+  it("asks for a named tool in words on a model that always thinks", async () => {
+    const { context, options } = await callFor(thinking(null), {
+      tools: [LAB_TOOL, MEDS_TOOL],
+      tool_choice: { type: "function", function: { name: "list_medications" } },
+      messages: [
+        { role: "system", content: "Be brief." },
+        { role: "user", content: "hi" },
+      ],
+    });
+    expect(options.toolChoice).toBe("auto");
+    expect(options).not.toHaveProperty("thinkingEnabled");
+    expect(context.tools?.map((t) => t.name)).toEqual(["list_medications"]);
+    expect(context.systemPrompt).toBe(
+      "Be brief.\n\nYou must respond by calling the `list_medications` tool. Do not reply with text alone.",
+    );
+  });
+
+  it("treats required over a single tool as naming it", async () => {
+    const { context, options } = await callFor(thinking(null), {
+      ...base,
+      tool_choice: "required",
+    });
+    expect(options.toolChoice).toBe("auto");
+    expect(context.tools?.map((t) => t.name)).toEqual(["get_latest_lab"]);
+    expect(context.systemPrompt).toContain("calling the `get_latest_lab` tool");
+  });
+
+  it("rejects required over several tools on a model that always thinks", async () => {
+    const err = await createCompletion(
+      thinking(null),
+      request({ ...base, tools: [LAB_TOOL, MEDS_TOOL], tool_choice: "required" }),
+    ).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(BackendError);
+    expect((err as BackendError).httpStatus).toBe(400);
+    expect((err as BackendError).errorCode).toBe("unsupported_tool_choice");
     expect(completeMock).not.toHaveBeenCalled();
+  });
+
+  it("rejects a tool_choice naming a tool the request doesn't have", async () => {
+    const err = await rejection({
+      ...base,
+      tool_choice: { type: "function", function: { name: "delete_record" } },
+    });
+    expect(err.httpStatus).toBe(400);
+    expect(err.errorCode).toBe("invalid_tool_choice");
   });
 
   it("still allows auto on a model that always thinks", async () => {

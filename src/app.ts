@@ -317,7 +317,7 @@ app.openapi(modelsRoute, async (c) => {
       ...m,
       status: result.status,
       status_detail: result.error ?? null,
-      validated_at: report.validatedAt,
+      validated_at: result.validatedAt ?? report.validatedAt,
       ...(result.embeddingDim !== undefined && { embedding_dimensions: result.embeddingDim }),
     };
   });

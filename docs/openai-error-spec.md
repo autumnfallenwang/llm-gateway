@@ -67,7 +67,8 @@ The gateway emits these additional codes that aren't in OpenAI's vocabulary but 
 | `provider_unsupported` | 501 | `invalid_request_error` | Provider does not offer this endpoint (e.g. Anthropic embeddings) | `/v1/embeddings` (Phase 5) |
 | `wrong_capability` | 400 | `invalid_request_error` | Embedding model used at chat endpoint, or chat model used at embeddings endpoint | both routes (Phase 5) |
 | `invalid_input` | 400 | `invalid_request_error` | The upstream rejected the request (e.g. an empty embeddings array, or an Anthropic `400 invalid_request_error`) | `/v1/embeddings` (Phase 5), `/v1/chat/completions` (Phase 9) |
-| `unsupported_tool_choice` | 400 | `invalid_request_error` | `tool_choice` forces a tool on a Claude model that always thinks (Anthropic allows only `auto`/`none` while thinking) | `/v1/chat/completions` (Phase 9) |
+| `unsupported_tool_choice` | 400 | `invalid_request_error` | `tool_choice: "required"` over several tools on a backend that can't take a forced choice: Ollama (ignores `tool_choice`) or a Claude model that always thinks (Sonnet 5.5, Opus 5.5, Fable 5/5.1). A named tool, or `required` with one tool, is asked for in the system prompt instead | `/v1/chat/completions` (Phase 9) |
+| `invalid_tool_choice` | 400 | `invalid_request_error` | `tool_choice` names a function that isn't in `tools` | `/v1/chat/completions` (Phase 9) |
 | `invalid_tool_call_id` | 400 | `invalid_request_error` | A `tool` message answers a call no earlier assistant message made | `/v1/chat/completions` (Phase 9) |
 | `invalid_tool_arguments` | 400 | `invalid_request_error` | An assistant `tool_calls` entry has arguments that aren't a JSON object | `/v1/chat/completions` (Phase 9) |
 

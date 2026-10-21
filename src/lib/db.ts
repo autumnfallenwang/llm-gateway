@@ -23,6 +23,8 @@ export interface AppDb {
 
   readValidationReport(): ValidateResponse | null;
   writeValidationReport(report: ValidateResponse): void;
+  /** Adds or replaces these models' rows, leaving the rest of the report as it is. */
+  mergeValidationResults(models: ValidateResponse["models"], validatedAt: string): void;
 
   raw: Database.Database;
   close(): void;
@@ -34,7 +36,13 @@ interface ValidationRow {
   latency_ms: number | null;
   error: string | null;
   embedding_dim: number | null;
+  validated_at: number;
 }
+
+// A full run stamps its rows with the batch timestamp (rows written before 0.4.1 got the
+// write time, a moment later); a row further off than this was merged in afterwards and
+// reports its own time.
+const SAME_BATCH_MS = 60_000;
 
 // ── Schema ──────────────────────────────────────────────────────────────────
 
@@ -78,12 +86,15 @@ function makeAppDb(db: Database.Database): AppDb {
   );
 
   const listValidationStmt = db.prepare(
-    "SELECT model, status, latency_ms, error, embedding_dim FROM model_validation",
+    "SELECT model, status, latency_ms, error, embedding_dim, validated_at FROM model_validation",
   );
   const deleteValidationStmt = db.prepare("DELETE FROM model_validation");
   const insertValidationStmt = db.prepare(
     `INSERT INTO model_validation (model, status, latency_ms, error, embedding_dim, validated_at)
-     VALUES (?, ?, ?, ?, ?, ?)`,
+     VALUES (?, ?, ?, ?, ?, ?)
+     ON CONFLICT(model) DO UPDATE SET status = excluded.status, latency_ms = excluded.latency_ms,
+       error = excluded.error, embedding_dim = excluded.embedding_dim,
+       validated_at = excluded.validated_at`,
   );
 
   const readMetaStmt = db.prepare("SELECT value FROM meta WHERE key = ?");
@@ -126,19 +137,42 @@ function makeAppDb(db: Database.Database): AppDb {
       if (!batchIso) return null;
       const rows = listValidationStmt.all() as ValidationRow[];
       if (rows.length === 0) return null;
+      const batchMs = Date.parse(batchIso);
       const models: Record<string, ModelValidationResult> = {};
       for (const r of rows) {
         const entry: ModelValidationResult = { status: r.status as "ok" | "error" };
         if (r.latency_ms !== null) entry.latencyMs = r.latency_ms;
         if (r.error !== null) entry.error = r.error;
         if (r.embedding_dim !== null) entry.embeddingDim = r.embedding_dim;
+        if (Math.abs(r.validated_at - batchMs) > SAME_BATCH_MS) {
+          entry.validatedAt = new Date(r.validated_at).toISOString();
+        }
         models[r.model] = entry;
       }
       return { validatedAt: batchIso, models };
     },
 
+    mergeValidationResults(models, validatedAt) {
+      const at = Date.parse(validatedAt);
+      db.transaction(() => {
+        for (const [model, result] of Object.entries(models)) {
+          insertValidationStmt.run(
+            model,
+            result.status,
+            result.latencyMs ?? null,
+            result.error ?? null,
+            result.embeddingDim ?? null,
+            at,
+          );
+        }
+        if (!readMetaStmt.get(META_VALIDATION_BATCH_ISO)) {
+          writeMetaStmt.run(META_VALIDATION_BATCH_ISO, validatedAt);
+        }
+      })();
+    },
+
     writeValidationReport(report) {
-      const batchTs = Date.now();
+      const batchTs = Date.parse(report.validatedAt) || Date.now();
       const writeTx = db.transaction((rep: ValidateResponse) => {
         deleteValidationStmt.run();
         for (const [model, result] of Object.entries(rep.models)) {

@@ -16,6 +16,10 @@ export const ModelValidationResultSchema = z.object({
     description:
       "Dimension of the returned embedding vector, present when an embedding model validated successfully",
   }),
+  validatedAt: z.string().optional().openapi({
+    description:
+      "When this model was validated, if not with the batch (a model added since the last full run)",
+  }),
 });
 
 export const ValidateResponseSchema = z.object({
