@@ -232,6 +232,19 @@ describe("createEmbedding: Ollama passthrough", () => {
     expect(init?.signal).toBe(controller.signal);
   });
 
+  // docs/model-ids.md: the client may name the model `ollama/bge-m3:latest`.
+  it("sends Ollama the model's own ID, and echoes the ID the request named", async () => {
+    fetchMock.mockResolvedValueOnce(ollamaResponse(HAPPY_RESPONSE));
+    const resolved = makeResolved({ provider: "ollama", capability: "embedding" });
+
+    const result = await createEmbedding(resolved, { model: "ollama/bge-m3:latest", input: "hi" });
+
+    const sent = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body));
+    expect(sent.model).toBe("bge-m3:latest");
+    expect(result.model).toBe("ollama/bge-m3:latest");
+    expect(result.data).toEqual(HAPPY_RESPONSE.data);
+  });
+
   it("does not mutate the request body before forwarding", async () => {
     const resolved = makeResolved({ provider: "ollama", capability: "embedding" });
     fetchMock.mockResolvedValueOnce(ollamaResponse(HAPPY_RESPONSE));

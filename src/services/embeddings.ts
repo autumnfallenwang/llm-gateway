@@ -50,7 +50,8 @@ export async function createEmbedding(
     res = await fetch(`${OLLAMA_BASE_URL}/v1/embeddings`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
+      // Ollama knows the model by its own ID, not a qualified `ollama/…` one (model-ids.md).
+      body: JSON.stringify({ ...body, model: resolved.model.id }),
       signal: options?.signal,
     });
   } catch (err) {
@@ -88,5 +89,7 @@ export async function createEmbedding(
     throw new BackendError(message, 500, "server_error", "server_error");
   }
 
-  return (await res.json()) as EmbeddingsResponse;
+  // Echo the model the request named, as chat does: Ollama echoes its own ID.
+  const json = (await res.json()) as EmbeddingsResponse;
+  return { ...json, model: body.model };
 }
