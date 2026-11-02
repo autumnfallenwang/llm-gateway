@@ -42,6 +42,8 @@ const RATE_LIMIT_PATTERN = /rate.limit|usage.limit|too many requests|429/i;
 const BAD_REQUEST_PATTERN = /^400\b|invalid_request_error/;
 // Codex's answer for a catalog model the ChatGPT plan doesn't include (or that's retired).
 const NOT_ON_PLAN_PATTERN = /not supported when using Codex with a ChatGPT account/i;
+// A prepaid account out of money: DeepSeek's `402: {"message":"Insufficient Balance",...}`.
+const NO_BALANCE_PATTERN = /^402\b|insufficient.balance/i;
 
 /** The model's safety classifiers declined (Anthropic `stop_reason: "refusal"`). */
 function isRefusal(result: AssistantMessage): boolean {
@@ -85,6 +87,9 @@ function throwIfBackendError(result: AssistantMessage): void {
     throw new BackendError(msg, 404, "invalid_request_error", "model_not_found", {
       param: "model",
     });
+  }
+  if (NO_BALANCE_PATTERN.test(msg)) {
+    throw new BackendError(msg, 429, "insufficient_quota", "insufficient_quota");
   }
   if (RATE_LIMIT_PATTERN.test(msg)) {
     throw new BackendError(msg, 429, "rate_limit_exceeded", "rate_limit_exceeded");
@@ -268,7 +273,8 @@ function forcedToolName(choice: ChatToolChoice, tools: ChatTool[]): string | und
  * Ollama ignores tool_choice. Anthropic accepts only "auto" or "none" while a model
  * thinks, and Sonnet 5.5, Opus 5.5 and Fable 5/5.1 can't stop (`thinkingLevelMap.off`
  * is null); the other thinking Claude models get thinking turned off instead. Codex
- * takes "required" (checked live 2026-11-01).
+ * takes "required" (checked live 2026-11-01), and so does DeepSeek while it isn't thinking
+ * (2026-11-02; its thinking mode rejects a forced tool_choice with a 400).
  */
 function cannotForce(model: ResolvedModel["model"]): string | undefined {
   if (model.provider === "ollama") return "Ollama ignores tool_choice";
@@ -292,7 +298,8 @@ function cannotForce(model: ResolvedModel["model"]): string | undefined {
  * - "required" over several tools goes to Anthropic as "any" and to Codex as "required";
  *   where it can't be sent, asking in words got 14/24 (Claude) and 3/6 (Ollama), so it's
  *   a 400.
- * - Codex gets a forced single tool the Anthropic way too: that tool alone, "required".
+ * - Codex and DeepSeek get a forced single tool the Anthropic way too: that tool alone,
+ *   "required". DeepSeek's thinking is turned off to force one, as Anthropic's is.
  * - "none" withholds the tools from Ollama, which otherwise calls them anyway.
  */
 function withToolChoice(
@@ -347,7 +354,10 @@ function withToolChoice(
     const thinkingOff = model.reasoning ? { thinkingEnabled: false } : {};
     return { context: pinned, options: { ...options, ...thinkingOff, toolChoice: "any" } };
   }
-  return { context: pinned, options: { ...options, toolChoice: "required" } };
+  // pi-ai thinks on DeepSeek exactly when a reasoning level is set.
+  const forced: Record<string, unknown> = { ...options, toolChoice: "required" };
+  if (resolved.provider === "deepseek") forced.reasoningEffort = undefined;
+  return { context: pinned, options: forced };
 }
 
 function buildOptions(

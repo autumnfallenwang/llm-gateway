@@ -7,6 +7,7 @@ const PROVIDER_LABELS: Record<string, string> = {
   ollama: "ollama",
   anthropic: "anthropic",
   codex: "openai-codex",
+  deepseek: "deepseek",
 };
 
 interface UpstreamError {

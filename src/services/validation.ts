@@ -8,7 +8,7 @@ import { getDb } from "../lib/db.js";
 import { log } from "../lib/logger.js";
 import { complete } from "../lib/pi.js";
 import type { ModelValidationResult, ValidateResponse } from "../schemas/validate.js";
-import { ensureAnthropicFresh, ensureCodexFresh } from "./auth.js";
+import { ensureAnthropicFresh, ensureHostCredentialsFresh } from "./auth.js";
 import { createEmbedding } from "./embeddings.js";
 import { listModels, type ResolvedModel, resolveModel } from "./registry.js";
 
@@ -158,8 +158,8 @@ async function validateModels(
       "Anthropic refresh failed before validation — Anthropic models will report stale-token errors",
     );
   }
-  // Same for Codex: pick up a login the host's Codex client refreshed since boot.
-  await ensureCodexFresh();
+  // Same for the host-file credentials: pick up a Codex login or DeepSeek key changed since boot.
+  await ensureHostCredentialsFresh();
 
   const tasks = ids.map((id) => async () => {
     const resolved = resolveModel(id);

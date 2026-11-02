@@ -402,6 +402,60 @@ describe("tool_choice", () => {
     expect(toolNames(context)).toEqual(["list_medications"]);
   });
 
+  // DeepSeek takes "required" while not thinking; its thinking mode rejects a forced choice.
+  describe("on DeepSeek", () => {
+    function deepseekResolved() {
+      const resolved = makeResolved("openai-completions");
+      return {
+        ...resolved,
+        model: { ...resolved.model, provider: "deepseek", reasoning: true },
+        provider: "deepseek" as const,
+      };
+    }
+
+    async function deepseekCall(body: Record<string, unknown>) {
+      completeMock.mockResolvedValue(reply());
+      await createCompletion(deepseekResolved() as never, request(body));
+      const [, context, options] = completeMock.mock.calls[0] as [
+        unknown,
+        Context,
+        Record<string, unknown>,
+      ];
+      return { context, options };
+    }
+
+    it("offers a named tool on its own, with required", async () => {
+      const { context, options } = await deepseekCall({
+        ...base,
+        tools: [LAB_TOOL, MEDS],
+        tool_choice: named,
+      });
+      expect(options.toolChoice).toBe("required");
+      expect(toolNames(context)).toEqual(["list_medications"]);
+    });
+
+    it("turns thinking off to force a tool", async () => {
+      const { options } = await deepseekCall({
+        ...base,
+        tools: [LAB_TOOL, MEDS],
+        tool_choice: "required",
+        reasoning_effort: "high",
+      });
+      expect(options.toolChoice).toBe("required");
+      expect(options.reasoningEffort).toBeUndefined();
+    });
+
+    it("keeps thinking for auto", async () => {
+      const { options } = await deepseekCall({
+        ...base,
+        tool_choice: "auto",
+        reasoning_effort: "high",
+      });
+      expect(options.toolChoice).toBe("auto");
+      expect(options.reasoningEffort).toBe("high");
+    });
+  });
+
   it("is ignored when there are no tools", async () => {
     const { options } = await contextFor({
       tool_choice: "required",

@@ -24,6 +24,12 @@ function gpt(id: string) {
   return model;
 }
 
+function deepseek(id: string) {
+  const model = getModels("deepseek").find((m) => m.id === id);
+  if (!model) throw new Error(`${id} not in the catalog`);
+  return model;
+}
+
 afterEach(() => {
   vi.clearAllMocks();
   vi.useRealTimers();
@@ -134,6 +140,22 @@ describe("reasoningOptions", () => {
     expect(opts.thinkingEnabled).toBe(true);
     expect(opts.thinkingBudgetTokens).toBeGreaterThanOrEqual(1024);
     expect(opts.maxTokens as number).toBeGreaterThan(opts.thinkingBudgetTokens as number);
+  });
+
+  // pi-ai's DeepSeek backend thinks exactly when given a level (`thinking: enabled`).
+  it("gives DeepSeek a level, moved to the nearest one the model has", () => {
+    expect(reasoningOptions(deepseek("deepseek-flash"), "low")).toEqual({ reasoningEffort: "low" });
+    // deepseek-v4-pro has only high and max; flash has no medium.
+    expect(reasoningOptions(deepseek("deepseek-v4-pro"), "low")).toEqual({
+      reasoningEffort: "high",
+    });
+    expect(reasoningOptions(deepseek("deepseek-flash"), "medium")).toEqual({
+      reasoningEffort: "high",
+    });
+  });
+
+  it("leaves DeepSeek's thinking off for none", () => {
+    expect(reasoningOptions(deepseek("deepseek-v4-pro"), "none")).toEqual({});
   });
 
   it("leaves models that don't reason alone", () => {

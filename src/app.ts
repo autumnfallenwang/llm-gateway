@@ -9,7 +9,7 @@ import { chatCompletionRoute } from "./routes/chat";
 import { embeddingsRoute } from "./routes/embeddings";
 import { modelsRoute } from "./routes/models";
 import { validateModelsRoute } from "./routes/validate";
-import { ensureAnthropicFresh, ensureCodexFresh } from "./services/auth";
+import { ensureAnthropicFresh, ensureHostCredentialsFresh } from "./services/auth";
 import { createCompletion, createStreamingCompletion } from "./services/completion";
 import { createEmbedding } from "./services/embeddings";
 import { VisionFallbackError } from "./services/image/fallback";
@@ -123,9 +123,9 @@ app.openapi(chatCompletionRoute, async (c) => {
     const refreshed = resolveModel(body.model);
     if (refreshed) resolved = refreshed;
   }
-  // Codex: the host's Codex client refreshes auth.json; pick up a newer token if it has.
-  if (resolved.provider === "codex") {
-    await ensureCodexFresh();
+  // Codex and DeepSeek read host files (the Codex login, the DeepSeek key): pick up a change.
+  if (resolved.provider === "codex" || resolved.provider === "deepseek") {
+    await ensureHostCredentialsFresh(resolved.provider);
     const refreshed = resolveModel(body.model);
     if (refreshed) resolved = refreshed;
   }
@@ -338,8 +338,8 @@ app.openapi(validateModelsRoute, async (c) => {
     // pi-ai bump. The registry is otherwise only built at startup. Non-fatal: if the
     // reload hiccups (e.g. Ollama briefly unreachable) we still validate the current set.
     try {
-      // A Codex login that appeared or changed since boot registers its models too.
-      await ensureCodexFresh();
+      // A Codex login or DeepSeek key that appeared or changed since boot registers too.
+      await ensureHostCredentialsFresh();
       await loadRegistry();
     } catch (err) {
       log.warn(

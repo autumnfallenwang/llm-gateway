@@ -6,28 +6,29 @@
 |---|------|--------|-------|
 | 1 | Project setup | ✅ Done | Hono + Biome + Vitest + tsx, all config files |
 | 2 | Zod schemas | ✅ Done | `src/schemas/{error,chat,models,validate}.ts` |
-| 3 | Auth module | ✅ Done | `src/services/auth.ts` — Anthropic OAuth chain + Codex JWT (re-read when the host refreshes `auth.json`). Gemini dropped in the pi-ai 0.73 upgrade |
+| 3 | Auth module | ✅ Done | `src/services/auth.ts` — Anthropic OAuth chain; Codex JWT and DeepSeek API key as read-only host files (`HostFileCredential`, re-read on change). Gemini dropped in the pi-ai 0.73 upgrade |
 | 4 | Model registry | ✅ Done | `src/services/registry.ts` + `src/lib/ollama.ts` — discover & resolve models |
 | 5 | Completion service | ✅ Done | `src/services/completion.ts` — OpenAI ↔ pi-ai translation, Codex system prompt fallback |
 | 6 | Routes | ✅ Done | `src/routes/{chat,models,validate}.ts` — OpenAPI route defs with request examples |
 | 7 | App + server wiring | ✅ Done | All handlers wired: chat completions, models list (with validation filtering), model validation |
-| 8 | Tests | ✅ Done | 17 test files (incl. the opt-in live `codex-go.poc`), 293 fast / 414 total tests |
+| 8 | Tests | ✅ Done | 18 test files (incl. the opt-in live `codex-go.poc` and `deepseek.poc`), 307 fast tests |
 | 9 | Model validation | ✅ Done | `src/services/validation.ts` — tests every model with real completion, persists report via the SQLite `model_validation` table (Phase 8 / task 40) |
-| 10 | Streaming support | ✅ Done | SSE streaming via `stream: true` — all three backends (Ollama, Anthropic, Codex) |
+| 10 | Streaming support | ✅ Done | SSE streaming via `stream: true` — all four backends (Ollama, Anthropic, Codex, DeepSeek) |
 
 ## What's Working
 
 - `npm run dev` → `:51277`, Swagger UI at `/docs`
 - Full request validation with OpenAI-format errors (`message`, `type`, `param`, `code`)
-- `POST /v1/chat/completions` → routes to Ollama/Anthropic/Codex via pi-ai, returns OpenAI-format response
+- `POST /v1/chat/completions` → routes to Ollama/Anthropic/Codex/DeepSeek via pi-ai, returns OpenAI-format response
 - `POST /v1/chat/completions` with `tools` → OpenAI function calling on Claude, GPT (Codex) and Ollama models (`tool_calls` out, `tool` messages back in), streaming included; `tool_choice` honoured per backend
-- `reasoning_effort` (`none`…`max`) on Claude and GPT models, moved to the nearest level each model has
+- `reasoning_effort` (`none`…`max`) on Claude, GPT and DeepSeek models, moved to the nearest level each model has
+- DeepSeek's metered API (`deepseek-flash`, `deepseek-v4-pro`) with the key in `~/.deepseek/api_key`; thinking off unless `reasoning_effort`; an empty prepaid balance is 429 `insufficient_quota`
 - GPT models through a ChatGPT login (Go plan: `gpt-6-luna`, `gpt-5.6-terra`, `gpt-5.6-luna`); a model the plan lacks is a 404 `model_not_found`; `temperature` is dropped for them (the backend rejects it)
 - A Claude refusal (safety classifiers) answers 200 with `finish_reason: "content_filter"` + `message.refusal`
 - `POST /v1/chat/completions` with `stream: true` → SSE streaming with `chat.completion.chunk` objects, `data: [DONE]` sentinel
 - `GET /v1/models` → returns ALL models with `status` (`ok`/`error`/`unknown`), `status_detail`, `validated_at` fields; includes `context_window` and `max_tokens` per model
 - `POST /v1/models/validate` → tests every registered model, persists results to the SQLite `model_validation` table (`LLMGW_DB_PATH`, default `~/.llm-gateway/state.db`)
-- Model registry discovers Ollama, Anthropic, Codex models at startup; retired Claude IDs drop out on their retirement date (`RETIRES` in `src/lib/pi.ts`)
+- Model registry discovers Ollama, Anthropic, Codex, DeepSeek models at startup; retired Claude IDs drop out on their retirement date (`RETIRES` in `src/lib/pi.ts`)
 - Completion service translates OpenAI ↔ pi-ai (system prompt extraction, message conversion, usage/stopReason mapping)
 - Streaming uses pi-ai `stream()` → async generator yields OpenAI chunk JSON → Hono `streamSSE()` writes SSE events
 - Codex provider gets default system prompt when none provided
@@ -37,8 +38,8 @@
 - `ImageLoadError` returns 400 `invalid_request_error` (not 500) in both streaming and non-streaming paths
 - Ollama `num_ctx` injection: configurable via `OLLAMA_NUM_CTX` env var (default 32768), replaces Ollama's wasteful ~4096 default
 - SQLite-backed state: `src/lib/db.ts` opens `LLMGW_DB_PATH` at startup and runs schema migration. Tables: `credentials_chain` (provider PK), `model_validation` (model PK), `meta` (validation batch ISO). WAL journal.
-- 293 unit tests passing (fast), 0 lint errors, 0 lint warnings
-- `npm run test:fast` for dev iteration (~2s), `npm test` for full e2e validation against live Ollama, `npm run test:codex-poc` for a live check of the ChatGPT login (20/20)
+- 307 unit tests passing (fast), 0 lint errors, 0 lint warnings
+- `npm run test:fast` for dev iteration (~2s), `npm test` for full e2e validation against live Ollama, `npm run test:codex-poc` for a live check of the ChatGPT login (20/20), `npm run test:deepseek-poc` for DeepSeek (14/14)
 
 ## Post-Phase-8 cleanup (done in follow-up commits)
 
@@ -49,13 +50,14 @@
 
 ## What's Next
 
-**Phase 10 is complete on branch `fix/model-coverage-audit`** (backlog #8, see below): merging it deploys and turns GPT on in production. After the roll: `POST /v1/models/validate` on the cluster (expect the 3 Go models `ok`, the other 4 GPT models `error` with the plan reason), and re-run the Claude sweep with `reasoning_effort`. **Phase 9 is complete**: Claude 5 models and OpenAI tool calling (see below). **Phase 8 is complete** — the gateway runs on k3s, ArgoCD watches arch-infra, GHA closes the GitOps loop. After a stability bake (a few days), delete `deploy/compose.yaml` to retire the last compose-era artifact. Keep `deploy/Dockerfile` (still used by GHA).
+**Phase 11 is complete**: DeepSeek's API models (see below and [deepseek-provider.md](deepseek-provider.md)). **Phase 10 is complete** (backlog #8): GPT via ChatGPT Go in production, verified on the cluster (30 models `ok`, the 4 GPT models the plan lacks `error` with the reason; 85/85 live checks). **Phase 9 is complete**: Claude 5 models and OpenAI tool calling (see below). **Phase 8 is complete** — the gateway runs on k3s, ArgoCD watches arch-infra, GHA closes the GitOps loop. After a stability bake (a few days), delete `deploy/compose.yaml` to retire the last compose-era artifact. Keep `deploy/Dockerfile` (still used by GHA).
 
 Next likely targets, in priority order:
 1. **Bake** the new deployment. Let it run for ≥ 2-3 days under normal use and watch Grafana/Loki for unexpected errors before pruning compose.
 2. **Multi-stage Docker build** — current image is ~789MB because `better-sqlite3` leaves ~330MB of `node_modules/*/build/` intermediates. A copy-from builder stage would reclaim most of it. Plan-only follow-up.
 3. **Stale Dependabot PRs** — #1–#6 (GHA actions, Node 26 base image) and #18–#24 (npm) have sat open since May/July. Merge or close them; the raised npm PR limit keeps new pi-ai bumps from being blocked meanwhile.
-4. **Codex token lapse** — the gateway reads the host's `auth.json` and never refreshes it (refresh tokens are single-use; refreshing would log the host's VS Code ChatGPT extension out). If Codex goes unused on the host for 10 days the token lapses; the fix then is a container-private chain on a dedicated `codex login` (backlog #8, item 2b).
+4. **Reasoning gaps** (backlog #10) — Ollama models never reason through the gateway (`reasoning: false` for all), non-streaming responses drop the reasoning text, and there's no client auth (DeepSeek spend is capped only by its prepaid balance).
+5. **Codex token lapse** — the gateway reads the host's `auth.json` and never refreshes it (refresh tokens are single-use; refreshing would log the host's VS Code ChatGPT extension out). If Codex goes unused on the host for 10 days the token lapses; the fix then is a container-private chain on a dedicated `codex login` (backlog #8, item 2b).
 
 See [k3s-migration/01-PLAN.md](k3s-migration/01-PLAN.md) for the full Phase 8 reference if anything needs a re-deploy.
 
@@ -189,6 +191,20 @@ Migrate from 29 ad-hoc `console.log/warn/error` calls to JSON-per-line structure
 - Prometheus metrics + dashboards — different problem (numbers vs events); add when we want trend graphs/alerts.
 - OpenTelemetry — overkill for a single-service gateway; revisit if multi-service tracing matters.
 
+## Phase 11: DeepSeek Provider
+
+Backlog #9; facts and decisions in [deepseek-provider.md](deepseek-provider.md). DeepSeek's API models behind the same OpenAI-compatible API, through pi-ai's `deepseek` provider (its `openai-completions` backend). The first metered backend: a static key, prepaid.
+
+| # | Task | Status | Notes |
+|---|------|--------|-------|
+| 58 | Plan + decisions | ✅ Done | pi-ai rather than a passthrough; the key in one host file; open on the LAN with the prepaid balance as the cap; thinking off by default; both models; images on `deepseek-v4-pro` via the local fallback; no embeddings; opt-in live tests. |
+| 59 | Host key file | ✅ Done | `~/.deepseek/api_key` (dir 700, file 600) from the key that lived only in `~/.zshrc` (mode 644). `~/.zshrc` now exports `DEEPSEEK_API_KEY` from the file, so ccsw works unchanged and the dotfile holds no key. |
+| 60 | Shared host-file credential | ✅ Done | The Codex loader became `HostFileCredential` in `src/services/auth.ts`, used for both the Codex login and the DeepSeek key: read at load, re-read when the mtime changes (`ensureHostCredentialsFresh`, per request, before validation, before the validate route reloads the registry). `DEEPSEEK_CREDENTIALS_PATH`; no file, no models. |
+| 61 | Registry + reasoning | ✅ Done | `deepseek-flash` (text + image) and `deepseek-v4-pro` (text), `owned_by: "deepseek"`, 1M context / 384K output from pi-ai's catalog, which matches DeepSeek's live `/models`. `reasoning_effort` maps to pi-ai's level (`thinking: enabled`); `deepseek-v4-pro` has only high/max. |
+| 62 | Errors + tool_choice | ✅ Done | 402 "Insufficient Balance" → 429 `insufficient_quota`. DeepSeek forces a tool (`required`; a named tool offered alone) but its thinking mode rejects that (400, live), so a forced `tool_choice` turns thinking off. |
+| 63 | Chart | ✅ Done | `hostMounts.deepseek` (`~/.deepseek` → `/home/node/host-deepseek`, read-only, `Directory`) + `DEEPSEEK_CREDENTIALS_PATH`. |
+| 64 | Tests | ✅ Done | 14 new unit tests (307 fast pass). `npm run test:deepseek-poc` 14/14 live: both models, streaming, temperature, reasoning levels and `delta.reasoning`, tool round trips with thinking off and on (client drops the reasoning), forced `tool_choice` while asked to think, image on flash, image to v4-pro through the `qwen3-vl` fallback, 501 for embeddings, validation. |
+
 ## Phase 10: Model Coverage Audit — GPT via ChatGPT Go, Claude upkeep
 
 Backlog #8. GPT worked on a ChatGPT Go login but production served none (`CODEX_ENABLED=false`); a live audit of Claude found it healthy apart from a coming retirement and a few API gaps. Full findings in [backlog.md](backlog.md) #8.
@@ -264,4 +280,5 @@ Phase 4 provider expansion & tooling complete. See tasks 24–27 above.
 Phase 5 embeddings support complete. See tasks 28–32 above. New `POST /v1/embeddings` route, per-capability validator dispatch, `embedding_dimensions` on `/v1/models`. Spec doc + POC at `docs/openai-embeddings-spec.md`.
 Phase 6 Anthropic auth hotfix complete. See tasks 33–37 above. Container-private credential chain via seed/cache split, lazy refresh + single-flight mutex on the request path.
 Phase 7 structured logging complete. See tasks 38–39e above. pino JSON-per-line + per-request access log middleware + Docker log size cap.
+Phase 11 DeepSeek provider complete. See tasks 58–64 above. pi-ai's `deepseek` provider, key in `~/.deepseek/api_key`.
 Phase 10 model coverage audit complete. See tasks 52–57 above. GPT via ChatGPT Go, `reasoning_effort`, Claude refusals and retirements, pi-ai 1.4.0.

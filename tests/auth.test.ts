@@ -6,10 +6,11 @@ import { type AppDb, getDb, openDb, setDb } from "../src/lib/db";
 import { refreshAnthropicToken } from "../src/lib/pi";
 import {
   ensureAnthropicFresh,
-  ensureCodexFresh,
+  ensureHostCredentialsFresh,
   getAnthropicKey,
   getCodexKey,
   getCredentialStatus,
+  getDeepseekKey,
   loadCredentials,
 } from "../src/services/auth";
 
@@ -54,6 +55,10 @@ function codexPath(): string {
   return join(tempDir, "codex.json");
 }
 
+function deepseekPath(): string {
+  return join(tempDir, "deepseek_api_key");
+}
+
 function makeAnthropicFile(opts: { access: string; refresh: string; expiresAt: number }): string {
   return JSON.stringify({
     claudeAiOauth: {
@@ -84,6 +89,7 @@ async function loadAll(): Promise<void> {
   await loadCredentials({
     anthropicSeedPath: seedPath(),
     codexCredentialsPath: codexPath(),
+    deepseekCredentialsPath: deepseekPath(),
   });
 }
 
@@ -437,7 +443,7 @@ describe("ensureAnthropicFresh: invalid_grant self-heal", () => {
 
 // ── Codex (read-only: the host's Codex client refreshes auth.json) ─────────
 
-describe("ensureCodexFresh", () => {
+describe("ensureHostCredentialsFresh: Codex", () => {
   const login = (exp: number) => makeJwt({ sub: "user", exp });
   const hourFromNow = () => Math.floor(Date.now() / 1000) + 3600;
 
@@ -455,7 +461,7 @@ describe("ensureCodexFresh", () => {
 
     const after = login(hourFromNow() + 864_000);
     await rewrite(after, 2_000_000);
-    await ensureCodexFresh();
+    await ensureHostCredentialsFresh("codex");
 
     expect(getCodexKey()).toBe(after);
   });
@@ -467,7 +473,7 @@ describe("ensureCodexFresh", () => {
 
     // Same mtime, different bytes: proof the file wasn't read again.
     await rewrite(login(hourFromNow() + 1), 1_000_000);
-    await ensureCodexFresh();
+    await ensureHostCredentialsFresh("codex");
 
     expect(getCodexKey()).toBe(token);
   });
@@ -478,7 +484,7 @@ describe("ensureCodexFresh", () => {
     await loadAll();
     await rm(codexPath());
 
-    await ensureCodexFresh();
+    await ensureHostCredentialsFresh("codex");
 
     expect(getCodexKey()).toBe(token);
   });
@@ -489,9 +495,60 @@ describe("ensureCodexFresh", () => {
 
     const token = login(hourFromNow());
     await rewrite(token, 1_000_000);
-    await ensureCodexFresh();
+    await ensureHostCredentialsFresh("codex");
 
     expect(getCodexKey()).toBe(token);
+  });
+});
+
+describe("DeepSeek API key", () => {
+  // A rewrite within the same millisecond keeps the mtime, so move it explicitly.
+  async function writeKey(contents: string, mtimeSecs: number) {
+    await writeFile(deepseekPath(), contents);
+    await utimes(deepseekPath(), mtimeSecs, mtimeSecs);
+  }
+
+  it("loads the key from a plain-text file, trimming the newline", async () => {
+    await writeKey("sk-test-key\n", 1_000_000);
+    await loadAll();
+    expect(getDeepseekKey()).toBe("sk-test-key");
+    expect(getCredentialStatus().deepseek).toEqual({
+      available: true,
+      expired: false,
+      expiresAt: undefined,
+    });
+  });
+
+  it("has no key without the file, and doesn't throw", async () => {
+    await loadAll();
+    expect(getDeepseekKey()).toBeUndefined();
+    expect(getCredentialStatus().deepseek.available).toBe(false);
+  });
+
+  it("has no key in an empty file", async () => {
+    await writeKey("  \n", 1_000_000);
+    await loadAll();
+    expect(getDeepseekKey()).toBeUndefined();
+  });
+
+  it("picks up a rotated key without a restart", async () => {
+    await writeKey("sk-old", 1_000_000);
+    await loadAll();
+    await writeKey("sk-new", 2_000_000);
+
+    await ensureHostCredentialsFresh("deepseek");
+
+    expect(getDeepseekKey()).toBe("sk-new");
+  });
+
+  it("is left alone when only the Codex login is refreshed", async () => {
+    await writeKey("sk-old", 1_000_000);
+    await loadAll();
+    await writeKey("sk-new", 2_000_000);
+
+    await ensureHostCredentialsFresh("codex");
+
+    expect(getDeepseekKey()).toBe("sk-old");
   });
 });
 

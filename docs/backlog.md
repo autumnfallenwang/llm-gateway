@@ -144,3 +144,15 @@
 - `reasoning_effort` maps through `reasoningOptions()` in `src/lib/pi.ts`, which clamps the level with pi-ai's `clampThinkingLevel` and follows its `streamSimple` mapping per API (Codex `reasoningEffort`; Claude adaptive `effort`, or a thinking budget via `adjustMaxTokensForThinking` on Claude 4.5 and older). The vision fallback asks its model for `none`.
 - Live: `npm run test:codex-poc` 20/20 (adds temperature, forced `tool_choice` both ways, `reasoning_effort`, the 404, and validation reasons). Full suite: everything passes except the Anthropic e2e cases, which need a Claude login the dev run deliberately doesn't have.
 - Not done: the stale Dependabot PRs from May and July (#1–#6, #18–#24) are still open; the raised PR limit just stops them from blocking new ones.
+
+## 9. DeepSeek provider (Phase 11) ✅ Done 2026-11-02
+
+**Source**: [deepseek-provider.md](deepseek-provider.md) — facts, decisions, tasks.
+
+DeepSeek's API models (`deepseek-flash`, `deepseek-v4-pro`) through pi-ai's `deepseek` provider, behind the same OpenAI-compatible API. The gateway's first metered backend. Key in one host file, `~/.deepseek/api_key`, read by both the gateway (mounted read-only like `~/.codex`) and `~/.zshrc` (for ccsw). Thinking off unless `reasoning_effort`; open on the LAN with the prepaid balance as the cap; 402 → 429 `insufficient_quota`.
+
+## 10. Reasoning gaps (found 2026-11-02)
+
+- **Ollama models never reason through the gateway.** `src/lib/ollama.ts` registers every Ollama model with `reasoning: false`, so `reasoning_effort` is dropped even for thinking models (`qwen3:30b`, `gpt-oss`). Fix: set `reasoning` from Ollama's `/api/show` capabilities (`thinking`), which the registry already fetches, and check what pi-ai's `openai-completions` backend sends Ollama for a level.
+- **Non-streaming responses drop the reasoning text.** `formatResponse` keeps only text blocks; streaming sends thinking as `delta.reasoning`. Add `message.reasoning` (the same field name) for parity.
+- **No client authentication.** Anything on the LAN can use every model; with DeepSeek that spends money (capped by the prepaid balance). A bearer token would affect every app, so it's its own change.

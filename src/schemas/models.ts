@@ -8,7 +8,7 @@ export const ModelObjectSchema = z.object({
     .int()
     .openapi({ description: "Unix timestamp of model creation or last modification" }),
   owned_by: z.string().openapi({
-    description: "Model provider: 'ollama', 'anthropic', or 'openai-codex'",
+    description: "Model provider: 'ollama', 'anthropic', 'openai-codex', or 'deepseek'",
   }),
   capability: z.enum(["chat", "embedding"]).optional().openapi({
     description:

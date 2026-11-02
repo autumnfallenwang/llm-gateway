@@ -101,7 +101,7 @@ function retired(id: string): boolean {
 }
 
 /** pi-ai's static model catalog for a provider, with known catalog gaps corrected. */
-export function getModels(provider: "anthropic" | "openai-codex"): Model<Api>[] {
+export function getModels(provider: "anthropic" | "openai-codex" | "deepseek"): Model<Api>[] {
   return (getBuiltinModels(provider) as Model<Api>[])
     .filter((m) => !retired(m.id))
     .map((m) =>
@@ -132,6 +132,10 @@ export function reasoningOptions(
   const level = clampThinkingLevel(model, effort === "none" ? "off" : effort);
   if (model.api === "openai-codex-responses") {
     return { reasoningEffort: level === "off" ? "none" : level };
+  }
+  if (model.api === "openai-completions") {
+    // DeepSeek: pi-ai turns thinking on for any level and sends `thinking: disabled` without.
+    return level === "off" ? {} : { reasoningEffort: level };
   }
   if (model.api !== "anthropic-messages") return {};
   if (level === "off") return { thinkingEnabled: false };

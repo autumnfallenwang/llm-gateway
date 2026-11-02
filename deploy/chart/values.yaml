@@ -42,6 +42,10 @@ env:
   # keeps auth.json refreshed and the gateway re-reads it when it changes. Set
   # "false" if the host has no ChatGPT login, so the models don't show as errors.
   CODEX_ENABLED: "true"
+  # DeepSeek's static API key (metered, prepaid). ~/.deepseek/api_key on the host is the
+  # key's single source of truth (~/.zshrc reads it too); no file, no DeepSeek models.
+  # See docs/deepseek-provider.md.
+  DEEPSEEK_CREDENTIALS_PATH: /home/node/host-deepseek/api_key
   LLMGW_DB_PATH: /home/node/.llm-gateway/state.db
 
 # Read-only directory mounts from the host node. `Directory` (not `File`) so
@@ -57,6 +61,11 @@ hostMounts:
     enabled: true
     hostPath: /home/aaronwang/.codex
     mountPath: /home/node/host-codex
+  # The DeepSeek API key (api_key); see DEEPSEEK_CREDENTIALS_PATH. Must exist on the host.
+  deepseek:
+    enabled: true
+    hostPath: /home/aaronwang/.deepseek
+    mountPath: /home/node/host-deepseek
 
 resources:
   requests:

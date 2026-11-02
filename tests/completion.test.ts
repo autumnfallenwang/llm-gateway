@@ -646,6 +646,31 @@ describe("backend error handling", () => {
   });
 });
 
+describe("an empty prepaid balance", () => {
+  it("is a 429 insufficient_quota, not a server error", async () => {
+    isContextOverflowMock.mockReturnValue(false);
+    completeMock.mockResolvedValue(
+      makeAssistantMessage({
+        stopReason: "error",
+        errorMessage: '402: {"message":"Insufficient Balance","type":"unknown_error"}',
+      }),
+    );
+
+    await expect(
+      createCompletion(makeResolved(), {
+        model: "deepseek-flash",
+        messages: [{ role: "user", content: "Hi" }],
+        stream: false,
+      }),
+    ).rejects.toSatisfy((err: BackendError) => {
+      expect(err.httpStatus).toBe(429);
+      expect(err.errorType).toBe("insufficient_quota");
+      expect(err.errorCode).toBe("insufficient_quota");
+      return true;
+    });
+  });
+});
+
 describe("a plan-limited Codex model", () => {
   it("is a 404 model_not_found, not a server error", async () => {
     isContextOverflowMock.mockReturnValue(false);
