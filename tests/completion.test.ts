@@ -646,6 +646,33 @@ describe("backend error handling", () => {
   });
 });
 
+describe("status codes inside error messages", () => {
+  function failWith(errorMessage: string) {
+    isContextOverflowMock.mockReturnValue(false);
+    completeMock.mockResolvedValue(makeAssistantMessage({ stopReason: "error", errorMessage }));
+    return createCompletion(makeResolved(), {
+      model: "test-model",
+      messages: [{ role: "user", content: "Hi" }],
+      stream: false,
+    }).catch((e: unknown) => e as BackendError);
+  }
+
+  // Seen live on DeepSeek: a bad image upload, whose request_id happened to contain 429.
+  it("keeps a 400 whose request id contains 429 a 400", async () => {
+    const err = await failWith(
+      '400: {"message":"You have uploaded an unsupported image. (request_id: a0c4e9b4-538d-4290-b865-eed49c8124f1)","type":"invalid_request_error"}',
+    );
+    expect(err.httpStatus).toBe(400);
+    expect(err.errorCode).toBe("invalid_input");
+  });
+
+  it("treats a 429 status prefix as a rate limit", async () => {
+    const err = await failWith('429: {"message":"Slow down","type":"unknown_error"}');
+    expect(err.httpStatus).toBe(429);
+    expect(err.errorCode).toBe("rate_limit_exceeded");
+  });
+});
+
 describe("an empty prepaid balance", () => {
   it("is a 429 insufficient_quota, not a server error", async () => {
     isContextOverflowMock.mockReturnValue(false);

@@ -37,7 +37,9 @@ const EMPTY_USAGE: Usage = {
   cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
 };
 
-const RATE_LIMIT_PATTERN = /rate.limit|usage.limit|too many requests|429/i;
+// "429" only as the status prefix: DeepSeek and Anthropic put request IDs in error messages,
+// and a bare /429/ matched one ("…-4290-…") and turned a 400 into a rate limit.
+const RATE_LIMIT_PATTERN = /^429\b|rate.limit|usage.limit|too many requests/i;
 // The provider SDKs prefix API errors with the HTTP status: `400 {"type":"error",...}`.
 const BAD_REQUEST_PATTERN = /^400\b|invalid_request_error/;
 // Codex's answer for a catalog model the ChatGPT plan doesn't include (or that's retired).
