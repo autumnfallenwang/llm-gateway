@@ -11,7 +11,7 @@
 | 5 | Completion service | ✅ Done | `src/services/completion.ts` — OpenAI ↔ pi-ai translation, Codex system prompt fallback |
 | 6 | Routes | ✅ Done | `src/routes/{chat,models,validate}.ts` — OpenAPI route defs with request examples |
 | 7 | App + server wiring | ✅ Done | All handlers wired: chat completions, models list (with validation filtering), model validation |
-| 8 | Tests | ✅ Done | 18 test files (incl. the opt-in live `codex-go.poc` and `deepseek.poc`), 307 fast tests |
+| 8 | Tests | ✅ Done | 20 test files (incl. the opt-in live `codex-go.poc`, `deepseek.poc` and `limits.poc`), 348 fast tests |
 | 9 | Model validation | ✅ Done | `src/services/validation.ts` — tests every model with real completion, persists report via the SQLite `model_validation` table (Phase 8 / task 40) |
 | 10 | Streaming support | ✅ Done | SSE streaming via `stream: true` — all four backends (Ollama, Anthropic, Codex, DeepSeek) |
 
@@ -38,7 +38,7 @@
 - `ImageLoadError` returns 400 `invalid_request_error` (not 500) in both streaming and non-streaming paths
 - Ollama `num_ctx` injection: configurable via `OLLAMA_NUM_CTX` env var (default 32768), replaces Ollama's wasteful ~4096 default
 - SQLite-backed state: `src/lib/db.ts` opens `LLMGW_DB_PATH` at startup and runs schema migration. Tables: `credentials_chain` (provider PK), `model_validation` (model PK), `meta` (validation batch ISO). WAL journal.
-- 307 unit tests passing (fast), 0 lint errors, 0 lint warnings
+- 348 unit tests passing (fast), 0 lint errors, 0 lint warnings
 - `npm run test:fast` for dev iteration (~2s), `npm test` for full e2e validation against live Ollama, `npm run test:codex-poc` for a live check of the ChatGPT login (20/20), `npm run test:deepseek-poc` for DeepSeek (14/14)
 
 ## Post-Phase-8 cleanup (done in follow-up commits)
@@ -50,7 +50,7 @@
 
 ## What's Next
 
-**Phase 12 is complete**: `provider/model` IDs ([model-ids.md](model-ids.md)). **Next: Phase 13, the usage-limits endpoint** ([usage-limits.md](usage-limits.md)), which keys its data by model. **Phase 11 is complete**: DeepSeek's API models (see below and [deepseek-provider.md](deepseek-provider.md)). **Phase 10 is complete** (backlog #8): GPT via ChatGPT Go in production, verified on the cluster (30 models `ok`, the 4 GPT models the plan lacks `error` with the reason; 85/85 live checks). **Phase 9 is complete**: Claude 5 models and OpenAI tool calling (see below). **Phase 8 is complete** — the gateway runs on k3s, ArgoCD watches arch-infra, GHA closes the GitOps loop. After a stability bake (a few days), delete `deploy/compose.yaml` to retire the last compose-era artifact. Keep `deploy/Dockerfile` (still used by GHA).
+**Phase 12 is complete**: `provider/model` IDs ([model-ids.md](model-ids.md)). **Phase 13 is complete**: `GET /v1/limits` ([usage-limits.md](usage-limits.md)). **Phase 11 is complete**: DeepSeek's API models (see below and [deepseek-provider.md](deepseek-provider.md)). **Phase 10 is complete** (backlog #8): GPT via ChatGPT Go in production, verified on the cluster (30 models `ok`, the 4 GPT models the plan lacks `error` with the reason; 85/85 live checks). **Phase 9 is complete**: Claude 5 models and OpenAI tool calling (see below). **Phase 8 is complete** — the gateway runs on k3s, ArgoCD watches arch-infra, GHA closes the GitOps loop. After a stability bake (a few days), delete `deploy/compose.yaml` to retire the last compose-era artifact. Keep `deploy/Dockerfile` (still used by GHA).
 
 Next likely targets, in priority order:
 1. **Bake** the new deployment. Let it run for ≥ 2-3 days under normal use and watch Grafana/Loki for unexpected errors before pruning compose.
@@ -191,6 +191,18 @@ Migrate from 29 ad-hoc `console.log/warn/error` calls to JSON-per-line structure
 - Prometheus metrics + dashboards — different problem (numbers vs events); add when we want trend graphs/alerts.
 - OpenTelemetry — overkill for a single-service gateway; revisit if multi-service tracing matters.
 
+## Phase 13: Usage Limits — `GET /v1/limits`
+
+Backlog #12; [usage-limits.md](usage-limits.md). How much of each paid family's allowance is left, per model, so a chatbot can show it before and after each message.
+
+| # | Task | Status | Notes |
+|---|------|--------|-------|
+| 71 | Store + parsers | ✅ Done | `src/services/limits/`: one parser per source (Claude's usage endpoint and `anthropic-ratelimit-unified-*` headers; Codex's `wham/usage`, `codex.rate_limits` event and `x-codex-*` headers; DeepSeek's balance), into one shape. The store is fed for free by every Claude/Codex response (pi-ai's `onResponse` / `onProviderStreamEvent` hooks) and on demand by the endpoints, cached 60 s with one fetch in flight per family. |
+| 72 | Per-model mapping | ✅ Done | Account-wide windows apply to every model of a family; a scoped one (Claude's Fable) to the models it names. The binding window is the most-used one that applies; a family as a whole is bound by its account-wide windows. |
+| 73 | `GET /v1/limits[?model=]` | ✅ Done | Same model resolution as chat (bare or `owned_by/model`; 400 ambiguous, 404 unknown). `available` is the one line to show: `percent` (with `binding` and `resets_at`), `balance`, `unlimited` (Ollama) or `unknown`. `status` ok / warning (80%, $1, or the provider's own) / exhausted / unknown (no data, or stale after 10 min of failing fetches). |
+| 74 | Logging | ✅ Done | `completion.usage` per completion: tokens, `cost_usd`, the binding window or balance from the cache. |
+| 76 | Tests | ✅ Done | 30 new unit tests (parsers on the POC fixtures, merging, caching, single-flight, failure and staleness, per-model mapping, the route, the hooks); 348 fast pass. `npm run test:limits-poc` 5/5 live. |
+
 ## Phase 12: Model IDs — `provider/model`
 
 Backlog #11; [model-ids.md](model-ids.md). Bare IDs resolved first-match across providers, so a collision would have silently shadowed a model. Done before the usage-limits work, which keys data by model.
@@ -292,6 +304,7 @@ Phase 4 provider expansion & tooling complete. See tasks 24–27 above.
 Phase 5 embeddings support complete. See tasks 28–32 above. New `POST /v1/embeddings` route, per-capability validator dispatch, `embedding_dimensions` on `/v1/models`. Spec doc + POC at `docs/openai-embeddings-spec.md`.
 Phase 6 Anthropic auth hotfix complete. See tasks 33–37 above. Container-private credential chain via seed/cache split, lazy refresh + single-flight mutex on the request path.
 Phase 7 structured logging complete. See tasks 38–39e above. pino JSON-per-line + per-request access log middleware + Docker log size cap.
+Phase 13 usage limits complete. See tasks 71–76 above. `GET /v1/limits`, `completion.usage` logging.
 Phase 12 model IDs complete. See tasks 66–69 above. `provider/model` IDs, `ambiguous_model`.
 Phase 11 DeepSeek provider complete. See tasks 58–64 above. pi-ai's `deepseek` provider, key in `~/.deepseek/api_key`.
 Phase 10 model coverage audit complete. See tasks 52–57 above. GPT via ChatGPT Go, `reasoning_effort`, Claude refusals and retirements, pi-ai 1.4.0.

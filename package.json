@@ -11,6 +11,7 @@
     "test:watch": "vitest",
     "test:codex-poc": "CODEX_POC=1 vitest run tests/codex-go.poc.test.ts --reporter=verbose",
     "test:deepseek-poc": "DEEPSEEK_POC=1 vitest run tests/deepseek.poc.test.ts --reporter=verbose",
+    "test:limits-poc": "LIMITS_POC=1 vitest run tests/limits.poc.test.ts --reporter=verbose",
     "lint": "biome check src/ tests/",
     "lint:fix": "biome check --write src/ tests/",
     "format": "biome format --write src/ tests/"
