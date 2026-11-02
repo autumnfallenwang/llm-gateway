@@ -50,7 +50,7 @@
 
 ## What's Next
 
-**Phase 11 is complete**: DeepSeek's API models (see below and [deepseek-provider.md](deepseek-provider.md)). **Phase 10 is complete** (backlog #8): GPT via ChatGPT Go in production, verified on the cluster (30 models `ok`, the 4 GPT models the plan lacks `error` with the reason; 85/85 live checks). **Phase 9 is complete**: Claude 5 models and OpenAI tool calling (see below). **Phase 8 is complete** — the gateway runs on k3s, ArgoCD watches arch-infra, GHA closes the GitOps loop. After a stability bake (a few days), delete `deploy/compose.yaml` to retire the last compose-era artifact. Keep `deploy/Dockerfile` (still used by GHA).
+**Next: Phase 12, model IDs** ([model-ids.md](model-ids.md)) — `provider/model` IDs so names can't collide — **then Phase 13, the usage-limits endpoint** ([usage-limits.md](usage-limits.md)), which keys its data by model. **Phase 11 is complete**: DeepSeek's API models (see below and [deepseek-provider.md](deepseek-provider.md)). **Phase 10 is complete** (backlog #8): GPT via ChatGPT Go in production, verified on the cluster (30 models `ok`, the 4 GPT models the plan lacks `error` with the reason; 85/85 live checks). **Phase 9 is complete**: Claude 5 models and OpenAI tool calling (see below). **Phase 8 is complete** — the gateway runs on k3s, ArgoCD watches arch-infra, GHA closes the GitOps loop. After a stability bake (a few days), delete `deploy/compose.yaml` to retire the last compose-era artifact. Keep `deploy/Dockerfile` (still used by GHA).
 
 Next likely targets, in priority order:
 1. **Bake** the new deployment. Let it run for ≥ 2-3 days under normal use and watch Grafana/Loki for unexpected errors before pruning compose.

@@ -156,3 +156,11 @@ DeepSeek's API models (`deepseek-flash`, `deepseek-v4-pro`) through pi-ai's `dee
 - **Ollama models never reason through the gateway.** `src/lib/ollama.ts` registers every Ollama model with `reasoning: false`, so `reasoning_effort` is dropped even for thinking models (`qwen3:30b`, `gpt-oss`). Fix: set `reasoning` from Ollama's `/api/show` capabilities (`thinking`), which the registry already fetches, and check what pi-ai's `openai-completions` backend sends Ollama for a level.
 - **Non-streaming responses drop the reasoning text.** `formatResponse` keeps only text blocks; streaming sends thinking as `delta.reasoning`. Add `message.reasoning` (the same field name) for parity.
 - **No client authentication.** Anything on the LAN can use every model; with DeepSeek that spends money (capped by the prepaid balance). A bearer token would affect every app, so it's its own change.
+
+## 11. Model IDs: `provider/model` (Phase 12)
+
+**Source**: [model-ids.md](model-ids.md). Bare IDs resolved first-match across providers, so a future collision (the same model through two providers) would silently shadow one. `provider/model` always works (the prefix is `owned_by`); a bare ID works when unique and is a 400 `ambiguous_model` when shared; `/v1/models` lists the ID that resolves. Done before #12 because the limits store keys by model.
+
+## 12. Usage limits endpoint (Phase 13)
+
+**Source**: [usage-limits.md](usage-limits.md) — POC findings per family, the shared format, the store design. `GET /v1/limits[?model=]`: for a model, every window that applies (Claude weekly + Fable scoped, GPT monthly, DeepSeek balance), the binding one, `status`, `as_of`. Fed free by response headers/events and on demand by the three usage endpoints.
