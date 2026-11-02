@@ -16,7 +16,7 @@ No collision is possible today — the 36 production IDs are distinct, every Oll
 4. **A bare ID that two providers share is a 400 `ambiguous_model`** (`param: "model"`) naming the qualified choices — never a silent pick. The registry logs `registry.ambiguous_models` when it loads one.
 5. **`/v1/models` lists each model under an ID that resolves to it**: bare when unique, qualified when ambiguous. The validation report and model status are keyed by that listed ID, so colliding models get separate rows.
 6. **A slash is a provider prefix only when the prefix is one of ours** (`ollama`, `anthropic`, `openai-codex`, `deepseek`) **and** the rest is that provider's model. Otherwise the whole string is a model ID: Ollama community models already look like `user/model:tag` or `hf.co/user/model`.
-7. Responses echo the `model` the request sent, as before.
+7. Responses echo the `model` the request sent, as before. **Backends always get the model's own ID**: pi-ai sends `model.id` for chat, and `/v1/embeddings` (an Ollama pass-through) rewrites `model` to it — found on the cluster after the first deploy, when `ollama/bge-m3:latest` reached Ollama verbatim and 404'd.
 8. Config that names a model (the vision fallback chain) takes either form; an ambiguous bare ID there is skipped like a missing one, so use the qualified form.
 
 ## Work
