@@ -1,6 +1,6 @@
 # DeepSeek provider (Phase 11)
 
-Add DeepSeek's API models to llmgw behind the same OpenAI-compatible API as the Ollama, Claude and GPT models, so the internal apps reach them the same way. Decided 2026-11-02; built on branch `feat/deepseek`.
+Add DeepSeek's API models to llmgw behind the same OpenAI-compatible API as the Ollama, Claude and GPT models, so the internal apps reach them the same way. Decided and built 2026-11-02 (branch `feat/deepseek`).
 
 DeepSeek is the gateway's first **metered** backend: a static API key paid per token, not an OAuth subscription.
 
@@ -33,18 +33,20 @@ DeepSeek is the gateway's first **metered** backend: a static API key paid per t
 8. **Live tests are opt-in** (`npm run test:deepseek-poc`), so ordinary runs spend nothing. The only automatic spend is model validation, a few tokens per model.
 9. **Deploy order:** `~/.deepseek` must exist on the host before the merge — the chart mounts it as a hostPath `Directory`, and the pod won't start without it.
 
+**Found while building** (live, 2026-11-02): DeepSeek takes `tool_choice: "required"` and a named tool (offered alone with `required`) — but **not while thinking** (400 "Thinking mode does not support this tool_choice"). A forced `tool_choice` therefore turns DeepSeek's thinking off, as it does Claude's. Errors come through pi-ai as `<status>: {json}` (a bad key is `401: {"message":"Authentication Fails…"}`).
+
 ## Work
 
-| # | Task |
-|---|---|
-| 58 | This doc + backlog entries |
-| 59 | `~/.deepseek/api_key` from the existing key; `~/.zshrc` reads it |
-| 60 | Config + auth: `DEEPSEEK_CREDENTIALS_PATH`; the Codex file loader generalized into a shared host-file credential |
-| 61 | Registry + pi.ts: `deepseek` models, `reasoning_effort` on the `openai-completions` backend |
-| 62 | Completion: 402 → 429 `insufficient_quota`; `tool_choice` checked live |
-| 63 | Chart: `~/.deepseek` mount + path |
-| 64 | Tests: unit + `tests/deepseek.poc.test.ts` |
-| 65 | Docs (CLAUDE.md, error spec, API description, progress), PR, deploy, verify on the cluster |
+| # | Task | Status |
+|---|---|---|
+| 58 | This doc + backlog entries | ✅ |
+| 59 | `~/.deepseek/api_key` (700/600) from the existing key; `~/.zshrc` reads it, so the key is no longer in the dotfile | ✅ |
+| 60 | Config + auth: `DEEPSEEK_CREDENTIALS_PATH`; the Codex file loader generalized into a shared `HostFileCredential` (`ensureHostCredentialsFresh`) | ✅ |
+| 61 | Registry + pi.ts: `deepseek` models, `reasoning_effort` on the `openai-completions` backend | ✅ |
+| 62 | Completion: 402 → 429 `insufficient_quota`; a forced `tool_choice` turns thinking off | ✅ |
+| 63 | Chart: `~/.deepseek` mount + path | ✅ |
+| 64 | Tests: unit (307 fast pass) + `npm run test:deepseek-poc` 14/14 live | ✅ |
+| 65 | Docs (CLAUDE.md, error spec, API description, progress), PR, deploy, verify on the cluster | see progress.md |
 
 ## Not in scope (backlog)
 

@@ -145,7 +145,7 @@
 - Live: `npm run test:codex-poc` 20/20 (adds temperature, forced `tool_choice` both ways, `reasoning_effort`, the 404, and validation reasons). Full suite: everything passes except the Anthropic e2e cases, which need a Claude login the dev run deliberately doesn't have.
 - Not done: the stale Dependabot PRs from May and July (#1–#6, #18–#24) are still open; the raised PR limit just stops them from blocking new ones.
 
-## 9. DeepSeek provider (Phase 11)
+## 9. DeepSeek provider (Phase 11) ✅ Done 2026-11-02
 
 **Source**: [deepseek-provider.md](deepseek-provider.md) — facts, decisions, tasks.
 

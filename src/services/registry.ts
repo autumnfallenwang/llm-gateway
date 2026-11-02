@@ -1,7 +1,7 @@
 import { log } from "../lib/logger.js";
 import { fetchOllamaModels, type OllamaModelCapabilities } from "../lib/ollama.js";
 import { getModels, type Model } from "../lib/pi.js";
-import { getAnthropicKey, getCodexKey } from "./auth.js";
+import { getAnthropicKey, getCodexKey, getDeepseekKey } from "./auth.js";
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -9,7 +9,7 @@ export type Capability = "chat" | "embedding";
 
 export interface ResolvedModel {
   model: Model<string>;
-  provider: "ollama" | "anthropic" | "codex";
+  provider: "ollama" | "anthropic" | "codex" | "deepseek";
   capability: Capability;
   apiKey?: string;
 }
@@ -28,6 +28,7 @@ interface RegistryEntry {
 let ollamaEntries: RegistryEntry[] = [];
 let anthropicEntries: RegistryEntry[] = [];
 let codexEntries: RegistryEntry[] = [];
+let deepseekEntries: RegistryEntry[] = [];
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -51,6 +52,9 @@ export async function loadRegistry(config?: RegistryConfig): Promise<void> {
   codexEntries = getCodexKey()
     ? getModels("openai-codex").map((m) => ({ model: m, capability: "chat" as const }))
     : [];
+  deepseekEntries = getDeepseekKey()
+    ? getModels("deepseek").map((m) => ({ model: m, capability: "chat" as const }))
+    : [];
 
   log.info(
     {
@@ -58,6 +62,7 @@ export async function loadRegistry(config?: RegistryConfig): Promise<void> {
       ollama: ollamaEntries.length,
       anthropic: anthropicEntries.length,
       codex: codexEntries.length,
+      deepseek: deepseekEntries.length,
     },
     "Model registry loaded",
   );
@@ -81,7 +86,12 @@ export function listModels(): {
     context_window: model.contextWindow,
     max_tokens: model.maxTokens,
   });
-  return [...ollamaEntries.map(toRow), ...anthropicEntries.map(toRow), ...codexEntries.map(toRow)];
+  return [
+    ...ollamaEntries.map(toRow),
+    ...anthropicEntries.map(toRow),
+    ...codexEntries.map(toRow),
+    ...deepseekEntries.map(toRow),
+  ];
 }
 
 export function resolveModel(modelId: string): ResolvedModel | undefined {
@@ -104,6 +114,15 @@ export function resolveModel(modelId: string): ResolvedModel | undefined {
       provider: "codex",
       capability: codex.capability,
       apiKey: getCodexKey(),
+    };
+
+  const deepseek = deepseekEntries.find((e) => e.model.id === modelId);
+  if (deepseek)
+    return {
+      model: deepseek.model,
+      provider: "deepseek",
+      capability: deepseek.capability,
+      apiKey: getDeepseekKey(),
     };
 
   return undefined;

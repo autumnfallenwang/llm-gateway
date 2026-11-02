@@ -4,6 +4,7 @@ import {
   ANTHROPIC_SEED_PATH,
   CODEX_CREDENTIALS_PATH,
   CODEX_ENABLED,
+  DEEPSEEK_CREDENTIALS_PATH,
 } from "../config.js";
 import { getDb } from "../lib/db.js";
 import { log } from "../lib/logger.js";
@@ -41,12 +42,14 @@ export interface BackendCredentialStatus {
 export interface CredentialStatus {
   anthropic: BackendCredentialStatus;
   codex: BackendCredentialStatus;
+  deepseek: BackendCredentialStatus;
 }
 
 export interface AuthConfig {
   /** Read-only seed path (host's `~/.claude/.credentials.json` mount). */
   anthropicSeedPath?: string;
   codexCredentialsPath?: string;
+  deepseekCredentialsPath?: string;
 }
 
 // ── Module state ────────────────────────────────────────────────────────────
@@ -55,12 +58,6 @@ let anthropicCreds: AnthropicCredsState | undefined;
 let anthropicRefreshInFlight: Promise<void> | null = null;
 /** Seed path captured at load time so lazy re-seed (on a dead refresh token) can reach it. */
 let anthropicSeedPath: string | undefined;
-
-let codexAccessToken: string | undefined;
-let codexExpiresAt: number | undefined;
-/** The Codex login file and its mtime when last read, so a host-side refresh is picked up. */
-let codexPath: string | undefined;
-let codexMtimeMs: number | undefined;
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -273,64 +270,115 @@ async function loadAnthropicCredentials(seedPath: string): Promise<void> {
   }
 }
 
-// ── Codex credential loader (read-only: the host's Codex client refreshes it) ──
+// ── Host-file credentials (Codex, DeepSeek): read-only, re-read on change ───
 
-async function loadCodexCredentials(path: string): Promise<void> {
-  codexPath = path;
-  try {
-    const { mtimeMs } = await stat(path);
-    const raw = await readFile(path, "utf-8");
-    const data: CodexCredentialsFile = JSON.parse(raw);
-    const token = data.tokens?.access_token;
-    // Recorded once the file parses, so a half-written file is read again next time.
-    codexMtimeMs = mtimeMs;
-    if (token) {
-      codexAccessToken = token;
-      codexExpiresAt = decodeJwtExp(token);
-      const expired = codexExpiresAt !== undefined && codexExpiresAt < Date.now();
-      log.info(
-        { event: "auth.credentials.loaded", provider: "codex", expired },
-        "Codex credentials loaded",
-      );
-    } else {
-      log.warn(
-        { event: "auth.credentials.malformed", provider: "codex" },
-        "Codex credentials file found but missing access_token",
-      );
+/**
+ * A credential the host keeps in a file that the gateway only ever reads, mounted from the
+ * host like `~/.claude`. Read at load, then again whenever the file's mtime changes — one
+ * `stat` per request — so a change on the host is picked up without a restart.
+ *
+ * - Codex: `~/.codex/auth.json`, the host's ChatGPT login. The gateway never refreshes it:
+ *   refresh tokens are single-use, so doing so would log the host's Codex client out of the
+ *   login the gateway shares. The host's client (the VS Code ChatGPT extension, or the
+ *   `codex` CLI) keeps it fresh — its access tokens last 10 days.
+ * - DeepSeek: `~/.deepseek/api_key`, a static API key written once by hand. It's also the
+ *   key's single source of truth on the host (`~/.zshrc` reads it for ccsw); see
+ *   docs/deepseek-provider.md.
+ */
+class HostFileCredential {
+  key: string | undefined;
+  expiresAt: number | undefined;
+  private path: string | undefined;
+  private mtimeMs: number | undefined;
+
+  constructor(
+    private readonly provider: "codex" | "deepseek",
+    private readonly label: string,
+    /** The key in the file's contents, or undefined when it has none. May throw. */
+    private readonly parse: (raw: string) => string | undefined,
+  ) {}
+
+  reset(): void {
+    this.key = undefined;
+    this.expiresAt = undefined;
+    this.path = undefined;
+    this.mtimeMs = undefined;
+  }
+
+  async load(path: string): Promise<void> {
+    const provider = this.provider;
+    this.path = path;
+    try {
+      const { mtimeMs } = await stat(path);
+      const key = this.parse(await readFile(path, "utf-8"));
+      // Recorded once the file parses, so a half-written file is read again next time.
+      this.mtimeMs = mtimeMs;
+      if (key) {
+        this.key = key;
+        this.expiresAt = decodeJwtExp(key);
+        const expired = this.expiresAt !== undefined && this.expiresAt < Date.now();
+        log.info(
+          { event: "auth.credentials.loaded", provider, expired },
+          `${this.label} credentials loaded`,
+        );
+      } else {
+        log.warn(
+          { event: "auth.credentials.malformed", provider },
+          `${this.label} credentials file found but holds no key`,
+        );
+      }
+    } catch (err: unknown) {
+      const code = (err as NodeJS.ErrnoException).code;
+      if (code === "ENOENT") {
+        log.warn(
+          { event: "auth.credentials.unavailable", provider },
+          `${this.label} credentials not found — backend unavailable`,
+        );
+      } else {
+        log.warn(
+          { event: "auth.file.read_failed", provider, err },
+          `Failed to read ${this.label} credentials`,
+        );
+      }
     }
-  } catch (err: unknown) {
-    const code = (err as NodeJS.ErrnoException).code;
-    if (code === "ENOENT") {
-      log.warn(
-        { event: "auth.credentials.unavailable", provider: "codex" },
-        "Codex credentials not found — backend unavailable",
-      );
-    } else {
-      log.warn(
-        { event: "auth.file.read_failed", provider: "codex", err },
-        "Failed to read Codex credentials",
-      );
+  }
+
+  /** Re-read the file if it changed since it was last read; keep the key if it's gone. */
+  async ensureFresh(): Promise<void> {
+    if (!this.path) return;
+    let mtimeMs: number;
+    try {
+      ({ mtimeMs } = await stat(this.path));
+    } catch {
+      return; // gone or unreadable: keep the key we have
     }
+    if (mtimeMs === this.mtimeMs) return;
+    await this.load(this.path);
+  }
+
+  status(now: number): BackendCredentialStatus {
+    return {
+      available: this.key !== undefined,
+      expired: this.expiresAt !== undefined && this.expiresAt < now,
+      expiresAt: this.expiresAt,
+    };
   }
 }
 
+const codex = new HostFileCredential("codex", "Codex", (raw) => {
+  const data: CodexCredentialsFile = JSON.parse(raw);
+  return data.tokens?.access_token;
+});
+
+const deepseek = new HostFileCredential("deepseek", "DeepSeek", (raw) => raw.trim() || undefined);
+
 /**
- * Pick up a refreshed Codex login. The gateway never refreshes Codex tokens itself: refresh
- * tokens are single-use, so doing so would log the host's Codex client out of the login
- * the gateway shares. The host's client (the VS Code ChatGPT extension, or the `codex` CLI)
- * keeps `auth.json` fresh — its access tokens last 10 days — and this re-reads the file
- * whenever it has changed. Costs one `stat` per Codex request.
+ * Pick up a host-file credential (Codex login, DeepSeek key) that changed on the host since
+ * it was read: one provider's, or every one's. Never throws.
  */
-export async function ensureCodexFresh(): Promise<void> {
-  if (!codexPath) return;
-  let mtimeMs: number;
-  try {
-    ({ mtimeMs } = await stat(codexPath));
-  } catch {
-    return; // gone or unreadable: keep the token we have
-  }
-  if (mtimeMs === codexMtimeMs) return;
-  await loadCodexCredentials(codexPath);
+export async function ensureHostCredentialsFresh(provider?: "codex" | "deepseek"): Promise<void> {
+  if (provider !== "deepseek") await codex.ensureFresh();
+  if (provider !== "codex") await deepseek.ensureFresh();
 }
 
 // Gemini backend removed in the pi-ai 0.73 upgrade: pi-ai dropped its Google/Gemini
@@ -344,22 +392,22 @@ export async function loadCredentials(config?: AuthConfig): Promise<void> {
   anthropicCreds = undefined;
   anthropicRefreshInFlight = null;
   anthropicSeedPath = undefined;
-  codexAccessToken = undefined;
-  codexExpiresAt = undefined;
-  codexPath = undefined;
-  codexMtimeMs = undefined;
+  codex.reset();
+  deepseek.reset();
 
   await loadAnthropicCredentials(config?.anthropicSeedPath ?? ANTHROPIC_SEED_PATH);
   // Codex is gated by CODEX_ENABLED, for a host with no ChatGPT login. Skipping the load
   // leaves codexAccessToken undefined, so Codex models never register.
   if (CODEX_ENABLED) {
-    await loadCodexCredentials(config?.codexCredentialsPath ?? CODEX_CREDENTIALS_PATH);
+    await codex.load(config?.codexCredentialsPath ?? CODEX_CREDENTIALS_PATH);
   } else {
     log.info(
       { event: "auth.credentials.disabled", provider: "codex" },
       "Codex disabled via CODEX_ENABLED=false — skipping credential load",
     );
   }
+  // No key file, no DeepSeek models.
+  await deepseek.load(config?.deepseekCredentialsPath ?? DEEPSEEK_CREDENTIALS_PATH);
 }
 
 export function getAnthropicKey(): string | undefined {
@@ -367,7 +415,11 @@ export function getAnthropicKey(): string | undefined {
 }
 
 export function getCodexKey(): string | undefined {
-  return codexAccessToken;
+  return codex.key;
+}
+
+export function getDeepseekKey(): string | undefined {
+  return deepseek.key;
 }
 
 export function getCredentialStatus(): CredentialStatus {
@@ -378,10 +430,7 @@ export function getCredentialStatus(): CredentialStatus {
       expired: anthropicCreds !== undefined && anthropicCreds.expires < now,
       expiresAt: anthropicCreds?.expires,
     },
-    codex: {
-      available: codexAccessToken !== undefined,
-      expired: codexExpiresAt !== undefined && codexExpiresAt < now,
-      expiresAt: codexExpiresAt,
-    },
+    codex: codex.status(now),
+    deepseek: deepseek.status(now),
   };
 }

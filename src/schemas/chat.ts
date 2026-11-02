@@ -149,7 +149,7 @@ export const ChatCompletionRequestSchema = z
       .openapi({ description: "Accepted for compatibility; the backend decides" }),
     reasoning_effort: z.enum(REASONING_EFFORTS).optional().openapi({
       description:
-        "How hard a reasoning model thinks, for Claude and GPT (Codex) models; ignored by models that don't reason. Moved to the nearest level the model has: 'none' on a model that always thinks becomes its lowest. Omitted, each model keeps its default",
+        "How hard a reasoning model thinks, for Claude, GPT (Codex) and DeepSeek models; ignored by models that don't reason. Moved to the nearest level the model has: 'none' on a model that always thinks becomes its lowest. Omitted, each model keeps its default",
     }),
   })
   .transform((data) => ({

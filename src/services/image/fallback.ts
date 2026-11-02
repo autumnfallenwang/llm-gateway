@@ -7,7 +7,7 @@ import {
 import { complete, type Model, reasoningOptions } from "../../lib/pi.js";
 import type { ChatCompletionRequest } from "../../routes/chat.js";
 import type { ContentPart } from "../../schemas/chat.js";
-import { ensureAnthropicFresh, ensureCodexFresh } from "../auth.js";
+import { ensureAnthropicFresh, ensureHostCredentialsFresh } from "../auth.js";
 import type { ResolvedModel } from "../registry.js";
 import { resolveModel } from "../registry.js";
 import { loadImage } from "./load.js";
@@ -85,8 +85,9 @@ export async function applyVisionFallback(
 async function withFreshKey(resolved: ResolvedModel): Promise<ResolvedModel> {
   try {
     if (resolved.provider === "anthropic") await ensureAnthropicFresh();
-    else if (resolved.provider === "codex") await ensureCodexFresh();
-    else return resolved;
+    else if (resolved.provider === "codex" || resolved.provider === "deepseek") {
+      await ensureHostCredentialsFresh(resolved.provider);
+    } else return resolved;
   } catch (err) {
     throw new VisionFallbackError(
       `Vision fallback model credentials failed: ${err instanceof Error ? err.message : String(err)}`,

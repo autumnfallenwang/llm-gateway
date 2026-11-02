@@ -71,6 +71,7 @@ The gateway emits these additional codes that aren't in OpenAI's vocabulary but 
 | `invalid_tool_choice` | 400 | `invalid_request_error` | `tool_choice` names a function that isn't in `tools` | `/v1/chat/completions` (Phase 9) |
 | `invalid_tool_call_id` | 400 | `invalid_request_error` | A `tool` message answers a call no earlier assistant message made | `/v1/chat/completions` (Phase 9) |
 | `invalid_tool_arguments` | 400 | `invalid_request_error` | An assistant `tool_calls` entry has arguments that aren't a JSON object | `/v1/chat/completions` (Phase 9) |
+| `insufficient_quota` | 429 | `insufficient_quota` | A prepaid backend is out of balance (DeepSeek's `402 Insufficient Balance`); the same type and code OpenAI uses for an exhausted quota | `/v1/chat/completions` (Phase 11) |
 
 Note: OpenAI's error codes are not exhaustively documented. The `code` field is often `null` for simple validation errors. New codes may appear as the API evolves.
 

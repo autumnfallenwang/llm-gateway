@@ -12,7 +12,7 @@ export const chatCompletionRoute = createRoute({
   operationId: "createChatCompletion",
   summary: "Create a chat completion",
   description:
-    "Generates a model response for the given conversation. Supports Ollama, Anthropic, and Codex backends, OpenAI tool calling (tools, tool_choice, tool messages), and reasoning_effort for Claude and GPT models. Set stream=true for Server-Sent Events streaming.",
+    "Generates a model response for the given conversation. Supports Ollama, Anthropic, Codex and DeepSeek backends, OpenAI tool calling (tools, tool_choice, tool messages), and reasoning_effort for Claude, GPT and DeepSeek models. Set stream=true for Server-Sent Events streaming.",
   tags: ["Chat"],
   request: {
     body: {

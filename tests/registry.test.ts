@@ -107,6 +107,10 @@ function codexPath(): string {
   return join(tempDir, "codex.json");
 }
 
+function deepseekPath(): string {
+  return join(tempDir, "deepseek_api_key");
+}
+
 function makeJwt(payload: Record<string, unknown>): string {
   const header = Buffer.from(JSON.stringify({ alg: "none", typ: "JWT" })).toString("base64url");
   const body = Buffer.from(JSON.stringify(payload)).toString("base64url");
@@ -121,6 +125,10 @@ function setupAnthropicKey(): void {
   });
 }
 
+async function setupDeepseekKey(): Promise<void> {
+  await writeFile(deepseekPath(), "sk-test-deepseek\n");
+}
+
 async function setupCodexKey(): Promise<void> {
   const jwt = makeJwt({ sub: "user", exp: Math.floor(Date.now() / 1000) + 3600 });
   await writeFile(codexPath(), JSON.stringify({ tokens: { access_token: jwt } }));
@@ -133,6 +141,7 @@ describe("loadRegistry", () => {
     await loadCredentials({
       anthropicSeedPath: anthropicSeedPath(),
       codexCredentialsPath: codexPath(),
+      deepseekCredentialsPath: deepseekPath(),
     });
     await loadRegistry({ ollamaBaseUrl: `http://localhost:${ollamaPort}` });
 
@@ -147,6 +156,7 @@ describe("loadRegistry", () => {
     await loadCredentials({
       anthropicSeedPath: anthropicSeedPath(),
       codexCredentialsPath: codexPath(),
+      deepseekCredentialsPath: deepseekPath(),
     });
     await loadRegistry({ ollamaBaseUrl: "http://localhost:1" }); // no Ollama
 
@@ -169,6 +179,7 @@ describe("loadRegistry", () => {
     await loadCredentials({
       anthropicSeedPath: anthropicSeedPath(),
       codexCredentialsPath: codexPath(),
+      deepseekCredentialsPath: deepseekPath(),
     });
     await loadRegistry({ ollamaBaseUrl: "http://localhost:1" }); // no Ollama
 
@@ -181,6 +192,7 @@ describe("loadRegistry", () => {
     await loadCredentials({
       anthropicSeedPath: anthropicSeedPath(),
       codexCredentialsPath: codexPath(),
+      deepseekCredentialsPath: deepseekPath(),
     });
     await loadRegistry({ ollamaBaseUrl: `http://localhost:${ollamaPort}` });
 
@@ -193,6 +205,7 @@ describe("loadRegistry", () => {
     await loadCredentials({
       anthropicSeedPath: anthropicSeedPath(),
       codexCredentialsPath: codexPath(),
+      deepseekCredentialsPath: deepseekPath(),
     });
     await loadRegistry({ ollamaBaseUrl: `http://localhost:${ollamaPort}` });
 
@@ -201,10 +214,37 @@ describe("loadRegistry", () => {
     expect(codexIds).toHaveLength(0);
   });
 
+  it("loads DeepSeek's models when its key file exists", async () => {
+    await setupDeepseekKey();
+    await loadCredentials({
+      anthropicSeedPath: anthropicSeedPath(),
+      codexCredentialsPath: codexPath(),
+      deepseekCredentialsPath: deepseekPath(),
+    });
+    await loadRegistry({ ollamaBaseUrl: "http://localhost:1" }); // no Ollama
+
+    const ids = listModels()
+      .filter((m) => m.owned_by === "deepseek")
+      .map((m) => m.id);
+    expect(ids).toEqual(expect.arrayContaining(["deepseek-flash", "deepseek-v4-pro"]));
+  });
+
+  it("skips DeepSeek models without the key file", async () => {
+    await loadCredentials({
+      anthropicSeedPath: anthropicSeedPath(),
+      codexCredentialsPath: codexPath(),
+      deepseekCredentialsPath: deepseekPath(),
+    });
+    await loadRegistry({ ollamaBaseUrl: "http://localhost:1" });
+
+    expect(listModels().filter((m) => m.owned_by === "deepseek")).toHaveLength(0);
+  });
+
   it("detects vision-capable Ollama model", async () => {
     await loadCredentials({
       anthropicSeedPath: anthropicSeedPath(),
       codexCredentialsPath: codexPath(),
+      deepseekCredentialsPath: deepseekPath(),
     });
     await loadRegistry({ ollamaBaseUrl: `http://localhost:${ollamaPort}` });
 
@@ -217,6 +257,7 @@ describe("loadRegistry", () => {
     await loadCredentials({
       anthropicSeedPath: anthropicSeedPath(),
       codexCredentialsPath: codexPath(),
+      deepseekCredentialsPath: deepseekPath(),
     });
     await loadRegistry({ ollamaBaseUrl: `http://localhost:${ollamaPort}` });
 
@@ -229,6 +270,7 @@ describe("loadRegistry", () => {
     await loadCredentials({
       anthropicSeedPath: anthropicSeedPath(),
       codexCredentialsPath: codexPath(),
+      deepseekCredentialsPath: deepseekPath(),
     });
     await loadRegistry({ ollamaBaseUrl: `http://localhost:${ollamaPort}` });
 
@@ -241,6 +283,7 @@ describe("loadRegistry", () => {
     await loadCredentials({
       anthropicSeedPath: anthropicSeedPath(),
       codexCredentialsPath: codexPath(),
+      deepseekCredentialsPath: deepseekPath(),
     });
     await loadRegistry({ ollamaBaseUrl: `http://localhost:${ollamaPort}` });
 
@@ -253,6 +296,7 @@ describe("loadRegistry", () => {
     await loadCredentials({
       anthropicSeedPath: anthropicSeedPath(),
       codexCredentialsPath: codexPath(),
+      deepseekCredentialsPath: deepseekPath(),
     });
     await loadRegistry({ ollamaBaseUrl: `http://localhost:${ollamaPort}` });
 
@@ -265,6 +309,7 @@ describe("loadRegistry", () => {
     await loadCredentials({
       anthropicSeedPath: anthropicSeedPath(),
       codexCredentialsPath: codexPath(),
+      deepseekCredentialsPath: deepseekPath(),
     });
     await loadRegistry({ ollamaBaseUrl: `http://localhost:${ollamaPort}` });
 
@@ -277,6 +322,7 @@ describe("loadRegistry", () => {
     await loadCredentials({
       anthropicSeedPath: anthropicSeedPath(),
       codexCredentialsPath: codexPath(),
+      deepseekCredentialsPath: deepseekPath(),
     });
     // Port 1 should refuse connections
     await loadRegistry({ ollamaBaseUrl: "http://localhost:1" });
@@ -292,6 +338,7 @@ describe("listModels", () => {
     await loadCredentials({
       anthropicSeedPath: anthropicSeedPath(),
       codexCredentialsPath: codexPath(),
+      deepseekCredentialsPath: deepseekPath(),
     });
     await loadRegistry({ ollamaBaseUrl: `http://localhost:${ollamaPort}` });
 
@@ -313,6 +360,7 @@ describe("resolveModel", () => {
     await loadCredentials({
       anthropicSeedPath: anthropicSeedPath(),
       codexCredentialsPath: codexPath(),
+      deepseekCredentialsPath: deepseekPath(),
     });
     await loadRegistry({ ollamaBaseUrl: `http://localhost:${ollamaPort}` });
 
@@ -328,6 +376,7 @@ describe("resolveModel", () => {
     await loadCredentials({
       anthropicSeedPath: anthropicSeedPath(),
       codexCredentialsPath: codexPath(),
+      deepseekCredentialsPath: deepseekPath(),
     });
     await loadRegistry({ ollamaBaseUrl: "http://localhost:1" });
 
@@ -343,6 +392,7 @@ describe("resolveModel", () => {
     await loadCredentials({
       anthropicSeedPath: anthropicSeedPath(),
       codexCredentialsPath: codexPath(),
+      deepseekCredentialsPath: deepseekPath(),
     });
     await loadRegistry({ ollamaBaseUrl: "http://localhost:1" });
 
@@ -356,10 +406,26 @@ describe("resolveModel", () => {
     expect(resolved?.apiKey).toBeDefined();
   });
 
+  it("resolves a DeepSeek model with its key", async () => {
+    await setupDeepseekKey();
+    await loadCredentials({
+      anthropicSeedPath: anthropicSeedPath(),
+      codexCredentialsPath: codexPath(),
+      deepseekCredentialsPath: deepseekPath(),
+    });
+    await loadRegistry({ ollamaBaseUrl: "http://localhost:1" });
+
+    const resolved = resolveModel("deepseek-v4-pro");
+    expect(resolved?.provider).toBe("deepseek");
+    expect(resolved?.apiKey).toBe("sk-test-deepseek");
+    expect(resolved?.model.input).toEqual(["text"]);
+  });
+
   it("returns undefined for nonexistent model", async () => {
     await loadCredentials({
       anthropicSeedPath: anthropicSeedPath(),
       codexCredentialsPath: codexPath(),
+      deepseekCredentialsPath: deepseekPath(),
     });
     await loadRegistry({ ollamaBaseUrl: `http://localhost:${ollamaPort}` });
 

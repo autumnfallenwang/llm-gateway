@@ -1,6 +1,6 @@
 # LLM Gateway
 
-Self-hosted OpenAI-compatible API gateway. Routes requests to Ollama, Anthropic, Codex via pi-ai.
+Self-hosted OpenAI-compatible API gateway. Routes requests to Ollama, Anthropic, Codex, DeepSeek via pi-ai.
 
 Supports OpenAI tool calling (`tools`, `tool_choice`, `tool` messages) and `reasoning_effort`.
 `src/lib/pi.ts` is the only file that imports pi-ai (`@earendil-works/pi-ai`); everything else
@@ -21,6 +21,8 @@ Hono + Zod + @hono/zod-openapi + Vitest + Biome + tsx
 - `npm run test:codex-poc` - live GPT check through the host's ChatGPT login (`~/.codex/auth.json`):
   which Codex models the plan answers, plus pi-ai and gateway features on one of them. Opt-in, ~40
   real requests against the plan's quota
+- `npm run test:deepseek-poc` - live DeepSeek check through the gateway with the key in
+  `~/.deepseek/api_key`. Opt-in, ~25 real requests (well under a cent of the prepaid balance)
 - `npm run lint` - lint check
 - `npm run lint:fix` - auto-fix lint
 
@@ -65,6 +67,7 @@ Centralized in `src/config.ts`. Key env var overrides:
 | `ANTHROPIC_REFRESH_SKEW_MS` | `60000` | Safety margin before `expiresAt` — refresh fires when `now > expires - skew`. |
 | `CODEX_CREDENTIALS_PATH` | `~/.codex/auth.json` | Codex auth file: a ChatGPT login (any plan with Codex; Go gets `gpt-6-luna`, `gpt-5.6-terra`, `gpt-5.6-luna`). Read-only — the host's Codex client refreshes it (tokens last 10 days) and the gateway re-reads it when it changes. |
 | `CODEX_ENABLED` | `true` | Load Codex credentials + register Codex models. Set `false` on a host with no ChatGPT login so the models don't surface as validation errors. |
+| `DEEPSEEK_CREDENTIALS_PATH` | `~/.deepseek/api_key` | DeepSeek's static API key (metered, prepaid), plain text, mode 600 — the key's single source of truth on the host (`~/.zshrc` reads it for ccsw). No file, no DeepSeek models. Re-read when it changes. See [docs/deepseek-provider.md](docs/deepseek-provider.md). |
 | `VALIDATION_CONCURRENCY` | `3` | Parallel model validation limit |
 | `VALIDATE_NEW_MODELS_ON_BOOT` | `true` | At startup, validate (in the background) only the models with no stored result, so new Ollama pulls and pi-ai IDs don't sit at `status: "unknown"`. `false` to skip. |
 | `VALIDATION_TIMEOUT_MS` | `60000` | Per-model validation timeout |
@@ -91,5 +94,6 @@ Centralized in `src/config.ts`. Key env var overrides:
 - [docs/k3s-migration/01-PLAN.md](docs/k3s-migration/01-PLAN.md) - Phase 8 k3s migration plan (Helm chart, GHA → GHCR → arch-infra, cutover)
 - [docs/k3s-migration/02-K3S_REFERENCE.md](docs/k3s-migration/02-K3S_REFERENCE.md) - Home k3s cluster reference (architecture, conventions, common ops)
 - [docs/k3s-migration/03-SESSION_MEMO.md](docs/k3s-migration/03-SESSION_MEMO.md) - Phase 8 locked decisions
+- [docs/deepseek-provider.md](docs/deepseek-provider.md) - Phase 11 DeepSeek provider: facts, decisions (pi-ai, key in `~/.deepseek/api_key`, thinking off by default)
 - [docs/backlog.md](docs/backlog.md) - Backlog of planned work
 - [docs/progress.md](docs/progress.md) - Current progress tracker

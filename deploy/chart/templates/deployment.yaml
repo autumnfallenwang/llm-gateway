@@ -56,6 +56,11 @@ spec:
               mountPath: {{ .Values.hostMounts.codex.mountPath }}
               readOnly: true
             {{- end }}
+            {{- if .Values.hostMounts.deepseek.enabled }}
+            - name: host-deepseek
+              mountPath: {{ .Values.hostMounts.deepseek.mountPath }}
+              readOnly: true
+            {{- end }}
       volumes:
         {{- if .Values.persistence.enabled }}
         - name: data
@@ -72,5 +77,11 @@ spec:
         - name: host-codex
           hostPath:
             path: {{ .Values.hostMounts.codex.hostPath }}
+            type: Directory
+        {{- end }}
+        {{- if .Values.hostMounts.deepseek.enabled }}
+        - name: host-deepseek
+          hostPath:
+            path: {{ .Values.hostMounts.deepseek.hostPath }}
             type: Directory
         {{- end }}

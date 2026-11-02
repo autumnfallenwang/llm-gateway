@@ -12,8 +12,9 @@
  * gpt-5.6-terra, gpt-6-luna; the other catalog models answer "not supported when using
  * Codex with a ChatGPT account", which the gateway returns as a 404).
  *
- * It runs Codex-only: Anthropic and Ollama point at nothing before the gateway modules
- * load, so it never refreshes the host's Claude login or loads Ollama models on the GPU.
+ * It runs Codex-only: Anthropic, DeepSeek and Ollama point at nothing before the gateway
+ * modules load, so it never refreshes the host's Claude login, spends DeepSeek balance, or
+ * loads Ollama models on the GPU.
  */
 import { readFileSync } from "node:fs";
 import { type ServerType, serve } from "@hono/node-server";
@@ -88,6 +89,7 @@ describe.skipIf(!RUN)("ChatGPT Go subscription via Codex", () => {
   beforeAll(async () => {
     // src/config.ts reads these at import time, so set them before any gateway import.
     process.env.ANTHROPIC_SEED_PATH = "/nonexistent";
+    process.env.DEEPSEEK_CREDENTIALS_PATH = "/nonexistent";
     process.env.OLLAMA_BASE_URL = "http://127.0.0.1:9";
     process.env.CODEX_ENABLED = "true";
 

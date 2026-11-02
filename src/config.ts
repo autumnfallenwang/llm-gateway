@@ -53,7 +53,7 @@ print(len(response.data[0].embedding))  # 1024 for bge-m3
 ## Available Models
 
 Models are dynamic — they depend on which backends are configured. Call \`GET /v1/models\` to discover available models at runtime. Each model carries:
-- \`owned_by\`: backend (\`ollama\`, \`anthropic\`, \`openai-codex\`)
+- \`owned_by\`: backend (\`ollama\`, \`anthropic\`, \`openai-codex\`, \`deepseek\`)
 - \`capability\`: \`"chat"\` (use \`/v1/chat/completions\`) or \`"embedding"\` (use \`/v1/embeddings\`)
 - \`embedding_dimensions\`: vector length, populated for validated embedding models
 
@@ -67,15 +67,19 @@ Send images via \`image_url\` content parts (HTTPS URLs or data URIs). Vision-ca
 
 ## Reasoning and refusals
 
-\`reasoning_effort\` (\`none\`, \`minimal\`, \`low\`, \`medium\`, \`high\`, \`xhigh\`, \`max\`) sets how hard Claude and GPT models think; each model moves it to the nearest level it has, so \`none\` on a model that always thinks is its lowest effort. Without it, each model keeps its default. When a Claude model's safety classifiers decline, the reply is a normal 200 with \`finish_reason: "content_filter"\` and the reason in \`message.refusal\` (\`delta.refusal\` when streaming).
+\`reasoning_effort\` (\`none\`, \`minimal\`, \`low\`, \`medium\`, \`high\`, \`xhigh\`, \`max\`) sets how hard Claude, GPT and DeepSeek models think; each model moves it to the nearest level it has, so \`none\` on a model that always thinks is its lowest effort. Without it, each model keeps its default. When a Claude model's safety classifiers decline, the reply is a normal 200 with \`finish_reason: "content_filter"\` and the reason in \`message.refusal\` (\`delta.refusal\` when streaming).
 
 ## GPT models
 
 GPT models (\`owned_by: "openai-codex"\`) run on a ChatGPT login, so which ones answer depends on its plan. \`/v1/models\` lists the others with \`status: "error"\` and the reason, and a request for one returns 404 \`model_not_found\`. They take no \`temperature\` (the gateway drops it) and no output limit (\`max_tokens\` is ignored).
 
+## DeepSeek models
+
+DeepSeek models (\`owned_by: "deepseek"\`: \`deepseek-flash\`, which also reads images, and \`deepseek-v4-pro\`) are metered, paid from a prepaid balance; an empty balance returns 429 \`insufficient_quota\`. They don't think unless the request sets \`reasoning_effort\`, and a forced \`tool_choice\` turns thinking off (DeepSeek can't force a tool while thinking). Images sent to \`deepseek-v4-pro\` are described by the vision fallback.
+
 ## Embeddings
 
-\`POST /v1/embeddings\` is OpenAI-compatible byte-for-byte. Currently routes to Ollama embedding models (\`bge-m3\`, \`qwen3-embedding\`, \`nomic-embed-text\`). Anthropic / Codex OAuth providers don't expose embedding APIs and return \`501 provider_unsupported\`. Supported request fields: \`model\`, \`input\` (string or array of strings up to 2048 items), \`encoding_format\` (\`"float"\` default or \`"base64"\` for compact transport), \`dimensions\` (Matryoshka-style truncation), \`user\`. Token-array inputs are not supported.`;
+\`POST /v1/embeddings\` is OpenAI-compatible byte-for-byte. Currently routes to Ollama embedding models (\`bge-m3\`, \`qwen3-embedding\`, \`nomic-embed-text\`). Anthropic, Codex and DeepSeek don't offer embedding APIs and return \`501 provider_unsupported\`. Supported request fields: \`model\`, \`input\` (string or array of strings up to 2048 items), \`encoding_format\` (\`"float"\` default or \`"base64"\` for compact transport), \`dimensions\` (Matryoshka-style truncation), \`user\`. Token-array inputs are not supported.`;
 
 // ── Ollama ─────────────────────────────────────────────────────────────────
 
@@ -106,6 +110,14 @@ export const CODEX_CREDENTIALS_PATH =
  * gpt-5.6-luna (2026-11-01).
  */
 export const CODEX_ENABLED = (env.CODEX_ENABLED ?? "true").toLowerCase() !== "false";
+
+/**
+ * The DeepSeek API key: a static key in a plain-text file, the key's single source of truth
+ * on the host (`~/.zshrc` reads it too). No file, no DeepSeek models. See
+ * docs/deepseek-provider.md.
+ */
+export const DEEPSEEK_CREDENTIALS_PATH =
+  env.DEEPSEEK_CREDENTIALS_PATH ?? join(homedir(), ".deepseek", "api_key");
 
 /**
  * Skew applied when checking Anthropic token expiry. Refresh fires whenever
