@@ -401,7 +401,7 @@ function logUsage(resolved: ResolvedModel, result: AssistantMessage): void {
   log.info(
     {
       event: "completion.usage",
-      provider: resolved.provider,
+      provider: resolved.model.provider, // owned_by, as the API and the error lines name it
       model: resolved.id,
       input_tokens: result.usage?.input,
       output_tokens: result.usage?.output,

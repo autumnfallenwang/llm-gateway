@@ -2,9 +2,9 @@ import { swaggerUI } from "@hono/swagger-ui";
 import { OpenAPIHono } from "@hono/zod-openapi";
 import { cors } from "hono/cors";
 import { streamSSE } from "hono/streaming";
-import { APP_DESCRIPTION, APP_NAME, APP_VERSION, LLM_GATEWAY_PORT } from "./config";
+import { APP_COMMIT, APP_DESCRIPTION, APP_NAME, APP_VERSION, LLM_GATEWAY_PORT } from "./config";
 import { BackendError } from "./errors";
-import { log } from "./lib/logger";
+import { log, requestContext } from "./lib/logger";
 import { chatCompletionRoute } from "./routes/chat";
 import { embeddingsRoute } from "./routes/embeddings";
 import { limitsRoute } from "./routes/limits";
@@ -46,13 +46,14 @@ app.use("/*", cors());
 
 // Request access log: one structured line per request (event="http.request") with
 // req_id, method, path, status, latency_ms. Skips the Swagger / openapi / health
-// noise to keep logs focused on real API traffic.
+// noise to keep logs focused on real API traffic. The request runs inside
+// requestContext, so every line logged while it's handled carries the same req_id.
 const REQUEST_LOG_SKIP = new Set(["/", "/docs", "/openapi.json"]);
 app.use("*", async (c, next) => {
   const start = Date.now();
   const reqId = crypto.randomUUID();
   c.set("req_id", reqId);
-  await next();
+  await requestContext.run({ req_id: reqId }, next);
   if (REQUEST_LOG_SKIP.has(c.req.path)) return;
   log.info(
     {
@@ -342,7 +343,9 @@ app.openapi(limitsRoute, async (c) => {
   const lookup = lookupModel(model);
   if (lookup.kind === "ambiguous") return c.json(ambiguousModel(model, lookup.choices), 400);
   if (lookup.kind === "missing") return c.json(modelNotFound(model), 404);
-  return c.json(await limitsFor(lookup.resolved), 200);
+  // A model whose last check failed (not on the plan, say) is unavailable, as /v1/models says.
+  const check = (await readValidationReport())?.models[lookup.resolved.id];
+  return c.json(await limitsFor(lookup.resolved, check), 200);
 });
 
 // Model validation
@@ -403,6 +406,8 @@ app.doc("/openapi.json", {
 app.get("/docs", swaggerUI({ url: "/openapi.json" }));
 
 // Health check
-app.get("/", (c) => c.json({ status: "ok", name: APP_NAME, version: APP_VERSION }));
+app.get("/", (c) =>
+  c.json({ status: "ok", name: APP_NAME, version: APP_VERSION, commit: APP_COMMIT }),
+);
 
 export default app;

@@ -45,7 +45,7 @@ Every line is a single JSON object with a fixed core and free-form contextual fi
 | Field | Type | When | Example |
 |---|---|---|---|
 | `event` | string | always when there's a categorical event | `"auth.refresh"`, `"http.request"` |
-| `req_id` | string | inside request handlers | UUID per request |
+| `req_id` | string | every line logged while a request is handled | UUID per request |
 | `err` | object | when an Error is involved | `{type, message, stack}` (pino auto-formats) |
 | any domain field | any | freely | `model: "bge-m3:latest"`, `latency_ms: 103` |
 
@@ -198,7 +198,11 @@ app.use("*", async (c, next) => {
 });
 ```
 
-Result: one JSON line per HTTP request, queryable by path/status/latency in Loki. The `req_id` is also available to handlers (`c.get("req_id")`) so any per-request logs they emit can carry the same ID for trace stitching.
+Result: one JSON line per HTTP request, queryable by path/status/latency in Loki.
+
+**`req_id` on every line of a request** (added in 0.5.0). The middleware runs the request inside `requestContext` (an `AsyncLocalStorage` in `src/lib/logger.ts`), and the logger's `mixin` adds that `req_id` to any line written meanwhile — `completion.usage`, `completion.backend_error`, `completion.refused`, `limits.fetch_failed`, validation lines from `POST /v1/models/validate` — including the usage line a stream writes after the handler has returned. No code passes the ID around; a line logged outside any request (boot, background validation) has none. `{req_id="…"}` in Loki pulls up everything one request did.
+
+**`provider` is `owned_by`** on the lines about a model (`completion.*`, `limits.*`): `anthropic`, `openai-codex`, `deepseek`, `ollama` — the names the API and qualified model IDs use. The `auth.*` lines name the credential source instead (`codex` for `~/.codex/auth.json`).
 
 ## Docker compose log size cap
 

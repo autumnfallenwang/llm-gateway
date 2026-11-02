@@ -1,6 +1,6 @@
 import { pino } from "pino";
 import { describe, expect, it } from "vitest";
-import { log } from "../src/lib/logger";
+import { LOG_OPTIONS, log, requestContext } from "../src/lib/logger";
 
 // pino writes directly to the file descriptor (bypassing process.stdout.write),
 // so to inspect output we instantiate a parallel pino with the same config
@@ -85,5 +85,40 @@ describe("logger config (parallel instance)", () => {
 
     const parsed = JSON.parse(lines[0]);
     expect(parsed.time).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/);
+  });
+});
+
+describe("req_id on every line of a request", () => {
+  function capture() {
+    const lines: Record<string, unknown>[] = [];
+    const stream = {
+      write(chunk: string) {
+        lines.push(JSON.parse(chunk));
+        return chunk.length;
+      },
+    };
+    return { log: pino(LOG_OPTIONS, stream as unknown as NodeJS.WritableStream), lines };
+  }
+
+  it("adds the request's req_id to lines logged inside it, even after an await", async () => {
+    const { log: testLog, lines } = capture();
+    await requestContext.run({ req_id: "req-1" }, async () => {
+      testLog.info({ event: "completion.usage" }, "x");
+      await new Promise((r) => setTimeout(r, 1));
+      testLog.warn({ event: "completion.backend_error" }, "x");
+    });
+    expect(lines.map((l) => [l.event, l.req_id])).toEqual([
+      ["completion.usage", "req-1"],
+      ["completion.backend_error", "req-1"],
+    ]);
+  });
+
+  it("adds none outside a request, and an explicit req_id wins", () => {
+    const { log: testLog, lines } = capture();
+    testLog.info({ event: "registry.loaded" }, "x");
+    requestContext.run({ req_id: "req-2" }, () => testLog.info({ req_id: "mine" }, "x"));
+    expect(lines[0]).not.toHaveProperty("req_id");
+    expect(lines[1]?.req_id).toBe("mine");
+    expect(JSON.stringify(lines[1]).match(/req_id/g)).toHaveLength(1);
   });
 });

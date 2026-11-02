@@ -119,23 +119,25 @@ export function parseClaudeUsage(json: unknown, t: Thresholds): AccountLimits {
         status: windowStatus(used, t, claudeSeverity(l.severity)),
       });
     }
-  } else {
-    // Older shape: one object per window, utilization 0–100.
-    for (const [key, period] of [
-      ["five_hour", "5h"],
-      ["seven_day", "weekly"],
-    ] as const) {
-      const w = obj(u[key]);
-      const used = num(w?.utilization);
-      if (used === undefined) continue;
-      windows.push({
-        scope: ALL_MODELS,
-        period,
-        used_percent: round(used),
-        resets_at: isoTime(w?.resets_at),
-        status: windowStatus(used, t),
-      });
-    }
+  }
+  // The older shape — one object per account-wide window, utilization 0–100 — still comes
+  // alongside `limits[]`. Take any window `limits[]` doesn't list, so a 5-hour window sent
+  // only there isn't dropped.
+  for (const [key, period] of [
+    ["five_hour", "5h"],
+    ["seven_day", "weekly"],
+  ] as const) {
+    const w = obj(u[key]);
+    const used = num(w?.utilization);
+    if (used === undefined) continue;
+    if (windows.some((x) => x.scope === ALL_MODELS && x.period === period)) continue;
+    windows.push({
+      scope: ALL_MODELS,
+      period,
+      used_percent: round(used),
+      resets_at: isoTime(w?.resets_at),
+      status: windowStatus(used, t),
+    });
   }
   const extra = obj(u.extra_usage);
   return {
