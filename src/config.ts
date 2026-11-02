@@ -57,6 +57,10 @@ Models are dynamic — they depend on which backends are configured. Call \`GET 
 - \`capability\`: \`"chat"\` (use \`/v1/chat/completions\`) or \`"embedding"\` (use \`/v1/embeddings\`)
 - \`embedding_dimensions\`: vector length, populated for validated embedding models
 
+## Usage limits
+
+\`GET /v1/limits?model=<id>\` says how much of the model's allowance is left — subscriptions (Claude, GPT) as windows of percent used with reset times, DeepSeek as its prepaid balance, Ollama as unlimited — with one line to show in \`available\` and an overall \`status\` (\`ok\`, \`warning\`, \`exhausted\`, \`unknown\`). Without \`model\` it lists every family. The numbers are the whole account's, including use outside the gateway.
+
 ## Model IDs
 
 Request a model by the \`id\` \`/v1/models\` lists, or as \`owned_by/model\` to name the provider explicitly (\`anthropic/claude-haiku-5-5\`, \`deepseek/deepseek-flash\`, \`ollama/qwen3:30b\`). A bare ID works when one provider lists it; when several do, \`/v1/models\` lists each as \`owned_by/model\` and the bare ID returns 400 \`ambiguous_model\` naming the choices.
@@ -154,6 +158,19 @@ export const IMAGE_FETCH_MAX_BYTES = Number(env.IMAGE_FETCH_MAX_BYTES ?? 20 * 10
 export const IMAGE_MAX_DIMENSION_PX = Number(env.IMAGE_MAX_DIMENSION_PX ?? 2048);
 export const IMAGE_MAX_BYTES = Number(env.IMAGE_MAX_BYTES ?? 5 * 1024 * 1024); // 5 MB (Anthropic limit)
 export const IMAGE_LOW_DETAIL_MAX_PX = 512;
+
+// ── Usage limits (docs/usage-limits.md) ──────────────────────────────────
+
+/** How long an account-usage endpoint result is reused before fetching again. */
+export const LIMITS_CACHE_MS = Number(env.LIMITS_CACHE_MS ?? 60_000);
+/** Limits older than this (the endpoint keeps failing) are reported as status "unknown". */
+export const LIMITS_STALE_MS = Number(env.LIMITS_STALE_MS ?? 600_000);
+/** A window at or above this percent used is a warning. */
+export const LIMITS_WARN_PERCENT = Number(env.LIMITS_WARN_PERCENT ?? 80);
+/** A prepaid balance below this (in its currency) is a warning. */
+export const LIMITS_WARN_BALANCE = Number(env.LIMITS_WARN_BALANCE ?? 1);
+/** Timeout for one account-usage endpoint request. */
+export const LIMITS_FETCH_TIMEOUT_MS = Number(env.LIMITS_FETCH_TIMEOUT_MS ?? 10_000);
 
 // ── Vision Fallback ──────────────────────────────────────────────────────
 

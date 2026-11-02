@@ -7,6 +7,7 @@ import { BackendError } from "./errors";
 import { log } from "./lib/logger";
 import { chatCompletionRoute } from "./routes/chat";
 import { embeddingsRoute } from "./routes/embeddings";
+import { limitsRoute } from "./routes/limits";
 import { modelsRoute } from "./routes/models";
 import { validateModelsRoute } from "./routes/validate";
 import { ensureAnthropicFresh, ensureHostCredentialsFresh } from "./services/auth";
@@ -14,6 +15,7 @@ import { createCompletion, createStreamingCompletion } from "./services/completi
 import { createEmbedding } from "./services/embeddings";
 import { VisionFallbackError } from "./services/image/fallback";
 import { ImageLoadError } from "./services/image/load";
+import { allLimits, limitsFor } from "./services/limits/index";
 import { listModels, loadRegistry, lookupModel, resolveModel } from "./services/registry";
 import { readValidationReport, validateAllModels } from "./services/validation";
 
@@ -331,6 +333,16 @@ app.openapi(modelsRoute, async (c) => {
     };
   });
   return c.json({ object: "list" as const, data: enriched }, 200);
+});
+
+// Usage limits (docs/usage-limits.md)
+app.openapi(limitsRoute, async (c) => {
+  const { model } = c.req.valid("query");
+  if (!model) return c.json({ object: "list" as const, data: await allLimits() }, 200);
+  const lookup = lookupModel(model);
+  if (lookup.kind === "ambiguous") return c.json(ambiguousModel(model, lookup.choices), 400);
+  if (lookup.kind === "missing") return c.json(modelNotFound(model), 404);
+  return c.json(await limitsFor(lookup.resolved), 200);
 });
 
 // Model validation

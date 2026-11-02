@@ -20,6 +20,7 @@ import type { ChatMessage, ChatTool, ChatToolChoice, ContentPart } from "../sche
 import { applyVisionFallback } from "./image/fallback.js";
 import { loadImage } from "./image/load.js";
 import { preprocessImage } from "./image/preprocess.js";
+import { observeResponseHeaders, observeStreamEvent, peekLimits } from "./limits/index.js";
 import type { ResolvedModel } from "./registry.js";
 
 const STOP_REASON_MAP: Record<string, string> = {
@@ -374,6 +375,16 @@ function buildOptions(
   }
   opts.apiKey = resolved.apiKey ?? "ollama";
 
+  // Usage limits ride along for free (docs/usage-limits.md): Claude's headers, Codex's event.
+  const { provider } = resolved;
+  if (provider === "anthropic" || provider === "codex") {
+    opts.onResponse = (response: { headers: Record<string, string> }) =>
+      observeResponseHeaders(provider, response.headers);
+  }
+  if (provider === "codex") {
+    opts.onProviderStreamEvent = (data: unknown) => observeStreamEvent(provider, data);
+  }
+
   if (resolved.provider === "ollama") {
     opts.onPayload = (payload: Record<string, unknown>) => {
       payload.options = { num_ctx: OLLAMA_NUM_CTX };
@@ -381,6 +392,27 @@ function buildOptions(
   }
 
   return opts;
+}
+
+/** One line per completion: tokens, cost, and where the model's binding limit stands. */
+function logUsage(resolved: ResolvedModel, result: AssistantMessage): void {
+  const limits = peekLimits(resolved);
+  const window = limits?.available.kind === "percent" ? limits.available : undefined;
+  log.info(
+    {
+      event: "completion.usage",
+      provider: resolved.provider,
+      model: resolved.id,
+      input_tokens: result.usage?.input,
+      output_tokens: result.usage?.output,
+      cache_read_tokens: result.usage?.cacheRead,
+      cost_usd: Math.round((result.usage?.cost?.total ?? 0) * 1e6) / 1e6,
+      ...(limits && { limit_status: limits.status }),
+      ...(window && { limit_percent_left: window.percent_left, limit_window: window.binding }),
+      ...(limits?.available.kind === "balance" && { balance_left: limits.available.amount }),
+    },
+    "Completion usage",
+  );
 }
 
 function formatResponse(result: AssistantMessage, model: string): ChatCompletionResponse {
@@ -447,6 +479,7 @@ export async function createCompletion(
   // A refusal is an answer, not a failure: OpenAI reports it as finish_reason "content_filter".
   if (isRefusal(result)) logRefusal(result);
   else throwIfBackendError(result);
+  logUsage(resolved, result);
   return formatResponse(result, body.model);
 }
 
@@ -519,6 +552,7 @@ export async function* createStreamingCompletion(
         null,
       );
     } else if (event.type === "done") {
+      logUsage(resolved, event.message);
       const finishReason = STOP_REASON_MAP[event.reason] ?? "stop";
       yield chunk({}, finishReason);
     } else if (event.type === "error") {

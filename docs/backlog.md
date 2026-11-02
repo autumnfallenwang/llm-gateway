@@ -161,6 +161,6 @@ DeepSeek's API models (`deepseek-flash`, `deepseek-v4-pro`) through pi-ai's `dee
 
 **Source**: [model-ids.md](model-ids.md). Bare IDs resolved first-match across providers, so a future collision (the same model through two providers) would silently shadow one. `provider/model` always works (the prefix is `owned_by`); a bare ID works when unique and is a 400 `ambiguous_model` when shared; `/v1/models` lists the ID that resolves. Done before #12 because the limits store keys by model.
 
-## 12. Usage limits endpoint (Phase 13)
+## 12. Usage limits endpoint (Phase 13) ✅ Done 2026-11-02
 
 **Source**: [usage-limits.md](usage-limits.md) — POC findings per family, the shared format, the store design. `GET /v1/limits[?model=]`: for a model, every window that applies (Claude weekly + Fable scoped, GPT monthly, DeepSeek balance), the binding one, `status`, `as_of`. Fed free by response headers/events and on demand by the three usage endpoints.

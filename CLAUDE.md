@@ -27,6 +27,8 @@ Hono + Zod + @hono/zod-openapi + Vitest + Biome + tsx
   real requests against the plan's quota
 - `npm run test:deepseek-poc` - live DeepSeek check through the gateway with the key in
   `~/.deepseek/api_key`. Opt-in, ~25 real requests (well under a cent of the prepaid balance)
+- `npm run test:limits-poc` - live `GET /v1/limits` check (GPT, DeepSeek, Ollama; Claude only on the
+  cluster, since a local gateway would rotate the host's Claude login)
 - `npm run lint` - lint check
 - `npm run lint:fix` - auto-fix lint
 
@@ -72,6 +74,11 @@ Centralized in `src/config.ts`. Key env var overrides:
 | `CODEX_CREDENTIALS_PATH` | `~/.codex/auth.json` | Codex auth file: a ChatGPT login (any plan with Codex; Go gets `gpt-6-luna`, `gpt-5.6-terra`, `gpt-5.6-luna`). Read-only — the host's Codex client refreshes it (tokens last 10 days) and the gateway re-reads it when it changes. |
 | `CODEX_ENABLED` | `true` | Load Codex credentials + register Codex models. Set `false` on a host with no ChatGPT login so the models don't surface as validation errors. |
 | `DEEPSEEK_CREDENTIALS_PATH` | `~/.deepseek/api_key` | DeepSeek's static API key (metered, prepaid), plain text, mode 600 — the key's single source of truth on the host (`~/.zshrc` reads it for ccsw). No file, no DeepSeek models. Re-read when it changes. See [docs/deepseek-provider.md](docs/deepseek-provider.md). |
+| `LIMITS_CACHE_MS` | `60000` | How long `/v1/limits` reuses an account-usage endpoint result before fetching again. See [docs/usage-limits.md](docs/usage-limits.md). |
+| `LIMITS_STALE_MS` | `600000` | When the usage endpoints keep failing, limits older than this report `status: "unknown"`. |
+| `LIMITS_WARN_PERCENT` | `80` | A window at or above this percent used is a `warning`. |
+| `LIMITS_WARN_BALANCE` | `1` | A prepaid balance (DeepSeek) below this is a `warning`. |
+| `LIMITS_FETCH_TIMEOUT_MS` | `10000` | Timeout for one account-usage endpoint request. |
 | `VALIDATION_CONCURRENCY` | `3` | Parallel model validation limit |
 | `VALIDATE_NEW_MODELS_ON_BOOT` | `true` | At startup, validate (in the background) only the models with no stored result, so new Ollama pulls and pi-ai IDs don't sit at `status: "unknown"`. `false` to skip. |
 | `VALIDATION_TIMEOUT_MS` | `60000` | Per-model validation timeout |
@@ -100,6 +107,6 @@ Centralized in `src/config.ts`. Key env var overrides:
 - [docs/k3s-migration/03-SESSION_MEMO.md](docs/k3s-migration/03-SESSION_MEMO.md) - Phase 8 locked decisions
 - [docs/deepseek-provider.md](docs/deepseek-provider.md) - Phase 11 DeepSeek provider: facts, decisions (pi-ai, key in `~/.deepseek/api_key`, thinking off by default)
 - [docs/model-ids.md](docs/model-ids.md) - Phase 12 model IDs: `provider/model`, `ambiguous_model`
-- [docs/usage-limits.md](docs/usage-limits.md) - Phase 13 plan: usage-limits endpoint, POC findings per paid family
+- [docs/usage-limits.md](docs/usage-limits.md) - Phase 13 `GET /v1/limits`: POC findings per paid family, the shared format, the store
 - [docs/backlog.md](docs/backlog.md) - Backlog of planned work
 - [docs/progress.md](docs/progress.md) - Current progress tracker

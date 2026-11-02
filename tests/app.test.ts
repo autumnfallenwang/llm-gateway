@@ -291,6 +291,55 @@ describe("POST /v1/chat/completions", () => {
   });
 });
 
+describe("GET /v1/limits", () => {
+  it("lists every family without a model", async () => {
+    const res = await app.request("/v1/limits");
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json.object).toBe("list");
+    expect(Array.isArray(json.data)).toBe(true);
+  });
+
+  it("returns 404 model_not_found for an unknown model", async () => {
+    const res = await app.request("/v1/limits?model=nonexistent-model");
+    expect(res.status).toBe(404);
+    expect((await res.json()).error.code).toBe("model_not_found");
+  });
+
+  it("returns 400 ambiguous_model for a bare ID two providers list", async () => {
+    const { lookupModel } = await import("../src/services/registry");
+    vi.mocked(lookupModel).mockReturnValueOnce({
+      kind: "ambiguous",
+      choices: ["ollama/deepseek-flash", "deepseek/deepseek-flash"],
+    });
+    const res = await app.request("/v1/limits?model=deepseek-flash");
+    expect(res.status).toBe(400);
+    expect((await res.json()).error.code).toBe("ambiguous_model");
+  });
+
+  it("calls a local model unlimited", async () => {
+    const { lookupModel } = await import("../src/services/registry");
+    vi.mocked(lookupModel).mockReturnValueOnce({
+      kind: "found",
+      resolved: {
+        id: "qwen3:30b",
+        model: { id: "qwen3:30b", provider: "ollama" } as never,
+        provider: "ollama",
+        capability: "chat",
+      },
+    });
+    const res = await app.request("/v1/limits?model=qwen3:30b");
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json).toMatchObject({
+      model: "qwen3:30b",
+      provider: "ollama",
+      status: "ok",
+      available: { kind: "unlimited" },
+    });
+  });
+});
+
 describe("GET /v1/models", () => {
   it("returns models list shape with status fields", async () => {
     const res = await app.request("/v1/models");

@@ -841,3 +841,35 @@ describe("reasoning_effort", () => {
     expect(options).not.toHaveProperty("effort");
   });
 });
+
+// docs/usage-limits.md: Claude's headers and Codex's events feed the limits store for free.
+describe("usage-limit hooks", () => {
+  async function optionsFor(provider: "anthropic" | "codex" | "ollama") {
+    completeMock.mockResolvedValue(makeAssistantMessage());
+    const resolved = { ...makeResolved(), provider } as never;
+    await createCompletion(resolved, {
+      model: "test-model",
+      messages: [{ role: "user", content: "Hi" }],
+      stream: false,
+    });
+    return (completeMock.mock.calls[0] as unknown[])[2] as Record<string, unknown>;
+  }
+
+  it("reads Claude's response headers", async () => {
+    const options = await optionsFor("anthropic");
+    expect(typeof options.onResponse).toBe("function");
+    expect(options).not.toHaveProperty("onProviderStreamEvent");
+  });
+
+  it("reads Codex's headers and stream events", async () => {
+    const options = await optionsFor("codex");
+    expect(typeof options.onResponse).toBe("function");
+    expect(typeof options.onProviderStreamEvent).toBe("function");
+  });
+
+  it("adds nothing for local models", async () => {
+    const options = await optionsFor("ollama");
+    expect(options).not.toHaveProperty("onResponse");
+    expect(options).not.toHaveProperty("onProviderStreamEvent");
+  });
+});

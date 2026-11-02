@@ -1,6 +1,6 @@
-# Usage limits endpoint (Phase 13, planned)
+# Usage limits endpoint (Phase 13)
 
-Let apps — a chatbot, first — show how much of each paid family's allowance is left for the model in use, before and after each message. Planned 2026-11-02 from live POCs; it builds on Phase 12's model IDs ([model-ids.md](model-ids.md)).
+Let apps — a chatbot, first — show how much of each paid family's allowance is left for the model in use, before and after each message. Planned from live POCs and built 2026-11-02 (branch `feat/usage-limits`); it builds on Phase 12's model IDs ([model-ids.md](model-ids.md)).
 
 ## Findings (POCs, 2026-11-02)
 
@@ -95,22 +95,31 @@ A limits store per provider account, keyed by (provider, model) — never the ba
 
 **Account-wide, not the gateway's share.** Claude's 43% includes the owner's own Claude Code use. Apps can show "57% of this week's allowance left", not who spent it.
 
-## Work (planned)
+## As built
 
-| # | Task |
-|---|---|
-| 71 | Store + parsers per family (from POC fixtures), fed by pi.ts hooks and the three endpoints |
-| 72 | Per-model window mapping and the binding window |
-| 73 | `GET /v1/limits[?model=]` with its OpenAPI schema |
-| 74 | Per-request logging: the binding window's `used_percent` and `cost_usd` |
-| 75 | Optional: a `limits` summary per model in `/v1/models` |
-| 76 | Tests: parsers on fixtures, an opt-in live suite |
+- **Code:** `src/services/limits/parse.ts` (pure parsers, one per source) and `src/services/limits/index.ts` (the store, the endpoint fetchers, the per-model views); `GET /v1/limits` in `src/routes/limits.ts`. Completions for Claude and Codex pass pi-ai's `onResponse` (and, for Codex, `onProviderStreamEvent`) hooks, which feed the store.
+- **Merging:** the endpoint's data is the base; a newer response's windows replace the matching (scope, period) ones and its verdict wins, while windows only the endpoint knows (Claude's Fable-scoped one) are kept. `source` says which was newest.
+- **Without `?model=`:** one entry per registered family, account-wide — every window listed, `available` bound by the account-wide ones only. Ollama is `{ "kind": "unlimited" }`, with no fetch.
+- **Claude's `plan` is null:** none of its sources name the plan.
+- **Logging:** every completion logs `completion.usage` — tokens, `cost_usd` (pi-ai's, from catalog prices; for subscriptions an API-price equivalent), and, from the cache without fetching, `limit_status`, `limit_percent_left` and `limit_window` (or `balance_left`).
+- **The endpoints are called with the gateway's own credentials**: its own Claude chain (refreshed first if due), the host Codex login (`originator: pi`, as pi-ai sends), the DeepSeek key.
 
-## Open questions
+## Work
 
-- Endpoint cache time — 60 s to start.
-- Where `warning` starts: Claude's own `allowed_warning`; a percentage for GPT (80%?); a dollar floor for DeepSeek.
-- How stale is "unknown".
+| # | Task | Status |
+|---|---|---|
+| 71 | Store + parsers per family (from POC fixtures), fed by pi.ts hooks and the three endpoints | ✅ |
+| 72 | Per-model window mapping and the binding window | ✅ |
+| 73 | `GET /v1/limits[?model=]` with its OpenAPI schema | ✅ |
+| 74 | Per-request logging: `completion.usage` with tokens, `cost_usd`, the binding window | ✅ |
+| 75 | Optional: a `limits` summary per model in `/v1/models` | not done — add if a model picker needs it |
+| 76 | Tests: 30 unit (parsers on the POC fixtures, store, views, route, hooks) + `npm run test:limits-poc` 5/5 live | ✅ |
+
+## Decided (were open questions)
+
+- **Cache:** an endpoint result is reused for `LIMITS_CACHE_MS` (60 s); concurrent callers share one fetch.
+- **Warning:** at or above `LIMITS_WARN_PERCENT` (80) used, or when the provider says so (Claude's `allowed_warning`, a `limits[].severity` other than `normal`); a balance below `LIMITS_WARN_BALANCE` (1.00). 100% used, Claude's `rejected`, Codex's `limit_reached` or an empty balance is `exhausted`.
+- **Stale:** when the endpoint keeps failing, the last good data is served with its `as_of` and `details.last_error`; once older than `LIMITS_STALE_MS` (10 min) the status is `unknown`.
 
 ## Later
 
