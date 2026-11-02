@@ -14,7 +14,7 @@ import { createCompletion, createStreamingCompletion } from "./services/completi
 import { createEmbedding } from "./services/embeddings";
 import { VisionFallbackError } from "./services/image/fallback";
 import { ImageLoadError } from "./services/image/load";
-import { listModels, loadRegistry, resolveModel } from "./services/registry";
+import { listModels, loadRegistry, lookupModel, resolveModel } from "./services/registry";
 import { readValidationReport, validateAllModels } from "./services/validation";
 
 type AppVariables = { req_id: string };
@@ -65,24 +65,37 @@ app.use("*", async (c, next) => {
   );
 });
 
+function modelNotFound(model: string) {
+  return {
+    error: {
+      message: `Model '${model}' not found`,
+      type: "invalid_request_error",
+      param: "model",
+      code: "model_not_found",
+    },
+  };
+}
+
+/** A bare model ID that several providers list: name one as provider/model. */
+function ambiguousModel(model: string, choices: string[]) {
+  return {
+    error: {
+      message: `Model '${model}' is listed by more than one provider; use one of: ${choices.join(", ")}`,
+      type: "invalid_request_error",
+      param: "model",
+      code: "ambiguous_model",
+    },
+  };
+}
+
 // Chat completions
 app.openapi(chatCompletionRoute, async (c) => {
   const body = c.req.valid("json");
 
-  let resolved = resolveModel(body.model);
-  if (!resolved) {
-    return c.json(
-      {
-        error: {
-          message: `Model '${body.model}' not found`,
-          type: "invalid_request_error",
-          param: "model",
-          code: "model_not_found",
-        },
-      },
-      404,
-    );
-  }
+  const lookup = lookupModel(body.model);
+  if (lookup.kind === "ambiguous") return c.json(ambiguousModel(body.model, lookup.choices), 400);
+  if (lookup.kind === "missing") return c.json(modelNotFound(body.model), 404);
+  let resolved = lookup.resolved;
 
   // Capability gate: embedding-only models would 5xx upstream when called via chat.
   // Mirror of the gate in createEmbedding(); see openai-embeddings-spec.md.
@@ -120,13 +133,13 @@ app.openapi(chatCompletionRoute, async (c) => {
         500,
       );
     }
-    const refreshed = resolveModel(body.model);
+    const refreshed = resolveModel(resolved.id);
     if (refreshed) resolved = refreshed;
   }
   // Codex and DeepSeek read host files (the Codex login, the DeepSeek key): pick up a change.
   if (resolved.provider === "codex" || resolved.provider === "deepseek") {
     await ensureHostCredentialsFresh(resolved.provider);
-    const refreshed = resolveModel(body.model);
+    const refreshed = resolveModel(resolved.id);
     if (refreshed) resolved = refreshed;
   }
 
@@ -254,20 +267,10 @@ app.openapi(chatCompletionRoute, async (c) => {
 app.openapi(embeddingsRoute, async (c) => {
   const body = c.req.valid("json");
 
-  const resolved = resolveModel(body.model);
-  if (!resolved) {
-    return c.json(
-      {
-        error: {
-          message: `Model '${body.model}' not found`,
-          type: "invalid_request_error",
-          param: "model",
-          code: "model_not_found",
-        },
-      },
-      404,
-    );
-  }
+  const lookup = lookupModel(body.model);
+  if (lookup.kind === "ambiguous") return c.json(ambiguousModel(body.model, lookup.choices), 400);
+  if (lookup.kind === "missing") return c.json(modelNotFound(body.model), 404);
+  const resolved = lookup.resolved;
 
   try {
     const response = await createEmbedding(resolved, body);

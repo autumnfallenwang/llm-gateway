@@ -57,6 +57,10 @@ Models are dynamic — they depend on which backends are configured. Call \`GET 
 - \`capability\`: \`"chat"\` (use \`/v1/chat/completions\`) or \`"embedding"\` (use \`/v1/embeddings\`)
 - \`embedding_dimensions\`: vector length, populated for validated embedding models
 
+## Model IDs
+
+Request a model by the \`id\` \`/v1/models\` lists, or as \`owned_by/model\` to name the provider explicitly (\`anthropic/claude-haiku-5-5\`, \`deepseek/deepseek-flash\`, \`ollama/qwen3:30b\`). A bare ID works when one provider lists it; when several do, \`/v1/models\` lists each as \`owned_by/model\` and the bare ID returns 400 \`ambiguous_model\` naming the choices.
+
 ## Streaming
 
 Set \`stream: true\` on chat completions to receive Server-Sent Events. Each event is \`data: {chunk_json}\\n\\n\` with object type \`chat.completion.chunk\`. The stream ends with \`data: [DONE]\\n\\n\`. OpenAI SDKs handle this automatically. Embeddings do not stream.

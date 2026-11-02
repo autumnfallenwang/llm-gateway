@@ -7,6 +7,10 @@ Supports OpenAI tool calling (`tools`, `tool_choice`, `tool` messages) and `reas
 imports from it, so a pi-ai API change stays in one file. It also corrects pi-ai's catalog
 (`NO_TEMPERATURE`, `RETIRES`) and maps `reasoning_effort` per API (`reasoningOptions`).
 
+Models are requested by bare ID or `owned_by/model` (`deepseek/deepseek-flash`); a bare ID two providers
+share is a 400 `ambiguous_model`. Key anything per-model by `ResolvedModel.id` (the listed ID), never the
+bare `model.id`. See [docs/model-ids.md](docs/model-ids.md).
+
 ## Stack
 
 Hono + Zod + @hono/zod-openapi + Vitest + Biome + tsx
@@ -95,5 +99,7 @@ Centralized in `src/config.ts`. Key env var overrides:
 - [docs/k3s-migration/02-K3S_REFERENCE.md](docs/k3s-migration/02-K3S_REFERENCE.md) - Home k3s cluster reference (architecture, conventions, common ops)
 - [docs/k3s-migration/03-SESSION_MEMO.md](docs/k3s-migration/03-SESSION_MEMO.md) - Phase 8 locked decisions
 - [docs/deepseek-provider.md](docs/deepseek-provider.md) - Phase 11 DeepSeek provider: facts, decisions (pi-ai, key in `~/.deepseek/api_key`, thinking off by default)
+- [docs/model-ids.md](docs/model-ids.md) - Phase 12 model IDs: `provider/model`, `ambiguous_model`
+- [docs/usage-limits.md](docs/usage-limits.md) - Phase 13 plan: usage-limits endpoint, POC findings per paid family
 - [docs/backlog.md](docs/backlog.md) - Backlog of planned work
 - [docs/progress.md](docs/progress.md) - Current progress tracker

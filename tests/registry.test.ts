@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { type AppDb, openDb, setDb } from "../src/lib/db";
 import { loadCredentials } from "../src/services/auth";
-import { listModels, loadRegistry, resolveModel } from "../src/services/registry";
+import { listModels, loadRegistry, lookupModel, resolveModel } from "../src/services/registry";
 
 // ── Mock Ollama server ──────────────────────────────────────────────────────
 
@@ -15,6 +15,9 @@ const OLLAMA_MODELS = [
   { id: "llava:latest", object: "model", created: 1700000002, owned_by: "library" },
   { id: "bge-m3:latest", object: "model", created: 1700000003, owned_by: "library" },
 ];
+
+/** Extra models a test lists from the mock Ollama (names that collide, community names). */
+let extraOllamaModels: typeof OLLAMA_MODELS = [];
 
 const SHOW_CAPABILITIES: Record<
   string,
@@ -45,7 +48,7 @@ beforeAll(async () => {
   ollamaServer = createServer((req, res) => {
     if (req.url === "/v1/models") {
       res.writeHead(200, { "Content-Type": "application/json" });
-      res.end(JSON.stringify({ object: "list", data: OLLAMA_MODELS }));
+      res.end(JSON.stringify({ object: "list", data: [...OLLAMA_MODELS, ...extraOllamaModels] }));
     } else if (req.method === "POST" && req.url === "/api/show") {
       let body = "";
       req.on("data", (chunk: Buffer) => {
@@ -92,6 +95,7 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
+  extraOllamaModels = [];
   db.close();
   await rm(tempDir, { recursive: true, force: true });
 });
@@ -431,5 +435,111 @@ describe("resolveModel", () => {
 
     const resolved = resolveModel("nonexistent-model-xyz");
     expect(resolved).toBeUndefined();
+  });
+});
+
+// ── Model IDs: provider/model (docs/model-ids.md) ─────────────────────────────
+
+describe("model IDs", () => {
+  const ollamaModel = (id: string) => ({
+    id,
+    object: "model",
+    created: 1700000009,
+    owned_by: "library",
+  });
+
+  async function loadEverything() {
+    setupAnthropicKey();
+    await setupCodexKey();
+    await setupDeepseekKey();
+    await loadCredentials({
+      anthropicSeedPath: anthropicSeedPath(),
+      codexCredentialsPath: codexPath(),
+      deepseekCredentialsPath: deepseekPath(),
+    });
+    await loadRegistry({ ollamaBaseUrl: `http://localhost:${ollamaPort}` });
+  }
+
+  it("resolves owned_by/model for every provider, listed under the bare ID", async () => {
+    await loadEverything();
+    const codexId = listModels().find((m) => m.owned_by === "openai-codex")?.id ?? "";
+    for (const [qualified, provider, id] of [
+      ["ollama/llama3:latest", "ollama", "llama3:latest"],
+      ["anthropic/claude-haiku-5-5", "anthropic", "claude-haiku-5-5"],
+      [`openai-codex/${codexId}`, "codex", codexId],
+      ["deepseek/deepseek-flash", "deepseek", "deepseek-flash"],
+    ] as const) {
+      const resolved = resolveModel(qualified);
+      expect(resolved?.provider, qualified).toBe(provider);
+      expect(resolved?.id, qualified).toBe(id);
+    }
+  });
+
+  it("keeps bare IDs working when one provider lists them", async () => {
+    await loadEverything();
+    expect(resolveModel("claude-haiku-5-5")?.provider).toBe("anthropic");
+    expect(resolveModel("llama3:latest")?.provider).toBe("ollama");
+    const ids = listModels().map((m) => m.id);
+    expect(new Set(ids).size).toBe(ids.length);
+    expect(ids.some((id) => id.includes("/"))).toBe(false);
+  });
+
+  describe("when two providers list the same ID", () => {
+    beforeEach(() => {
+      extraOllamaModels = [ollamaModel("deepseek-flash")];
+    });
+
+    it("lists each one qualified, and nothing under the bare ID", async () => {
+      await loadEverything();
+      const ids = listModels().map((m) => m.id);
+      expect(ids).toContain("ollama/deepseek-flash");
+      expect(ids).toContain("deepseek/deepseek-flash");
+      expect(ids).not.toContain("deepseek-flash");
+      expect(new Set(ids).size).toBe(ids.length);
+    });
+
+    it("calls the bare ID ambiguous, naming both choices", async () => {
+      await loadEverything();
+      expect(lookupModel("deepseek-flash")).toEqual({
+        kind: "ambiguous",
+        choices: ["ollama/deepseek-flash", "deepseek/deepseek-flash"],
+      });
+      expect(resolveModel("deepseek-flash")).toBeUndefined();
+    });
+
+    it("resolves each qualified ID to its own provider", async () => {
+      await loadEverything();
+      expect(resolveModel("ollama/deepseek-flash")).toMatchObject({
+        provider: "ollama",
+        id: "ollama/deepseek-flash",
+      });
+      expect(resolveModel("deepseek/deepseek-flash")).toMatchObject({
+        provider: "deepseek",
+        id: "deepseek/deepseek-flash",
+        apiKey: "sk-test-deepseek",
+      });
+    });
+  });
+
+  it("treats a slash as a prefix only for our providers' own models", async () => {
+    // Ollama community names; one starts with a provider name but isn't that provider's model.
+    extraOllamaModels = [ollamaModel("someuser/coder:7b"), ollamaModel("deepseek/coder:7b")];
+    await loadEverything();
+    expect(resolveModel("someuser/coder:7b")).toMatchObject({
+      provider: "ollama",
+      id: "someuser/coder:7b",
+    });
+    expect(resolveModel("deepseek/coder:7b")).toMatchObject({
+      provider: "ollama",
+      id: "deepseek/coder:7b",
+    });
+    expect(resolveModel("ollama/deepseek/coder:7b")?.provider).toBe("ollama");
+  });
+
+  it("finds nothing under an unknown prefix or another provider's name", async () => {
+    await loadEverything();
+    expect(lookupModel("nobody/llama3:latest")).toEqual({ kind: "missing" });
+    expect(lookupModel("anthropic/llama3:latest")).toEqual({ kind: "missing" });
+    expect(lookupModel("deepseek/")).toEqual({ kind: "missing" });
   });
 });

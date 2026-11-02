@@ -7,7 +7,7 @@ export const modelsRoute = createRoute({
   operationId: "listModels",
   summary: "List available models",
   description:
-    "Returns models from all configured backends (Ollama, Anthropic, Codex). Each model includes `context_window` and `max_tokens` fields. All models are returned with `status`, `status_detail`, and `validated_at` fields reflecting their validation state.",
+    "Returns models from all configured backends (Ollama, Anthropic, Codex, DeepSeek). Each `id` resolves to its model: bare when one provider lists it, `owned_by/model` when several do. Each model includes `context_window` and `max_tokens` fields. All models are returned with `status`, `status_detail`, and `validated_at` fields reflecting their validation state.",
   tags: ["Models"],
   responses: {
     200: {

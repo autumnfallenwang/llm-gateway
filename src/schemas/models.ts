@@ -1,7 +1,11 @@
 import { z } from "@hono/zod-openapi";
 
 export const ModelObjectSchema = z.object({
-  id: z.string().openapi({ description: "Model identifier", example: "qwen3:30b" }),
+  id: z.string().openapi({
+    description:
+      "Model ID to request it by: bare when one provider lists it, 'owned_by/model' when several do",
+    example: "qwen3:30b",
+  }),
   object: z.literal("model").openapi({ description: "Always 'model'" }),
   created: z
     .number()

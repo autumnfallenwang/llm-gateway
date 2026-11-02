@@ -94,7 +94,7 @@ async function withFreshKey(resolved: ResolvedModel): Promise<ResolvedModel> {
       { cause: err },
     );
   }
-  return resolveModel(resolved.model.id) ?? resolved;
+  return resolveModel(resolved.id) ?? resolved;
 }
 
 function hasImages(body: ChatCompletionRequest): boolean {

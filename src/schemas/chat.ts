@@ -112,7 +112,11 @@ const REASONING_EFFORTS = ["none", "minimal", "low", "medium", "high", "xhigh", 
 
 export const ChatCompletionRequestSchema = z
   .object({
-    model: z.string().min(1).openapi({ description: "Model ID to use", example: "qwen3:30b" }),
+    model: z.string().min(1).openapi({
+      description:
+        "Model ID as /v1/models lists it, or 'owned_by/model' (e.g. 'deepseek/deepseek-flash') to name the provider",
+      example: "qwen3:30b",
+    }),
     messages: z
       .array(MessageSchema)
       .min(1)
