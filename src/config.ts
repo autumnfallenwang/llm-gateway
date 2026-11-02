@@ -35,7 +35,7 @@ The gateway is deployed at \`http://llmgw.arch.internal\` (Traefik ingress on th
 from openai import OpenAI
 client = OpenAI(base_url="http://llmgw.arch.internal/v1", api_key="unused")
 response = client.chat.completions.create(
-    model="qwen3:30b",  # or claude-haiku-4-5, gpt-5.1
+    model="qwen3:30b",  # or claude-haiku-5-5, gpt-6-luna
     messages=[{"role": "user", "content": "Hello!"}],
 )
 \`\`\`
@@ -65,6 +65,14 @@ Set \`stream: true\` on chat completions to receive Server-Sent Events. Each eve
 
 Send images via \`image_url\` content parts (HTTPS URLs or data URIs). Vision-capable models process images directly. Non-vision models automatically fall back to a vision model that describes the image as text.
 
+## Reasoning and refusals
+
+\`reasoning_effort\` (\`none\`, \`minimal\`, \`low\`, \`medium\`, \`high\`, \`xhigh\`, \`max\`) sets how hard Claude and GPT models think; each model moves it to the nearest level it has, so \`none\` on a model that always thinks is its lowest effort. Without it, each model keeps its default. When a Claude model's safety classifiers decline, the reply is a normal 200 with \`finish_reason: "content_filter"\` and the reason in \`message.refusal\` (\`delta.refusal\` when streaming).
+
+## GPT models
+
+GPT models (\`owned_by: "openai-codex"\`) run on a ChatGPT login, so which ones answer depends on its plan. \`/v1/models\` lists the others with \`status: "error"\` and the reason, and a request for one returns 404 \`model_not_found\`. They take no \`temperature\` (the gateway drops it) and no output limit (\`max_tokens\` is ignored).
+
 ## Embeddings
 
 \`POST /v1/embeddings\` is OpenAI-compatible byte-for-byte. Currently routes to Ollama embedding models (\`bge-m3\`, \`qwen3-embedding\`, \`nomic-embed-text\`). Anthropic / Codex OAuth providers don't expose embedding APIs and return \`501 provider_unsupported\`. Supported request fields: \`model\`, \`input\` (string or array of strings up to 2048 items), \`encoding_format\` (\`"float"\` default or \`"base64"\` for compact transport), \`dimensions\` (Matryoshka-style truncation), \`user\`. Token-array inputs are not supported.`;
@@ -92,9 +100,10 @@ export const CODEX_CREDENTIALS_PATH =
   env.CODEX_CREDENTIALS_PATH ?? join(homedir(), ".codex", "auth.json");
 
 /**
- * Whether to load Codex credentials and register Codex models. Defaults to enabled to preserve
- * local/dev behavior; the cluster sets `CODEX_ENABLED=false` (no active subscription) so the
- * Codex models don't surface as validation errors. Flip the env var to re-enable — no code change.
+ * Whether to load Codex credentials and register Codex models. Set `CODEX_ENABLED=false` on a
+ * host with no ChatGPT login, so the Codex models don't surface as validation errors. The
+ * login is any ChatGPT plan that includes Codex; Go gets gpt-6-luna, gpt-5.6-terra and
+ * gpt-5.6-luna (2026-11-01).
  */
 export const CODEX_ENABLED = (env.CODEX_ENABLED ?? "true").toLowerCase() !== "false";
 
@@ -135,14 +144,14 @@ export const IMAGE_LOW_DETAIL_MAX_PX = 512;
 /** Per-family preferred vision model (same-provider affinity) */
 export const VISION_FALLBACK_FAMILY: Record<string, string> = {
   ollama: env.VISION_FALLBACK_OLLAMA ?? "qwen3-vl:8b",
-  anthropic: env.VISION_FALLBACK_ANTHROPIC ?? "claude-haiku-4-5",
-  openai: env.VISION_FALLBACK_OPENAI ?? "gpt-4o-mini",
+  anthropic: env.VISION_FALLBACK_ANTHROPIC ?? "claude-haiku-5-5",
+  openai: env.VISION_FALLBACK_OPENAI ?? "gpt-6-luna",
 };
 
 /** General fallback chain if family model unavailable (comma-separated env override) */
 export const VISION_FALLBACK_GENERAL: string[] = env.VISION_FALLBACK_GENERAL
   ? env.VISION_FALLBACK_GENERAL.split(",").map((s) => s.trim())
-  : ["qwen3-vl:8b", "claude-haiku-4-5", "gpt-4o-mini"];
+  : ["qwen3-vl:8b", "claude-haiku-5-5", "gpt-6-luna"];
 
 export const VISION_FALLBACK_MAX_DESCRIPTION_CHARS = Number(
   env.VISION_FALLBACK_MAX_DESCRIPTION_CHARS ?? 1000,

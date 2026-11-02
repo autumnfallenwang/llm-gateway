@@ -6,37 +6,39 @@
 |---|------|--------|-------|
 | 1 | Project setup | ✅ Done | Hono + Biome + Vitest + tsx, all config files |
 | 2 | Zod schemas | ✅ Done | `src/schemas/{error,chat,models,validate}.ts` |
-| 3 | Auth module | ✅ Done | `src/services/auth.ts` — Anthropic OAuth + Codex JWT + Gemini OAuth |
+| 3 | Auth module | ✅ Done | `src/services/auth.ts` — Anthropic OAuth chain + Codex JWT (re-read when the host refreshes `auth.json`). Gemini dropped in the pi-ai 0.73 upgrade |
 | 4 | Model registry | ✅ Done | `src/services/registry.ts` + `src/lib/ollama.ts` — discover & resolve models |
 | 5 | Completion service | ✅ Done | `src/services/completion.ts` — OpenAI ↔ pi-ai translation, Codex system prompt fallback |
 | 6 | Routes | ✅ Done | `src/routes/{chat,models,validate}.ts` — OpenAPI route defs with request examples |
 | 7 | App + server wiring | ✅ Done | All handlers wired: chat completions, models list (with validation filtering), model validation |
-| 8 | Tests | ✅ Done | 14 test files, 228 fast / 333 total tests |
+| 8 | Tests | ✅ Done | 17 test files (incl. the opt-in live `codex-go.poc`), 293 fast / 414 total tests |
 | 9 | Model validation | ✅ Done | `src/services/validation.ts` — tests every model with real completion, persists report via the SQLite `model_validation` table (Phase 8 / task 40) |
-| 10 | Streaming support | ✅ Done | SSE streaming via `stream: true` — all four backends (Ollama, Anthropic, Codex, Gemini) |
+| 10 | Streaming support | ✅ Done | SSE streaming via `stream: true` — all three backends (Ollama, Anthropic, Codex) |
 
 ## What's Working
 
 - `npm run dev` → `:51277`, Swagger UI at `/docs`
 - Full request validation with OpenAI-format errors (`message`, `type`, `param`, `code`)
-- `POST /v1/chat/completions` → routes to Ollama/Anthropic/Codex/Gemini via pi-ai, returns OpenAI-format response
-- `POST /v1/chat/completions` with `tools` → OpenAI function calling on Claude and Ollama models (`tool_calls` out, `tool` messages back in), streaming included
+- `POST /v1/chat/completions` → routes to Ollama/Anthropic/Codex via pi-ai, returns OpenAI-format response
+- `POST /v1/chat/completions` with `tools` → OpenAI function calling on Claude, GPT (Codex) and Ollama models (`tool_calls` out, `tool` messages back in), streaming included; `tool_choice` honoured per backend
+- `reasoning_effort` (`none`…`max`) on Claude and GPT models, moved to the nearest level each model has
+- GPT models through a ChatGPT login (Go plan: `gpt-6-luna`, `gpt-5.6-terra`, `gpt-5.6-luna`); a model the plan lacks is a 404 `model_not_found`; `temperature` is dropped for them (the backend rejects it)
+- A Claude refusal (safety classifiers) answers 200 with `finish_reason: "content_filter"` + `message.refusal`
 - `POST /v1/chat/completions` with `stream: true` → SSE streaming with `chat.completion.chunk` objects, `data: [DONE]` sentinel
 - `GET /v1/models` → returns ALL models with `status` (`ok`/`error`/`unknown`), `status_detail`, `validated_at` fields; includes `context_window` and `max_tokens` per model
 - `POST /v1/models/validate` → tests every registered model, persists results to the SQLite `model_validation` table (`LLMGW_DB_PATH`, default `~/.llm-gateway/state.db`)
-- Model registry discovers Ollama, Anthropic, Codex, Gemini models at startup
+- Model registry discovers Ollama, Anthropic, Codex models at startup; retired Claude IDs drop out on their retirement date (`RETIRES` in `src/lib/pi.ts`)
 - Completion service translates OpenAI ↔ pi-ai (system prompt extraction, message conversion, usage/stopReason mapping)
 - Streaming uses pi-ai `stream()` → async generator yields OpenAI chunk JSON → Hono `streamSSE()` writes SSE events
 - Codex provider gets default system prompt when none provided
-- 404 with `model_not_found` for unknown models, classified backend errors: 400 `context_length_exceeded`, 429 `rate_limit_exceeded`, 500 `server_error`
+- 404 with `model_not_found` for unknown models (and GPT models the plan lacks), classified backend errors: 400 `context_length_exceeded` / `invalid_input`, 429 `rate_limit_exceeded`, 500 `server_error`
 - Streaming errors sent as SSE error events before stream closes
 - Image processing pipeline: `image_url` content parts → load (HTTPS/data URI) → preprocess (resize, compress, format convert) → pi-ai `ImageContent`
 - `ImageLoadError` returns 400 `invalid_request_error` (not 500) in both streaming and non-streaming paths
 - Ollama `num_ctx` injection: configurable via `OLLAMA_NUM_CTX` env var (default 32768), replaces Ollama's wasteful ~4096 default
-- Gemini OAuth: token refresh via pi-ai `refreshGoogleCloudToken`, project discovery via `loadCodeAssist` API, persists refreshed tokens
 - SQLite-backed state: `src/lib/db.ts` opens `LLMGW_DB_PATH` at startup and runs schema migration. Tables: `credentials_chain` (provider PK), `model_validation` (model PK), `meta` (validation batch ISO). WAL journal.
-- 228 unit tests passing (fast), 14 test files, 0 lint errors, 0 lint warnings
-- `npm run test:fast` for dev iteration (~2s), `npm test` for full e2e validation against live Ollama
+- 293 unit tests passing (fast), 0 lint errors, 0 lint warnings
+- `npm run test:fast` for dev iteration (~2s), `npm test` for full e2e validation against live Ollama, `npm run test:codex-poc` for a live check of the ChatGPT login (20/20)
 
 ## Post-Phase-8 cleanup (done in follow-up commits)
 
@@ -47,13 +49,13 @@
 
 ## What's Next
 
-**Phase 9 is complete**: Claude 5 models and OpenAI tool calling (see below). **Phase 8 is complete** — the gateway runs on k3s, ArgoCD watches arch-infra, GHA closes the GitOps loop. After a stability bake (a few days), delete `deploy/compose.yaml` to retire the last compose-era artifact. Keep `deploy/Dockerfile` (still used by GHA).
+**Phase 10 is complete on branch `fix/model-coverage-audit`** (backlog #8, see below): merging it deploys and turns GPT on in production. After the roll: `POST /v1/models/validate` on the cluster (expect the 3 Go models `ok`, the other 4 GPT models `error` with the plan reason), and re-run the Claude sweep with `reasoning_effort`. **Phase 9 is complete**: Claude 5 models and OpenAI tool calling (see below). **Phase 8 is complete** — the gateway runs on k3s, ArgoCD watches arch-infra, GHA closes the GitOps loop. After a stability bake (a few days), delete `deploy/compose.yaml` to retire the last compose-era artifact. Keep `deploy/Dockerfile` (still used by GHA).
 
 Next likely targets, in priority order:
 1. **Bake** the new deployment. Let it run for ≥ 2-3 days under normal use and watch Grafana/Loki for unexpected errors before pruning compose.
 2. **Multi-stage Docker build** — current image is ~789MB because `better-sqlite3` leaves ~330MB of `node_modules/*/build/` intermediates. A copy-from builder stage would reclaim most of it. Plan-only follow-up.
-3. **Codex/Gemini lazy refresh** — same shape as the Phase 6 Anthropic fix, but neither is breaking today (subscriptions paused). Re-evaluate when subscriptions return.
-4. **GHA Node 20 → 24** — GitHub forces the upgrade on June 2nd, 2026. Dependabot's weekly PRs should surface action bumps automatically before then.
+3. **Stale Dependabot PRs** — #1–#6 (GHA actions, Node 26 base image) and #18–#24 (npm) have sat open since May/July. Merge or close them; the raised npm PR limit keeps new pi-ai bumps from being blocked meanwhile.
+4. **Codex token lapse** — the gateway reads the host's `auth.json` and never refreshes it (refresh tokens are single-use; refreshing would log the host's VS Code ChatGPT extension out). If Codex goes unused on the host for 10 days the token lapses; the fix then is a container-private chain on a dedicated `codex login` (backlog #8, item 2b).
 
 See [k3s-migration/01-PLAN.md](k3s-migration/01-PLAN.md) for the full Phase 8 reference if anything needs a re-deploy.
 
@@ -187,6 +189,21 @@ Migrate from 29 ad-hoc `console.log/warn/error` calls to JSON-per-line structure
 - Prometheus metrics + dashboards — different problem (numbers vs events); add when we want trend graphs/alerts.
 - OpenTelemetry — overkill for a single-service gateway; revisit if multi-service tracing matters.
 
+## Phase 10: Model Coverage Audit — GPT via ChatGPT Go, Claude upkeep
+
+Backlog #8. GPT worked on a ChatGPT Go login but production served none (`CODEX_ENABLED=false`); a live audit of Claude found it healthy apart from a coming retirement and a few API gaps. Full findings in [backlog.md](backlog.md) #8.
+
+| # | Task | Status | Notes |
+|---|------|--------|-------|
+| 52 | Live POC: ChatGPT Go through pi-ai and the gateway | ✅ Done | `tests/codex-go.poc.test.ts`, opt-in (`npm run test:codex-poc`, ~40 real requests). Go answers `gpt-6-luna`, `gpt-5.6-terra`, `gpt-5.6-luna` — exactly the visible models the Codex backend's `GET /backend-api/codex/models` lists for the account; the other catalog models answer "not supported when using Codex with a ChatGPT account". 20/20 after the fixes. |
+| 53 | Serve GPT on the cluster | ✅ Done (deploys on merge) | `deploy/chart/values.yaml` `CODEX_ENABLED: "true"` (the host `~/.codex` mount was already wired). `ensureCodexFresh()` re-reads `auth.json` when its mtime changes — per Codex request, before validation, and before the validate route reloads the registry — since the host's VS Code ChatGPT extension refreshes it (tokens last 10 days). |
+| 54 | Codex API fixes | ✅ Done | The backend rejects `temperature` and pi-ai sends it anyway, so every client sending it got a 500: Codex models are flagged `supportsTemperature: false` and `stream()` drops it. `tool_choice` is now forwarded (`required`; a named tool is offered alone with `required`). A model the plan lacks is 404 `model_not_found` (`param: "model"`, via a new `BackendError.param`) instead of 500. `max_tokens` is documented as ignored. |
+| 55 | `reasoning_effort` | ✅ Done | Request field (`none`…`max`) mapped by `reasoningOptions()` in `src/lib/pi.ts`: clamped with pi-ai's `clampThinkingLevel`, then Codex `reasoningEffort`, Claude adaptive `effort`, or a thinking budget inside `max_tokens` on Claude 4.5 and older (`adjustMaxTokensForThinking`). Absent, each model keeps its default. The vision fallback asks its model for `none`. |
+| 56 | Claude upkeep | ✅ Done | Refusals (`rawStopReason: "refusal"`) answer 200 `finish_reason: "content_filter"` + `message.refusal` (streaming: a final `delta.refusal` chunk) instead of 500. `claude-sonnet-4-5` (+ `-20250929`) drop out of the registry from their 2026-11-30 retirement (`RETIRES`). Validation keeps the backend's error message. Live sweep before the changes: 14 Claude models × temperature / tool round trip / forced `tool_choice` = 42/42. |
+| 57 | Upkeep: pi-ai 1.4.0, Dependabot, stale IDs | ✅ Done | pi-ai 1.4.0 (drops retired `gpt-5.3-codex-spark` and `gpt-5.5`; identical Anthropic catalog; same imports). `.github/dependabot.yml` matched the old `@mariozechner/pi-ai` name and was at its 5-open-PR limit — now `@earendil-works/pi-ai`, limit 10. Vision fallback defaults `claude-haiku-5-5` / `gpt-6-luna` (`gpt-4o-mini` was never a gateway model); `gpt-5.1` replaced in e2e and the OpenAPI examples. 293 fast tests pass; full `npm test` passes except the Anthropic e2e cases, which need a Claude login the dev run deliberately lacks. |
+
+**Watch**: once pi-ai's bundled `@anthropic-ai/sdk` reaches 1.x (now 0.129.0), requests move to API version `2026-10-21`, which rejects `temperature`/`top_p`/`top_k` on every Claude model.
+
 ## Phase 9: Claude 5 Models + Tool Calling
 
 Two gaps blocked agent use (an app that hands the model tools, runs them, and sends the results back): the Claude 5 models were missing, and tool calling was silently dropped. `tools` wasn't in the request schema, so Zod stripped it, and `tool` / assistant `tool_calls` messages failed with 400. The response side already mapped pi-ai tool calls.
@@ -247,3 +264,4 @@ Phase 4 provider expansion & tooling complete. See tasks 24–27 above.
 Phase 5 embeddings support complete. See tasks 28–32 above. New `POST /v1/embeddings` route, per-capability validator dispatch, `embedding_dimensions` on `/v1/models`. Spec doc + POC at `docs/openai-embeddings-spec.md`.
 Phase 6 Anthropic auth hotfix complete. See tasks 33–37 above. Container-private credential chain via seed/cache split, lazy refresh + single-flight mutex on the request path.
 Phase 7 structured logging complete. See tasks 38–39e above. pino JSON-per-line + per-request access log middleware + Docker log size cap.
+Phase 10 model coverage audit complete. See tasks 52–57 above. GPT via ChatGPT Go, `reasoning_effort`, Claude refusals and retirements, pi-ai 1.4.0.

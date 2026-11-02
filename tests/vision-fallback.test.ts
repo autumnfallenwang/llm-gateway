@@ -35,6 +35,7 @@ vi.mock("../src/services/image/preprocess", () => ({
 
 // Import after mocks
 const { applyVisionFallback, VisionFallbackError } = await import("../src/services/image/fallback");
+const { getModels } = await import("../src/lib/pi");
 
 // ── Helpers ──────────────────────────────────────────────────────────────
 
@@ -172,7 +173,7 @@ describe("applyVisionFallback", () => {
     setupImageMocks();
     completeMock.mockResolvedValue(makeAssistantMessage());
     resolveModelMock.mockImplementation((id: string) => {
-      if (id === "claude-haiku-4-5") return makeVisionResolved({ id });
+      if (id === "claude-haiku-5-5") return makeVisionResolved({ id });
       return undefined;
     });
 
@@ -210,7 +211,7 @@ describe("applyVisionFallback", () => {
     setupImageMocks();
     completeMock.mockResolvedValue(makeAssistantMessage());
     resolveModelMock.mockImplementation((id: string) => {
-      if (id === "claude-haiku-4-5") return makeVisionResolved({ id });
+      if (id === "claude-haiku-5-5") return makeVisionResolved({ id });
       return undefined;
     });
 
@@ -223,7 +224,7 @@ describe("applyVisionFallback", () => {
 
     await applyVisionFallback(body, makeResolved({ provider: "anthropic" }));
 
-    expect(resolveModelMock).toHaveBeenCalledWith("claude-haiku-4-5");
+    expect(resolveModelMock).toHaveBeenCalledWith("claude-haiku-5-5");
   });
 
   it("selects family model for ollama provider", async () => {
@@ -255,7 +256,7 @@ describe("applyVisionFallback", () => {
     setupImageMocks();
     completeMock.mockResolvedValue(makeAssistantMessage());
     resolveModelMock.mockImplementation((id: string) => {
-      if (id === "gpt-4o-mini") return makeVisionResolved({ id, provider: "codex" });
+      if (id === "gpt-6-luna") return makeVisionResolved({ id, provider: "codex" });
       return undefined;
     });
 
@@ -268,7 +269,7 @@ describe("applyVisionFallback", () => {
 
     await applyVisionFallback(body, makeResolved({ provider: "codex" }));
 
-    expect(resolveModelMock).toHaveBeenCalledWith("gpt-4o-mini");
+    expect(resolveModelMock).toHaveBeenCalledWith("gpt-6-luna");
   });
 
   it("falls through to general chain when family model not found", async () => {
@@ -290,7 +291,7 @@ describe("applyVisionFallback", () => {
     await applyVisionFallback(body, makeResolved({ provider: "anthropic" }));
 
     // First tried family model, then general chain
-    expect(resolveModelMock).toHaveBeenCalledWith("claude-haiku-4-5");
+    expect(resolveModelMock).toHaveBeenCalledWith("claude-haiku-5-5");
     expect(resolveModelMock).toHaveBeenCalledWith("qwen3-vl:8b");
   });
 
@@ -299,7 +300,7 @@ describe("applyVisionFallback", () => {
     completeMock.mockResolvedValue(makeAssistantMessage());
     resolveModelMock.mockImplementation((id: string) => {
       // Family model exists but is text-only
-      if (id === "claude-haiku-4-5") return makeResolved({ id });
+      if (id === "claude-haiku-5-5") return makeResolved({ id });
       // General chain model has vision
       if (id === "qwen3-vl:8b") return makeVisionResolved({ id, provider: "ollama" });
       return undefined;
@@ -314,7 +315,7 @@ describe("applyVisionFallback", () => {
 
     await applyVisionFallback(body, makeResolved({ provider: "anthropic" }));
 
-    expect(resolveModelMock).toHaveBeenCalledWith("claude-haiku-4-5");
+    expect(resolveModelMock).toHaveBeenCalledWith("claude-haiku-5-5");
     expect(resolveModelMock).toHaveBeenCalledWith("qwen3-vl:8b");
   });
 
@@ -343,7 +344,7 @@ describe("applyVisionFallback", () => {
     setupImageMocks();
     completeMock.mockResolvedValue(makeAssistantMessage("A cat sitting on a table"));
     resolveModelMock.mockImplementation((id: string) => {
-      if (id === "claude-haiku-4-5") return makeVisionResolved({ id });
+      if (id === "claude-haiku-5-5") return makeVisionResolved({ id });
       return undefined;
     });
 
@@ -364,11 +365,33 @@ describe("applyVisionFallback", () => {
     );
   });
 
+  it("asks a reasoning fallback model not to reason", async () => {
+    setupImageMocks();
+    completeMock.mockResolvedValue(makeAssistantMessage());
+    const haiku = getModels("anthropic").find((m) => m.id === "claude-haiku-5-5");
+    resolveModelMock.mockImplementation((id: string) =>
+      id === "claude-haiku-5-5" && haiku
+        ? { model: haiku, provider: "anthropic", capability: "chat", apiKey: "vision-key" }
+        : undefined,
+    );
+
+    const body = makeBody([
+      {
+        role: "user",
+        content: [{ type: "image_url", image_url: { url: "https://example.com/img.png" } }],
+      },
+    ]);
+    await applyVisionFallback(body, makeResolved({ provider: "anthropic" }));
+
+    const [, , options] = completeMock.mock.calls[0];
+    expect(options).toMatchObject({ thinkingEnabled: false, apiKey: "vision-key" });
+  });
+
   it("calls complete() with vision system prompt", async () => {
     setupImageMocks();
     completeMock.mockResolvedValue(makeAssistantMessage());
     resolveModelMock.mockImplementation((id: string) => {
-      if (id === "claude-haiku-4-5") return makeVisionResolved({ id });
+      if (id === "claude-haiku-5-5") return makeVisionResolved({ id });
       return undefined;
     });
 
@@ -405,7 +428,7 @@ describe("applyVisionFallback", () => {
     setupImageMocks();
     completeMock.mockResolvedValue(makeAssistantMessage());
     resolveModelMock.mockImplementation((id: string) => {
-      if (id === "claude-haiku-4-5") return makeVisionResolved({ id });
+      if (id === "claude-haiku-5-5") return makeVisionResolved({ id });
       return undefined;
     });
 
@@ -434,7 +457,7 @@ describe("applyVisionFallback", () => {
     setupImageMocks();
     completeMock.mockResolvedValue(makeAssistantMessage("A landscape photo"));
     resolveModelMock.mockImplementation((id: string) => {
-      if (id === "claude-haiku-4-5") return makeVisionResolved({ id });
+      if (id === "claude-haiku-5-5") return makeVisionResolved({ id });
       return undefined;
     });
 
@@ -456,7 +479,7 @@ describe("applyVisionFallback", () => {
     const longText = "A".repeat(1500);
     completeMock.mockResolvedValue(makeAssistantMessage(longText));
     resolveModelMock.mockImplementation((id: string) => {
-      if (id === "claude-haiku-4-5") return makeVisionResolved({ id });
+      if (id === "claude-haiku-5-5") return makeVisionResolved({ id });
       return undefined;
     });
 
@@ -481,7 +504,7 @@ describe("applyVisionFallback", () => {
       content: [],
     });
     resolveModelMock.mockImplementation((id: string) => {
-      if (id === "claude-haiku-4-5") return makeVisionResolved({ id });
+      if (id === "claude-haiku-5-5") return makeVisionResolved({ id });
       return undefined;
     });
 
@@ -503,7 +526,7 @@ describe("applyVisionFallback", () => {
       .mockResolvedValueOnce(makeAssistantMessage("First image description"))
       .mockResolvedValueOnce(makeAssistantMessage("Second image description"));
     resolveModelMock.mockImplementation((id: string) => {
-      if (id === "claude-haiku-4-5") return makeVisionResolved({ id });
+      if (id === "claude-haiku-5-5") return makeVisionResolved({ id });
       return undefined;
     });
 
@@ -530,7 +553,7 @@ describe("applyVisionFallback", () => {
     setupImageMocks();
     completeMock.mockResolvedValue(makeAssistantMessage());
     resolveModelMock.mockImplementation((id: string) => {
-      if (id === "claude-haiku-4-5") return makeVisionResolved({ id });
+      if (id === "claude-haiku-5-5") return makeVisionResolved({ id });
       return undefined;
     });
 
@@ -557,7 +580,7 @@ describe("applyVisionFallback", () => {
     setupImageMocks();
     completeMock.mockRejectedValue(new Error("API rate limit exceeded"));
     resolveModelMock.mockImplementation((id: string) => {
-      if (id === "claude-haiku-4-5") return makeVisionResolved({ id });
+      if (id === "claude-haiku-5-5") return makeVisionResolved({ id });
       return undefined;
     });
 
@@ -587,7 +610,7 @@ describe("applyVisionFallback", () => {
       height: 600,
     });
     resolveModelMock.mockImplementation((id: string) => {
-      if (id === "claude-haiku-4-5") return makeVisionResolved({ id });
+      if (id === "claude-haiku-5-5") return makeVisionResolved({ id });
       return undefined;
     });
 

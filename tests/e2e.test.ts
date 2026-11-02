@@ -118,7 +118,7 @@ describe("completions", () => {
 
   it("codex completion", { timeout: 60_000 }, async () => {
     const res = await post("/v1/chat/completions", {
-      model: "gpt-5.1",
+      model: "gpt-6-luna",
       messages: [{ role: "user", content: "Say hello in one word." }],
       max_tokens: 32,
     });
@@ -213,7 +213,7 @@ describe("streaming", () => {
 
   it("codex streaming completion", { timeout: 60_000 }, async () => {
     const res = await post("/v1/chat/completions", {
-      model: "gpt-5.1",
+      model: "gpt-6-luna",
       messages: [{ role: "user", content: "Say hello in one word." }],
       max_tokens: 32,
       stream: true,
@@ -367,7 +367,7 @@ describe("image: direct vision", () => {
 
   it("codex vision + data URI", { timeout: 60_000 }, async () => {
     const res = await post("/v1/chat/completions", {
-      model: "gpt-5.1",
+      model: "gpt-6-luna",
       messages: [imageMessage(dataUriJpeg, "Describe this image briefly.")],
       max_tokens: 64,
     });
@@ -378,7 +378,7 @@ describe("image: direct vision", () => {
 
   it("codex vision + HTTPS URL", { timeout: 60_000 }, async () => {
     const res = await post("/v1/chat/completions", {
-      model: "gpt-5.1",
+      model: "gpt-6-luna",
       messages: [imageMessage(HTTPS_IMAGE_URL, "Describe this image briefly.")],
       max_tokens: 64,
     });

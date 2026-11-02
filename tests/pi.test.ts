@@ -2,11 +2,13 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 const anthropicStream = vi.fn();
 const completionsStream = vi.fn();
+const codexStream = vi.fn();
 
 vi.mock("@earendil-works/pi-ai/api/anthropic-messages", () => ({ stream: anthropicStream }));
 vi.mock("@earendil-works/pi-ai/api/openai-completions", () => ({ stream: completionsStream }));
+vi.mock("@earendil-works/pi-ai/api/openai-codex-responses", () => ({ stream: codexStream }));
 
-const { getModels, stream } = await import("../src/lib/pi");
+const { getModels, reasoningOptions, stream } = await import("../src/lib/pi");
 
 type Compat = { supportsTemperature?: boolean };
 
@@ -16,8 +18,15 @@ function claude(id: string) {
   return model;
 }
 
+function gpt(id: string) {
+  const model = getModels("openai-codex").find((m) => m.id === id);
+  if (!model) throw new Error(`${id} not in the catalog`);
+  return model;
+}
+
 afterEach(() => {
   vi.clearAllMocks();
+  vi.useRealTimers();
 });
 
 describe("catalog corrections", () => {
@@ -29,8 +38,108 @@ describe("catalog corrections", () => {
 
   it("leaves other models as pi-ai has them", () => {
     expect(
-      (claude("claude-sonnet-4-5").compat as Compat | undefined)?.supportsTemperature,
+      (claude("claude-sonnet-4-6").compat as Compat | undefined)?.supportsTemperature,
     ).not.toBe(false);
+  });
+
+  // "Codex error: Unsupported parameter: temperature", checked live 2026-11-01.
+  it("marks every Codex model as refusing temperature", () => {
+    for (const model of getModels("openai-codex")) {
+      expect((model.compat as Compat).supportsTemperature, model.id).toBe(false);
+    }
+  });
+});
+
+describe("retired models", () => {
+  const ids = () => getModels("anthropic").map((m) => m.id);
+
+  it("lists claude-sonnet-4-5 until its retirement date", () => {
+    vi.useFakeTimers({ now: new Date("2026-11-29T23:59:00Z") });
+    expect(ids()).toContain("claude-sonnet-4-5");
+    expect(ids()).toContain("claude-sonnet-4-5-20250929");
+  });
+
+  it("drops claude-sonnet-4-5 from its retirement date on", () => {
+    vi.useFakeTimers({ now: new Date("2026-11-30T00:00:00Z") });
+    expect(ids()).not.toContain("claude-sonnet-4-5");
+    expect(ids()).not.toContain("claude-sonnet-4-5-20250929");
+    expect(ids()).toContain("claude-sonnet-4-6");
+  });
+});
+
+describe("temperature", () => {
+  const context = { messages: [] };
+
+  it("drops it for Codex, whose backend rejects it and pi-ai sends it anyway", () => {
+    stream(gpt("gpt-6-luna"), context, { apiKey: "k", temperature: 0.2 });
+    const options = codexStream.mock.calls[0]?.[2] as { temperature?: number };
+    expect(options.temperature).toBeUndefined();
+  });
+
+  it("keeps it where the model takes it", () => {
+    stream(claude("claude-haiku-4-5"), context, { apiKey: "k", temperature: 0.2 });
+    const options = anthropicStream.mock.calls[0]?.[2] as { temperature?: number };
+    expect(options.temperature).toBe(0.2);
+  });
+});
+
+describe("reasoningOptions", () => {
+  it("passes the level to Codex, which pi-ai maps per model", () => {
+    expect(reasoningOptions(gpt("gpt-6-luna"), "high")).toEqual({ reasoningEffort: "high" });
+    expect(reasoningOptions(gpt("gpt-6-luna"), "none")).toEqual({ reasoningEffort: "none" });
+  });
+
+  it("moves none to the lowest level on a Codex model that always reasons", () => {
+    expect(reasoningOptions(gpt("gpt-6.1-sol"), "none")).toEqual({ reasoningEffort: "minimal" });
+  });
+
+  it("sets an adaptive Claude model's effort", () => {
+    expect(reasoningOptions(claude("claude-opus-4-8"), "xhigh")).toEqual({
+      thinkingEnabled: true,
+      effort: "xhigh",
+    });
+    expect(reasoningOptions(claude("claude-opus-5-5"), "medium")).toEqual({
+      thinkingEnabled: true,
+      effort: "medium",
+    });
+  });
+
+  it("moves a level the model lacks to the nearest one it has", () => {
+    // Opus 4.6 has no xhigh (pi-ai rounds up first); Haiku 5.5 has no minimal.
+    expect(reasoningOptions(claude("claude-opus-4-6"), "xhigh")).toEqual({
+      thinkingEnabled: true,
+      effort: "max",
+    });
+    expect(reasoningOptions(claude("claude-haiku-5-5"), "minimal")).toEqual({
+      thinkingEnabled: true,
+      effort: "low",
+    });
+  });
+
+  it("turns thinking off for none where the model allows it", () => {
+    expect(reasoningOptions(claude("claude-haiku-5-5"), "none")).toEqual({
+      thinkingEnabled: false,
+    });
+  });
+
+  it("uses the lowest effort for none on a Claude model that always thinks", () => {
+    expect(reasoningOptions(claude("claude-opus-5-5"), "none")).toEqual({
+      thinkingEnabled: true,
+      effort: "low",
+    });
+  });
+
+  it("gives budget-thinking Claude models a budget that fits inside max_tokens", () => {
+    const opts = reasoningOptions(claude("claude-haiku-4-5"), "high", 100);
+    expect(opts.thinkingEnabled).toBe(true);
+    expect(opts.thinkingBudgetTokens).toBeGreaterThanOrEqual(1024);
+    expect(opts.maxTokens as number).toBeGreaterThan(opts.thinkingBudgetTokens as number);
+  });
+
+  it("leaves models that don't reason alone", () => {
+    expect(reasoningOptions({ ...claude("claude-haiku-4-5"), reasoning: false }, "high")).toEqual(
+      {},
+    );
   });
 });
 

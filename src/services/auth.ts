@@ -1,4 +1,4 @@
-import { readFile } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
 import {
   ANTHROPIC_REFRESH_SKEW_MS,
   ANTHROPIC_SEED_PATH,
@@ -58,6 +58,9 @@ let anthropicSeedPath: string | undefined;
 
 let codexAccessToken: string | undefined;
 let codexExpiresAt: number | undefined;
+/** The Codex login file and its mtime when last read, so a host-side refresh is picked up. */
+let codexPath: string | undefined;
+let codexMtimeMs: number | undefined;
 
 // ── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -270,13 +273,17 @@ async function loadAnthropicCredentials(seedPath: string): Promise<void> {
   }
 }
 
-// ── Codex credential loader (unchanged: seed-only, no refresh) ─────────────
+// ── Codex credential loader (read-only: the host's Codex client refreshes it) ──
 
 async function loadCodexCredentials(path: string): Promise<void> {
+  codexPath = path;
   try {
+    const { mtimeMs } = await stat(path);
     const raw = await readFile(path, "utf-8");
     const data: CodexCredentialsFile = JSON.parse(raw);
     const token = data.tokens?.access_token;
+    // Recorded once the file parses, so a half-written file is read again next time.
+    codexMtimeMs = mtimeMs;
     if (token) {
       codexAccessToken = token;
       codexExpiresAt = decodeJwtExp(token);
@@ -307,6 +314,25 @@ async function loadCodexCredentials(path: string): Promise<void> {
   }
 }
 
+/**
+ * Pick up a refreshed Codex login. The gateway never refreshes Codex tokens itself: refresh
+ * tokens are single-use, so doing so would log the host's Codex client out of the login
+ * the gateway shares. The host's client (the VS Code ChatGPT extension, or the `codex` CLI)
+ * keeps `auth.json` fresh — its access tokens last 10 days — and this re-reads the file
+ * whenever it has changed. Costs one `stat` per Codex request.
+ */
+export async function ensureCodexFresh(): Promise<void> {
+  if (!codexPath) return;
+  let mtimeMs: number;
+  try {
+    ({ mtimeMs } = await stat(codexPath));
+  } catch {
+    return; // gone or unreadable: keep the token we have
+  }
+  if (mtimeMs === codexMtimeMs) return;
+  await loadCodexCredentials(codexPath);
+}
+
 // Gemini backend removed in the pi-ai 0.73 upgrade: pi-ai dropped its Google/Gemini
 // OAuth helpers (geminiCliOAuthProvider / refreshGoogleCloudToken), and the gateway has
 // no Gemini subscription. Re-add via pi-ai's generic OAuth provider system if needed.
@@ -320,10 +346,12 @@ export async function loadCredentials(config?: AuthConfig): Promise<void> {
   anthropicSeedPath = undefined;
   codexAccessToken = undefined;
   codexExpiresAt = undefined;
+  codexPath = undefined;
+  codexMtimeMs = undefined;
 
   await loadAnthropicCredentials(config?.anthropicSeedPath ?? ANTHROPIC_SEED_PATH);
-  // Codex is gated by CODEX_ENABLED (the cluster sets it false — no active subscription).
-  // Skipping the load leaves codexAccessToken undefined, so Codex models never register.
+  // Codex is gated by CODEX_ENABLED, for a host with no ChatGPT login. Skipping the load
+  // leaves codexAccessToken undefined, so Codex models never register.
   if (CODEX_ENABLED) {
     await loadCodexCredentials(config?.codexCredentialsPath ?? CODEX_CREDENTIALS_PATH);
   } else {

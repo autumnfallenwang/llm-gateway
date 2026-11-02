@@ -9,7 +9,7 @@ import { chatCompletionRoute } from "./routes/chat";
 import { embeddingsRoute } from "./routes/embeddings";
 import { modelsRoute } from "./routes/models";
 import { validateModelsRoute } from "./routes/validate";
-import { ensureAnthropicFresh } from "./services/auth";
+import { ensureAnthropicFresh, ensureCodexFresh } from "./services/auth";
 import { createCompletion, createStreamingCompletion } from "./services/completion";
 import { createEmbedding } from "./services/embeddings";
 import { VisionFallbackError } from "./services/image/fallback";
@@ -123,6 +123,12 @@ app.openapi(chatCompletionRoute, async (c) => {
     const refreshed = resolveModel(body.model);
     if (refreshed) resolved = refreshed;
   }
+  // Codex: the host's Codex client refreshes auth.json; pick up a newer token if it has.
+  if (resolved.provider === "codex") {
+    await ensureCodexFresh();
+    const refreshed = resolveModel(body.model);
+    if (refreshed) resolved = refreshed;
+  }
 
   if (body.stream) {
     return streamSSE(c, async (sseStream) => {
@@ -164,7 +170,7 @@ app.openapi(chatCompletionRoute, async (c) => {
               error: {
                 message: err.message,
                 type: err.errorType,
-                param: null,
+                param: err.param,
                 code: err.errorCode,
               },
             }),
@@ -222,11 +228,11 @@ app.openapi(chatCompletionRoute, async (c) => {
           error: {
             message: err.message,
             type: err.errorType,
-            param: null,
+            param: err.param,
             code: err.errorCode,
           },
         },
-        err.httpStatus as 400 | 429 | 500,
+        err.httpStatus as 400 | 404 | 429 | 500,
       );
     }
     const message = err instanceof Error ? err.message : "Unknown backend error";
@@ -273,7 +279,7 @@ app.openapi(embeddingsRoute, async (c) => {
           error: {
             message: err.message,
             type: err.errorType,
-            param: null,
+            param: err.param,
             code: err.errorCode,
           },
         },
@@ -332,6 +338,8 @@ app.openapi(validateModelsRoute, async (c) => {
     // pi-ai bump. The registry is otherwise only built at startup. Non-fatal: if the
     // reload hiccups (e.g. Ollama briefly unreachable) we still validate the current set.
     try {
+      // A Codex login that appeared or changed since boot registers its models too.
+      await ensureCodexFresh();
       await loadRegistry();
     } catch (err) {
       log.warn(

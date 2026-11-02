@@ -1,17 +1,18 @@
 version: 2
 updates:
-  # npm: pi-ai ships new Anthropic/Codex/Gemini model IDs over time; weekly bumps
+  # npm: pi-ai ships new Anthropic/Codex model IDs over time; weekly bumps
   # keep /v1/models current without manual `ncu -u` runs.
   - package-ecosystem: npm
     directory: /
     schedule:
       interval: weekly
       day: monday
-    open-pull-requests-limit: 5
+    # Above the usual backlog of open npm PRs, so a pi-ai bump isn't held back by them.
+    open-pull-requests-limit: 10
     groups:
       pi-ai:
         patterns:
-          - "@mariozechner/pi-ai"
+          - "@earendil-works/pi-ai"
       hono:
         patterns:
           - "hono"

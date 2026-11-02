@@ -8,7 +8,7 @@ import { getDb } from "../lib/db.js";
 import { log } from "../lib/logger.js";
 import { complete } from "../lib/pi.js";
 import type { ModelValidationResult, ValidateResponse } from "../schemas/validate.js";
-import { ensureAnthropicFresh } from "./auth.js";
+import { ensureAnthropicFresh, ensureCodexFresh } from "./auth.js";
 import { createEmbedding } from "./embeddings.js";
 import { listModels, type ResolvedModel, resolveModel } from "./registry.js";
 
@@ -50,7 +50,9 @@ async function validateChatModel(
 
     const validStopReasons = ["stop", "length"];
     if (!validStopReasons.includes(result.stopReason)) {
-      return { status: "error", latencyMs, error: `unexpected stopReason: ${result.stopReason}` };
+      // The backend's own message says why (an expired login, a model the plan lacks, ...).
+      const error = result.errorMessage ?? `unexpected stopReason: ${result.stopReason}`;
+      return { status: "error", latencyMs, error };
     }
 
     const text = result.content
@@ -156,6 +158,8 @@ async function validateModels(
       "Anthropic refresh failed before validation — Anthropic models will report stale-token errors",
     );
   }
+  // Same for Codex: pick up a login the host's Codex client refreshed since boot.
+  await ensureCodexFresh();
 
   const tasks = ids.map((id) => async () => {
     const resolved = resolveModel(id);
