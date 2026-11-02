@@ -626,13 +626,13 @@ describe("Request access log middleware", () => {
     expect(res.status).toBe(404); // unresolved model — we only care about the log line shape
 
     const logEntry = findHttpRequestLog("/v1/chat/completions");
-    expect(logEntry).toBeDefined();
-    expect(logEntry?.method).toBe("POST");
-    expect(logEntry?.status).toBe(404);
-    expect(logEntry?.req_id).toEqual(expect.any(String));
-    expect((logEntry?.req_id as string).length).toBeGreaterThan(8);
-    expect(logEntry?.latency_ms).toEqual(expect.any(Number));
-    expect((logEntry?.latency_ms as number) >= 0).toBe(true);
+    if (!logEntry) throw new Error("no http.request log line for /v1/chat/completions");
+    expect(logEntry.method).toBe("POST");
+    expect(logEntry.status).toBe(404);
+    expect(logEntry.req_id).toEqual(expect.any(String));
+    expect((logEntry.req_id as string).length).toBeGreaterThan(8);
+    expect(logEntry.latency_ms).toEqual(expect.any(Number));
+    expect((logEntry.latency_ms as number) >= 0).toBe(true);
   });
 
   it("logs failed-validation requests with status 400", async () => {
