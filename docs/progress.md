@@ -55,7 +55,7 @@
 Next likely targets, in priority order:
 1. **Bake** the new deployment. Let it run for ≥ 2-3 days under normal use and watch Grafana/Loki for unexpected errors before pruning compose.
 2. **Multi-stage Docker build** — current image is ~789MB because `better-sqlite3` leaves ~330MB of `node_modules/*/build/` intermediates. A copy-from builder stage would reclaim most of it. Plan-only follow-up.
-3. **Stale Dependabot PRs** — #1–#6 (GHA actions, Node 26 base image) and #18–#24 (npm) have sat open since May/July. Merge or close them; the raised npm PR limit keeps new pi-ai bumps from being blocked meanwhile.
+3. ~~**Stale Dependabot PRs**~~ — done 2026-11-02: all 16 (#1, #3–#5, #24, #30–#40) landed together in one verified PR — Node 26 base image (and CI), better-sqlite3 13, TypeScript 7, Vitest 5, `@hono/node-server` 2, Biome 2.6.4, GHA actions bumps, and minors. Checked: image built and smoke-tested on Node 26, full suite, both live suites.
 4. **Reasoning gaps** (backlog #10) — Ollama models never reason through the gateway (`reasoning: false` for all), non-streaming responses drop the reasoning text, and there's no client auth (DeepSeek spend is capped only by its prepaid balance).
 5. **Codex token lapse** — the gateway reads the host's `auth.json` and never refreshes it (refresh tokens are single-use; refreshing would log the host's VS Code ChatGPT extension out). If Codex goes unused on the host for 10 days the token lapses; the fix then is a container-private chain on a dedicated `codex login` (backlog #8, item 2b).
 
