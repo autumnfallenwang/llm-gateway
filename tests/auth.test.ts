@@ -1,4 +1,4 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, rm, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -6,6 +6,7 @@ import { type AppDb, getDb, openDb, setDb } from "../src/lib/db";
 import { refreshAnthropicToken } from "../src/lib/pi";
 import {
   ensureAnthropicFresh,
+  ensureCodexFresh,
   getAnthropicKey,
   getCodexKey,
   getCredentialStatus,
@@ -434,7 +435,65 @@ describe("ensureAnthropicFresh: invalid_grant self-heal", () => {
   });
 });
 
-// ── Codex (unchanged: seed-only, no refresh) ───────────────────────────────
+// ── Codex (read-only: the host's Codex client refreshes auth.json) ─────────
+
+describe("ensureCodexFresh", () => {
+  const login = (exp: number) => makeJwt({ sub: "user", exp });
+  const hourFromNow = () => Math.floor(Date.now() / 1000) + 3600;
+
+  // A rewrite within the same millisecond keeps the mtime, so move it explicitly.
+  async function rewrite(token: string, mtimeSecs: number) {
+    await writeFile(codexPath(), JSON.stringify({ tokens: { access_token: token } }));
+    await utimes(codexPath(), mtimeSecs, mtimeSecs);
+  }
+
+  it("picks up a token the host's Codex client refreshed", async () => {
+    const before = login(hourFromNow());
+    await rewrite(before, 1_000_000);
+    await loadAll();
+    expect(getCodexKey()).toBe(before);
+
+    const after = login(hourFromNow() + 864_000);
+    await rewrite(after, 2_000_000);
+    await ensureCodexFresh();
+
+    expect(getCodexKey()).toBe(after);
+  });
+
+  it("doesn't re-read a file that hasn't changed", async () => {
+    const token = login(hourFromNow());
+    await rewrite(token, 1_000_000);
+    await loadAll();
+
+    // Same mtime, different bytes: proof the file wasn't read again.
+    await rewrite(login(hourFromNow() + 1), 1_000_000);
+    await ensureCodexFresh();
+
+    expect(getCodexKey()).toBe(token);
+  });
+
+  it("keeps the token it has when the file goes missing", async () => {
+    const token = login(hourFromNow());
+    await rewrite(token, 1_000_000);
+    await loadAll();
+    await rm(codexPath());
+
+    await ensureCodexFresh();
+
+    expect(getCodexKey()).toBe(token);
+  });
+
+  it("registers a login that appears after boot", async () => {
+    await loadAll();
+    expect(getCodexKey()).toBeUndefined();
+
+    const token = login(hourFromNow());
+    await rewrite(token, 1_000_000);
+    await ensureCodexFresh();
+
+    expect(getCodexKey()).toBe(token);
+  });
+});
 
 describe("loadCredentials: Codex", () => {
   it("loads valid Codex credentials", async () => {

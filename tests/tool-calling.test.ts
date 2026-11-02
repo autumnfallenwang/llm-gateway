@@ -15,7 +15,13 @@ const { createCompletion, createStreamingCompletion } = await import("../src/ser
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
-type Api = "anthropic-messages" | "openai-completions";
+type Api = "anthropic-messages" | "openai-completions" | "openai-codex-responses";
+
+const PROVIDER = {
+  "anthropic-messages": "anthropic",
+  "openai-completions": "ollama",
+  "openai-codex-responses": "codex",
+} as const;
 
 function makeResolved(api: Api = "anthropic-messages") {
   return {
@@ -23,7 +29,7 @@ function makeResolved(api: Api = "anthropic-messages") {
       id: "test-model",
       name: "Test Model",
       api,
-      provider: api === "anthropic-messages" ? "anthropic" : "ollama",
+      provider: PROVIDER[api],
       baseUrl: "http://example.invalid",
       reasoning: false,
       input: ["text"] as ("text" | "image")[],
@@ -31,7 +37,7 @@ function makeResolved(api: Api = "anthropic-messages") {
       contextWindow: 200000,
       maxTokens: 4096,
     },
-    provider: (api === "anthropic-messages" ? "anthropic" : "ollama") as "anthropic" | "ollama",
+    provider: PROVIDER[api],
     capability: "chat" as const,
     apiKey: "test-key",
   };
@@ -364,6 +370,36 @@ describe("tool_choice", () => {
     expect(err).toBeInstanceOf(BackendError);
     expect((err as BackendError).errorCode).toBe("unsupported_tool_choice");
     expect(completeMock).not.toHaveBeenCalled();
+  });
+
+  it("passes auto and none through to Codex", async () => {
+    for (const choice of ["auto", "none"] as const) {
+      const { context, options } = await contextFor(
+        { ...base, tool_choice: choice },
+        "openai-codex-responses",
+      );
+      expect(options.toolChoice).toBe(choice);
+      expect(toolNames(context)).toEqual(["get_latest_lab"]);
+      vi.clearAllMocks();
+    }
+  });
+
+  it("sends required over several tools to Codex as required", async () => {
+    const { context, options } = await contextFor(
+      { ...base, tools: [LAB_TOOL, MEDS], tool_choice: "required" },
+      "openai-codex-responses",
+    );
+    expect(options.toolChoice).toBe("required");
+    expect(toolNames(context)).toEqual(["get_latest_lab", "list_medications"]);
+  });
+
+  it("offers a named tool on its own to Codex, with required", async () => {
+    const { context, options } = await contextFor(
+      { ...base, tools: [LAB_TOOL, MEDS], tool_choice: named },
+      "openai-codex-responses",
+    );
+    expect(options.toolChoice).toBe("required");
+    expect(toolNames(context)).toEqual(["list_medications"]);
   });
 
   it("is ignored when there are no tools", async () => {

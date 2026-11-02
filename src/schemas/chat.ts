@@ -107,6 +107,9 @@ const ToolChoiceSchema = z.union([
 
 export type ChatToolChoice = z.infer<typeof ToolChoiceSchema>;
 
+/** OpenAI's `reasoning_effort` levels, plus the `max` that Claude and Codex models have. */
+const REASONING_EFFORTS = ["none", "minimal", "low", "medium", "high", "xhigh", "max"] as const;
+
 export const ChatCompletionRequestSchema = z
   .object({
     model: z.string().min(1).openapi({ description: "Model ID to use", example: "qwen3:30b" }),
@@ -117,12 +120,10 @@ export const ChatCompletionRequestSchema = z
     temperature: z.number().min(0).max(2).optional().openapi({
       description: "Sampling temperature between 0 (deterministic) and 2 (creative). Defaults to 1",
     }),
-    max_tokens: z
-      .number()
-      .int()
-      .positive()
-      .optional()
-      .openapi({ description: "Maximum number of tokens to generate" }),
+    max_tokens: z.number().int().positive().optional().openapi({
+      description:
+        "Maximum number of tokens to generate. Ignored by the GPT (Codex) models: the ChatGPT backend takes no output limit",
+    }),
     max_completion_tokens: z
       .number()
       .int()
@@ -146,6 +147,10 @@ export const ChatCompletionRequestSchema = z
       .boolean()
       .optional()
       .openapi({ description: "Accepted for compatibility; the backend decides" }),
+    reasoning_effort: z.enum(REASONING_EFFORTS).optional().openapi({
+      description:
+        "How hard a reasoning model thinks, for Claude and GPT (Codex) models; ignored by models that don't reason. Moved to the nearest level the model has: 'none' on a model that always thinks becomes its lowest. Omitted, each model keeps its default",
+    }),
   })
   .transform((data) => ({
     ...data,
@@ -175,10 +180,14 @@ const CHOICE_SCHEMA = z.object({
       .array(TOOL_CALL_SCHEMA)
       .optional()
       .openapi({ description: "Tool calls requested by the model, if any" }),
+    refusal: z.string().nullable().optional().openapi({
+      description: "Why the model declined to answer, when finish_reason is 'content_filter'",
+    }),
   }),
-  finish_reason: z
-    .string()
-    .openapi({ description: "Why generation stopped: 'stop', 'length', or 'tool_calls'" }),
+  finish_reason: z.string().openapi({
+    description:
+      "Why generation stopped: 'stop', 'length', 'tool_calls', or 'content_filter' (the model's safety classifiers declined; see message.refusal)",
+  }),
 });
 
 const USAGE_SCHEMA = z.object({
@@ -244,6 +253,9 @@ const CHUNK_DELTA_SCHEMA = z.object({
     .string()
     .optional()
     .openapi({ description: "Token of model reasoning/thinking content" }),
+  refusal: z.string().optional().openapi({
+    description: "Why the model declined, sent with finish_reason 'content_filter'",
+  }),
   tool_calls: z
     .array(CHUNK_TOOL_CALL_SCHEMA)
     .optional()

@@ -4,9 +4,10 @@ import {
   VISION_FALLBACK_MAX_DESCRIPTION_CHARS,
   VISION_FALLBACK_TIMEOUT_MS,
 } from "../../config.js";
-import { complete, type Model } from "../../lib/pi.js";
+import { complete, type Model, reasoningOptions } from "../../lib/pi.js";
 import type { ChatCompletionRequest } from "../../routes/chat.js";
 import type { ContentPart } from "../../schemas/chat.js";
+import { ensureAnthropicFresh, ensureCodexFresh } from "../auth.js";
 import type { ResolvedModel } from "../registry.js";
 import { resolveModel } from "../registry.js";
 import { loadImage } from "./load.js";
@@ -43,12 +44,13 @@ export async function applyVisionFallback(
   if (resolved.model.input.includes("image")) return body;
   if (!hasImages(body)) return body;
 
-  const visionResolved = selectVisionModel(resolved.provider);
-  if (!visionResolved) {
+  const selected = selectVisionModel(resolved.provider);
+  if (!selected) {
     throw new VisionFallbackError(
       "No vision-capable fallback model available for image description",
     );
   }
+  const visionResolved = await withFreshKey(selected);
 
   const transformedMessages = await Promise.all(
     body.messages.map(async (msg) => {
@@ -75,6 +77,24 @@ export async function applyVisionFallback(
 }
 
 // ── Internal helpers ─────────────────────────────────────────────────────
+
+/**
+ * The chat route refreshes the requested model's credentials; a fallback model from
+ * another provider needs its own, and re-resolving picks up the fresh key.
+ */
+async function withFreshKey(resolved: ResolvedModel): Promise<ResolvedModel> {
+  try {
+    if (resolved.provider === "anthropic") await ensureAnthropicFresh();
+    else if (resolved.provider === "codex") await ensureCodexFresh();
+    else return resolved;
+  } catch (err) {
+    throw new VisionFallbackError(
+      `Vision fallback model credentials failed: ${err instanceof Error ? err.message : String(err)}`,
+      { cause: err },
+    );
+  }
+  return resolveModel(resolved.model.id) ?? resolved;
+}
 
 function hasImages(body: ChatCompletionRequest): boolean {
   for (const msg of body.messages) {
@@ -136,6 +156,8 @@ async function describeImages(
         messages: [{ role: "user", content: piContent, timestamp: Date.now() }],
       },
       {
+        // A description needs no reasoning; it would only slow the fallback down.
+        ...reasoningOptions(visionResolved.model as Model<string>, "none"),
         apiKey: visionResolved.apiKey ?? "ollama",
         signal: AbortSignal.timeout(VISION_FALLBACK_TIMEOUT_MS),
       },

@@ -2,9 +2,10 @@
 
 Self-hosted OpenAI-compatible API gateway. Routes requests to Ollama, Anthropic, Codex via pi-ai.
 
-Supports OpenAI tool calling (`tools`, `tool_choice`, `tool` messages). `src/lib/pi.ts` is the only
-file that imports pi-ai (`@earendil-works/pi-ai`); everything else imports from it, so a pi-ai API
-change stays in one file.
+Supports OpenAI tool calling (`tools`, `tool_choice`, `tool` messages) and `reasoning_effort`.
+`src/lib/pi.ts` is the only file that imports pi-ai (`@earendil-works/pi-ai`); everything else
+imports from it, so a pi-ai API change stays in one file. It also corrects pi-ai's catalog
+(`NO_TEMPERATURE`, `RETIRES`) and maps `reasoning_effort` per API (`reasoningOptions`).
 
 ## Stack
 
@@ -17,6 +18,9 @@ Hono + Zod + @hono/zod-openapi + Vitest + Biome + tsx
 - `npm test` - full suite including e2e/compatibility (~5 min). On a dev machine run it as
   `ANTHROPIC_SEED_PATH=/nonexistent npm test`: otherwise the e2e suites seed from and refresh
   `~/.claude/.credentials.json`, rotating the host's own Claude login (refresh tokens are single-use)
+- `npm run test:codex-poc` - live GPT check through the host's ChatGPT login (`~/.codex/auth.json`):
+  which Codex models the plan answers, plus pi-ai and gateway features on one of them. Opt-in, ~40
+  real requests against the plan's quota
 - `npm run lint` - lint check
 - `npm run lint:fix` - auto-fix lint
 
@@ -59,16 +63,16 @@ Centralized in `src/config.ts`. Key env var overrides:
 | `OLLAMA_NUM_CTX` | `32768` | Ollama runtime context window size (`num_ctx`) |
 | `ANTHROPIC_SEED_PATH` | `~/.claude/.credentials.json` | Read-only seed: host's Claude CLI credentials. Read once on first boot, then DB-backed. |
 | `ANTHROPIC_REFRESH_SKEW_MS` | `60000` | Safety margin before `expiresAt` — refresh fires when `now > expires - skew`. |
-| `CODEX_CREDENTIALS_PATH` | `~/.codex/auth.json` | Codex auth file |
-| `CODEX_ENABLED` | `true` | Load Codex credentials + register Codex models. Cluster sets `false` (no subscription) so Codex models don't surface as validation errors; flip to re-enable. |
+| `CODEX_CREDENTIALS_PATH` | `~/.codex/auth.json` | Codex auth file: a ChatGPT login (any plan with Codex; Go gets `gpt-6-luna`, `gpt-5.6-terra`, `gpt-5.6-luna`). Read-only — the host's Codex client refreshes it (tokens last 10 days) and the gateway re-reads it when it changes. |
+| `CODEX_ENABLED` | `true` | Load Codex credentials + register Codex models. Set `false` on a host with no ChatGPT login so the models don't surface as validation errors. |
 | `VALIDATION_CONCURRENCY` | `3` | Parallel model validation limit |
 | `VALIDATE_NEW_MODELS_ON_BOOT` | `true` | At startup, validate (in the background) only the models with no stored result, so new Ollama pulls and pi-ai IDs don't sit at `status: "unknown"`. `false` to skip. |
 | `VALIDATION_TIMEOUT_MS` | `60000` | Per-model validation timeout |
 | `OLLAMA_SHOW_TIMEOUT_MS` | `2000` | Per-model /api/show timeout |
 | `VISION_FALLBACK_OLLAMA` | `qwen3-vl:8b` | Ollama family vision fallback model |
-| `VISION_FALLBACK_ANTHROPIC` | `claude-haiku-4-5` | Anthropic family vision fallback model |
-| `VISION_FALLBACK_OPENAI` | `gpt-4o-mini` | OpenAI family vision fallback model |
-| `VISION_FALLBACK_GENERAL` | `qwen3-vl:8b,claude-haiku-4-5,gpt-4o-mini` | General fallback chain (comma-separated) |
+| `VISION_FALLBACK_ANTHROPIC` | `claude-haiku-5-5` | Anthropic family vision fallback model |
+| `VISION_FALLBACK_OPENAI` | `gpt-6-luna` | OpenAI (Codex) family vision fallback model |
+| `VISION_FALLBACK_GENERAL` | `qwen3-vl:8b,claude-haiku-5-5,gpt-6-luna` | General fallback chain (comma-separated) |
 | `VISION_FALLBACK_MAX_DESCRIPTION_CHARS` | `1000` | Max chars for vision description |
 | `VISION_FALLBACK_TIMEOUT_MS` | `30000` | Vision fallback model timeout |
 

@@ -99,6 +99,16 @@ These are all error scenarios our gateway needs to handle, mapped to the OpenAI 
 | Condition | `message` (example) | `type` | `param` | `code` |
 |-----------|---------------------|--------|---------|--------|
 | Unknown model | `"The model 'foo' does not exist"` | `not_found_error` | `model` | `model_not_found` |
+| GPT (Codex) model the ChatGPT plan doesn't include (or retired) | `"Codex error: The 'gpt-6-sol' model is not supported when using Codex with a ChatGPT account."` | `invalid_request_error` | `model` | `model_not_found` |
+
+### Refusals (200, not errors)
+
+A Claude model's safety classifiers can decline a request (Anthropic `stop_reason: "refusal"`, on the classifier-gated models: Fable 5.1, Opus 5.5, Sonnet 5.5, ...). pi-ai reports that as a failed call (`stopReason: "error"`, `rawStopReason: "refusal"`); the gateway answers the way OpenAI reports a declined completion instead of erroring:
+
+| Path | Response |
+|---|---|
+| Non-streaming | 200, `choices[0].finish_reason: "content_filter"`, `message.content: null` (or any text before the refusal), `message.refusal: "<stop_details.explanation>"` |
+| Streaming | A final chunk `{delta: {refusal: "..."}, finish_reason: "content_filter"}`, then `[DONE]` |
 
 ### Backend Errors (500/502)
 

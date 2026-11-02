@@ -105,3 +105,42 @@
 5. Unit tests for logger module + middleware shape.
 
 **Out of scope** (separate later phases): Loki+Promtail+Grafana deployment, Prometheus metrics, OpenTelemetry. App stays portable; observability infrastructure layers on top of stdout via Docker's existing capture.
+
+## 8. Model coverage audit — GPT via ChatGPT Go, Claude upkeep (2026-11-01) ✅ Done 2026-11-01
+
+**Findings**:
+- **GPT works on a ChatGPT Go plan, but production serves none.** `npm run test:codex-poc` (`tests/codex-go.poc.test.ts`, opt-in, live) passes 17/17: completion, streaming, system prompt, multi-turn, tool round trip, forced `toolChoice: "required"` (pi-ai level), vision, reasoning effort, `/v1/models/validate`. Go gets 3 models — `gpt-6-luna`, `gpt-5.6-terra`, `gpt-5.6-luna` — exactly the visible models the Codex backend's `GET /backend-api/codex/models` lists for the account, and all 3 are in pi-ai. The other 6 catalog models answer "not supported when using Codex with a ChatGPT account" (higher plans, or retired). The cluster has `CODEX_ENABLED=false`, so `/v1/models` there has 0 GPT models.
+- **Claude is healthy.** All 17 Anthropic IDs validate `ok` in production, and a live sweep of the 14 distinct models × {`temperature`, tool round trip, forced `tool_choice: "required"`} passed 42/42. pi-ai's catalog flags match Anthropic's current per-model rules (temperature rejected, thinking that can't be disabled, forced tool use while thinking).
+- **pi-ai 1.4.0** (we're on 1.3.0): drops the retired `gpt-5.3-codex-spark` and `gpt-5.5`; no new models; identical Anthropic catalog; no API changes in what `src/lib/pi.ts` imports.
+
+**Needed to serve GPT on the cluster**:
+1. `deploy/chart/values.yaml` — `CODEX_ENABLED: "true"`. The host `~/.codex` mount is already there, and the pod's uid 1000 owns `auth.json`.
+2. Codex token lifetime. The gateway reads `auth.json` once at boot, and the access token lasts **10 days** (not 28, as #6 assumed). Decision open:
+   - (a) Re-read the host file when the cached token nears expiry (or its mtime changes). The host's VS Code ChatGPT extension keeps it refreshed. Simplest, and no refresh-token conflict; lapses if Codex goes unused on the host for 10 days.
+   - (b) A container-private refresh chain through pi-ai's `openaiCodexProvider().auth.oauth` (same shape as `refreshAnthropicToken`). Refresh tokens are single-use, so seeding it from the host file would log the VS Code extension out: give the container its own login (`CODEX_HOME=<dir> codex login`) instead.
+
+   Leaning (a) now, (b) with a dedicated login if lapses bite.
+
+**API correctness**:
+3. A model the plan doesn't include returns HTTP 500 `server_error`. Map "not supported when using Codex with a ChatGPT account" to 404 `model_not_found` ([openai-error-spec.md](openai-error-spec.md)).
+4. A Claude refusal returns HTTP 500. pi-ai maps `stop_reason: "refusal"` to `stopReason: "error"` (message = `stop_details.explanation`) but keeps `rawStopReason: "refusal"`. Return 200 with `finish_reason: "content_filter"` and `message.refusal` instead — the OpenAI shape. Matters on the classifier-gated models (Fable 5.1, Opus 5.5, Sonnet 5.5).
+5. `/v1/models/validate` drops the backend's error: `validation.ts` records only `unexpected stopReason: error`. Include `result.errorMessage` (and update `tests/validation.test.ts`), so plan-limited models say why.
+6. Bump pi-ai to 1.4.0, and fix `.github/dependabot.yml`: the pi-ai group still matches `@mariozechner/pi-ai` (now `@earendil-works/pi-ai`), and the npm `open-pull-requests-limit: 5` is already reached (6 open), so no new npm PRs arrive.
+7. `claude-sonnet-4-5` (+ `-20250929`) **retires 2026-11-30** and is still in pi-ai 1.4's catalog. Drop retired IDs in `getModels()` (a `RETIRED` set beside `NO_TEMPERATURE`) so `/v1/models` doesn't list dead models; move `tests/pi.test.ts`'s sonnet-4-5 case to another model.
+8. Stale model IDs. The vision fallback `gpt-4o-mini` (`VISION_FALLBACK_OPENAI` and the general chain) isn't a model the gateway has → `gpt-6-luna`. `gpt-5.1` (gone) in `tests/e2e.test.ts`, the OpenAPI examples in `src/routes/chat.ts` and `src/config.ts` → `gpt-6-luna`. Optionally `claude-haiku-4-5` → `claude-haiku-5-5` as the Anthropic fallback. Update CLAUDE.md's config table to match.
+
+**Optional — use more of what the models can do**:
+9. A `reasoning_effort` request param, mapped to pi-ai's `reasoning`. Today callers can't choose: Codex gets `effort: "none"`; the Claude models pi-ai drives with mid-conversation effort (Fable 5.1, Opus 5/5.5, Sonnet 5.5, Haiku 5.5) are pinned to `high` (the API default on Opus 5.5 and Haiku 5.5 is `medium`); Opus 4.6–4.8 and Sonnet 4.6 never think (pi-ai sends no `thinking`).
+10. Forward `tool_choice` to Codex (`withToolChoice` skips it). The backend honours `"required"`; a named function can be pinned the way Anthropic's is.
+11. Codex ignores `max_tokens` (pi-ai sends no output limit). Document it in the OpenAPI description.
+
+**Watch**:
+- When pi-ai's bundled `@anthropic-ai/sdk` reaches 1.x (now 0.129.0; latest 1.3.0), requests move to API version `2026-10-21`, which rejects `temperature`/`top_p`/`top_k` on every model. Re-check temperature handling on that bump.
+- `NO_TEMPERATURE` in `src/lib/pi.ts` is still needed: pi-ai 1.4 hasn't fixed `claude-sonnet-5` / `claude-fable-5`.
+
+**Resolution** (all 11 items, plus one found while fixing them):
+- Item 2 went with (a): `ensureCodexFresh()` in `services/auth.ts` re-reads `auth.json` when its mtime changes — on each Codex request, before validation, and before the validate route reloads the registry (so a login that appears after boot registers its models).
+- 12\. **The Codex backend rejects `temperature`** ("Unsupported parameter: temperature", live), and pi-ai's Codex backend sends it anyway — so every OpenAI client that sends `temperature` got a 500 from every GPT model. `getModels()` flags all Codex models `supportsTemperature: false`, and `stream()` in `src/lib/pi.ts` drops temperature for any model flagged so.
+- `reasoning_effort` maps through `reasoningOptions()` in `src/lib/pi.ts`, which clamps the level with pi-ai's `clampThinkingLevel` and follows its `streamSimple` mapping per API (Codex `reasoningEffort`; Claude adaptive `effort`, or a thinking budget via `adjustMaxTokensForThinking` on Claude 4.5 and older). The vision fallback asks its model for `none`.
+- Live: `npm run test:codex-poc` 20/20 (adds temperature, forced `tool_choice` both ways, `reasoning_effort`, the 404, and validation reasons). Full suite: everything passes except the Anthropic e2e cases, which need a Claude login the dev run deliberately doesn't have.
+- Not done: the stale Dependabot PRs from May and July (#1–#6, #18–#24) are still open; the raised PR limit just stops them from blocking new ones.

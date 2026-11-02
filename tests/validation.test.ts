@@ -143,6 +143,20 @@ describe("validateSingleModel: chat capability", () => {
     expect(result.error).toMatch(/unexpected stopReason: error/);
   });
 
+  it("reports the backend's own error message when it gives one", async () => {
+    const resolved = makeResolved({ capability: "chat" });
+    completeMock.mockResolvedValueOnce({
+      ...chatResponse("", "error"),
+      errorMessage:
+        "Codex error: The 'gpt-6-sol' model is not supported when using Codex with a ChatGPT account.",
+    });
+
+    const result = await validateSingleModel(resolved, 60_000);
+
+    expect(result.status).toBe("error");
+    expect(result.error).toMatch(/not supported when using Codex with a ChatGPT account/);
+  });
+
   it("returns error on empty response text", async () => {
     const resolved = makeResolved({ capability: "chat" });
     completeMock.mockResolvedValueOnce(chatResponse("   "));

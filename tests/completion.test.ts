@@ -3,13 +3,19 @@ import { BackendError } from "../src/errors";
 import type { AssistantMessage, Context } from "../src/lib/pi";
 
 const completeMock = vi.fn();
+const streamMock = vi.fn();
 const isContextOverflowMock = vi.fn();
 const loadImageMock = vi.fn();
 const preprocessImageMock = vi.fn();
 
 vi.mock("../src/lib/pi", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../src/lib/pi")>();
-  return { ...actual, complete: completeMock, isContextOverflow: isContextOverflowMock };
+  return {
+    ...actual,
+    complete: completeMock,
+    stream: streamMock,
+    isContextOverflow: isContextOverflowMock,
+  };
 });
 
 vi.mock("../src/services/image/load", () => ({
@@ -27,7 +33,8 @@ vi.mock("../src/services/image/preprocess", () => ({
 }));
 
 // Import after mocks are set up
-const { createCompletion } = await import("../src/services/completion");
+const { createCompletion, createStreamingCompletion } = await import("../src/services/completion");
+const { getModels } = await import("../src/lib/pi");
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -636,5 +643,149 @@ describe("backend error handling", () => {
       expect(err.message).toBe("Unknown backend error");
       return true;
     });
+  });
+});
+
+describe("a plan-limited Codex model", () => {
+  it("is a 404 model_not_found, not a server error", async () => {
+    isContextOverflowMock.mockReturnValue(false);
+    completeMock.mockResolvedValue(
+      makeAssistantMessage({
+        stopReason: "error",
+        errorMessage:
+          "Codex error: The 'gpt-6-sol' model is not supported when using Codex with a ChatGPT account.",
+      }),
+    );
+
+    await expect(
+      createCompletion(makeResolved(), {
+        model: "gpt-6-sol",
+        messages: [{ role: "user", content: "Hi" }],
+        stream: false,
+      }),
+    ).rejects.toSatisfy((err: BackendError) => {
+      expect(err).toBeInstanceOf(BackendError);
+      expect(err.httpStatus).toBe(404);
+      expect(err.errorType).toBe("invalid_request_error");
+      expect(err.errorCode).toBe("model_not_found");
+      expect(err.param).toBe("model");
+      return true;
+    });
+  });
+});
+
+// Anthropic's safety classifiers can decline (stop_reason "refusal"); pi-ai reports that
+// as an error but keeps rawStopReason. OpenAI's shape for it is finish_reason content_filter.
+describe("refusals", () => {
+  const refusal = {
+    stopReason: "error" as const,
+    rawStopReason: "refusal",
+    errorMessage: "This request touches on a restricted topic.",
+    content: [],
+  };
+
+  it("answers with finish_reason content_filter and message.refusal", async () => {
+    isContextOverflowMock.mockReturnValue(false);
+    completeMock.mockResolvedValue(makeAssistantMessage(refusal));
+
+    const result = await createCompletion(makeResolved(), {
+      model: "claude-opus-5-5",
+      messages: [{ role: "user", content: "Hi" }],
+      stream: false,
+    });
+
+    const choice = result.choices[0];
+    expect(choice.finish_reason).toBe("content_filter");
+    expect(choice.message.content).toBeNull();
+    expect((choice.message as { refusal?: string }).refusal).toBe(
+      "This request touches on a restricted topic.",
+    );
+  });
+
+  it("ends a stream with a refusal chunk instead of an error", async () => {
+    const declined = makeAssistantMessage(refusal);
+    streamMock.mockReturnValue({
+      // biome-ignore lint/suspicious/useAwait: async generator mirrors pi-ai's event stream
+      async *[Symbol.asyncIterator]() {
+        yield { type: "start", partial: declined };
+        yield { type: "error", reason: "error", error: declined };
+      },
+    });
+
+    const chunks: {
+      choices: { delta: Record<string, unknown>; finish_reason: string | null }[];
+    }[] = [];
+    for await (const data of createStreamingCompletion(makeResolved(), {
+      model: "claude-opus-5-5",
+      messages: [{ role: "user", content: "Hi" }],
+      stream: true,
+    })) {
+      chunks.push(JSON.parse(data));
+    }
+
+    const last = chunks[chunks.length - 1].choices[0];
+    expect(last.finish_reason).toBe("content_filter");
+    expect(last.delta).toEqual({ refusal: "This request touches on a restricted topic." });
+  });
+
+  it("still throws for other backend errors", async () => {
+    isContextOverflowMock.mockReturnValue(false);
+    completeMock.mockResolvedValue(
+      makeAssistantMessage({
+        stopReason: "error",
+        rawStopReason: "end_turn",
+        errorMessage: "boom",
+      }),
+    );
+    await expect(
+      createCompletion(makeResolved(), {
+        model: "claude-opus-5-5",
+        messages: [{ role: "user", content: "Hi" }],
+        stream: false,
+      }),
+    ).rejects.toBeInstanceOf(BackendError);
+  });
+});
+
+describe("reasoning_effort", () => {
+  function resolvedFor(provider: "anthropic" | "openai-codex", id: string) {
+    const model = getModels(provider).find((m) => m.id === id);
+    if (!model) throw new Error(`${id} not in the catalog`);
+    return {
+      model,
+      provider: provider === "anthropic" ? ("anthropic" as const) : ("codex" as const),
+      capability: "chat" as const,
+      apiKey: "test-key",
+    };
+  }
+
+  async function optionsFor(
+    resolved: ReturnType<typeof resolvedFor>,
+    reasoningEffort?: "none" | "low" | "high",
+  ) {
+    completeMock.mockResolvedValue(makeAssistantMessage());
+    await createCompletion(resolved, {
+      model: resolved.model.id,
+      messages: [{ role: "user", content: "Hi" }],
+      stream: false,
+      reasoning_effort: reasoningEffort,
+    });
+    return (completeMock.mock.calls[0] as unknown[])[2] as Record<string, unknown>;
+  }
+
+  it("sets a Claude model's thinking effort", async () => {
+    const options = await optionsFor(resolvedFor("anthropic", "claude-opus-4-8"), "high");
+    expect(options).toMatchObject({ thinkingEnabled: true, effort: "high" });
+  });
+
+  it("sets a GPT model's reasoning effort", async () => {
+    const options = await optionsFor(resolvedFor("openai-codex", "gpt-6-luna"), "low");
+    expect(options).toMatchObject({ reasoningEffort: "low" });
+  });
+
+  it("leaves each model's default alone when absent", async () => {
+    const options = await optionsFor(resolvedFor("anthropic", "claude-opus-4-8"));
+    expect(options).not.toHaveProperty("thinkingEnabled");
+    expect(options).not.toHaveProperty("effort");
   });
 });

@@ -12,7 +12,7 @@ export const chatCompletionRoute = createRoute({
   operationId: "createChatCompletion",
   summary: "Create a chat completion",
   description:
-    "Generates a model response for the given conversation. Supports Ollama, Anthropic, and Codex backends, and OpenAI tool calling (tools, tool_choice, tool messages). Set stream=true for Server-Sent Events streaming.",
+    "Generates a model response for the given conversation. Supports Ollama, Anthropic, and Codex backends, OpenAI tool calling (tools, tool_choice, tool messages), and reasoning_effort for Claude and GPT models. Set stream=true for Server-Sent Events streaming.",
   tags: ["Chat"],
   request: {
     body: {
@@ -29,17 +29,17 @@ export const chatCompletionRoute = createRoute({
               },
             },
             anthropic: {
-              summary: "Anthropic — Claude Haiku 4.5",
+              summary: "Anthropic — Claude Haiku 5.5",
               value: {
-                model: "claude-haiku-4-5",
+                model: "claude-haiku-5-5",
                 messages: [{ role: "user", content: "Explain black holes in two sentences." }],
                 max_tokens: 128,
               },
             },
             codex: {
-              summary: "Codex — GPT-5.1",
+              summary: "Codex — GPT-6 Luna",
               value: {
-                model: "gpt-5.1",
+                model: "gpt-6-luna",
                 messages: [{ role: "user", content: "Explain black holes in two sentences." }],
                 max_tokens: 128,
               },
@@ -76,18 +76,18 @@ export const chatCompletionRoute = createRoute({
               },
             },
             "anthropic-stream": {
-              summary: "Anthropic streaming — Claude Haiku 4.5",
+              summary: "Anthropic streaming — Claude Haiku 5.5",
               value: {
-                model: "claude-haiku-4-5",
+                model: "claude-haiku-5-5",
                 messages: [{ role: "user", content: "Explain black holes in two sentences." }],
                 max_tokens: 128,
                 stream: true,
               },
             },
             "codex-stream": {
-              summary: "Codex streaming — GPT-5.1",
+              summary: "Codex streaming — GPT-6 Luna",
               value: {
-                model: "gpt-5.1",
+                model: "gpt-6-luna",
                 messages: [{ role: "user", content: "Explain black holes in two sentences." }],
                 max_tokens: 128,
                 stream: true,
@@ -136,9 +136,9 @@ export const chatCompletionRoute = createRoute({
               },
             },
             "anthropic-image": {
-              summary: "Anthropic vision — Claude Haiku 4.5 + image URL",
+              summary: "Anthropic vision — Claude Haiku 5.5 + image URL",
               value: {
-                model: "claude-haiku-4-5",
+                model: "claude-haiku-5-5",
                 messages: [
                   {
                     role: "user",
@@ -157,9 +157,9 @@ export const chatCompletionRoute = createRoute({
               },
             },
             "codex-image": {
-              summary: "Codex vision — GPT-5.1 + image URL",
+              summary: "Codex vision — GPT-6 Luna + image URL",
               value: {
-                model: "gpt-5.1",
+                model: "gpt-6-luna",
                 messages: [
                   {
                     role: "user",
@@ -260,7 +260,8 @@ export const chatCompletionRoute = createRoute({
           },
         },
       },
-      description: "Model not found in any configured backend",
+      description:
+        "Model not found in any configured backend, or a GPT (Codex) model the ChatGPT plan doesn't include",
     },
     429: {
       content: {
