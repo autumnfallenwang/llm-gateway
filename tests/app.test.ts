@@ -71,6 +71,7 @@ vi.mock("../src/services/registry", async (importOriginal) => {
   return {
     ...actual,
     resolveModel: vi.fn(actual.resolveModel),
+    lookupModel: vi.fn(actual.lookupModel),
     // Spy that calls through to the real impl, so existing tests that call loadRegistry()
     // to populate the registry still work, while the validate-route tests can assert it fired.
     loadRegistry: vi.fn(actual.loadRegistry),
@@ -162,23 +163,27 @@ describe("POST /v1/chat/completions", () => {
   });
 
   it("stream=true returns SSE response", async () => {
-    // Mock resolveModel to return a valid model for this test
-    const { resolveModel } = await import("../src/services/registry");
-    vi.mocked(resolveModel).mockReturnValueOnce({
-      model: {
+    // The route looks the model up; make it find a valid one for this test
+    const { lookupModel } = await import("../src/services/registry");
+    vi.mocked(lookupModel).mockReturnValueOnce({
+      kind: "found",
+      resolved: {
         id: "test",
-        name: "test",
-        api: "openai-completions",
+        model: {
+          id: "test",
+          name: "test",
+          api: "openai-completions",
+          provider: "ollama",
+          baseUrl: "",
+          reasoning: false,
+          input: ["text"],
+          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+          contextWindow: 4096,
+          maxTokens: 4096,
+        },
         provider: "ollama",
-        baseUrl: "",
-        reasoning: false,
-        input: ["text"],
-        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-        contextWindow: 4096,
-        maxTokens: 4096,
+        capability: "chat",
       },
-      provider: "ollama",
-      capability: "chat",
     });
 
     const res = await post("/v1/chat/completions", {
@@ -199,6 +204,23 @@ describe("POST /v1/chat/completions", () => {
 
     // Last data line should be [DONE]
     expect(lines[lines.length - 1]).toBe("data: [DONE]");
+  });
+
+  // docs/model-ids.md: a bare ID two providers list is named, never silently picked.
+  it("returns 400 ambiguous_model for an ID two providers list, on chat and embeddings", async () => {
+    const { lookupModel } = await import("../src/services/registry");
+    const choices = ["ollama/deepseek-flash", "deepseek/deepseek-flash"];
+    for (const path of ["/v1/chat/completions", "/v1/embeddings"]) {
+      vi.mocked(lookupModel).mockReturnValueOnce({ kind: "ambiguous", choices });
+      const body = path.endsWith("embeddings")
+        ? { model: "deepseek-flash", input: "hi" }
+        : { ...VALID_BODY, model: "deepseek-flash" };
+      const res = await post(path, body);
+      expect(res.status, path).toBe(400);
+      const json = await res.json();
+      expect(json.error).toMatchObject({ code: "ambiguous_model", param: "model" });
+      expect(json.error.message).toContain("deepseek/deepseek-flash");
+    }
   });
 
   it("returns 404 for unknown model", async () => {
@@ -551,8 +573,8 @@ describe("Backend error responses", () => {
   };
 
   async function mockResolveModel() {
-    const { resolveModel } = await import("../src/services/registry");
-    vi.mocked(resolveModel).mockReturnValueOnce(MOCK_MODEL);
+    const { lookupModel } = await import("../src/services/registry");
+    vi.mocked(lookupModel).mockReturnValueOnce({ kind: "found", resolved: MOCK_MODEL });
   }
 
   it("returns 400 for context overflow errors", async () => {

@@ -157,7 +157,7 @@ DeepSeek's API models (`deepseek-flash`, `deepseek-v4-pro`) through pi-ai's `dee
 - **Non-streaming responses drop the reasoning text.** `formatResponse` keeps only text blocks; streaming sends thinking as `delta.reasoning`. Add `message.reasoning` (the same field name) for parity.
 - **No client authentication.** Anything on the LAN can use every model; with DeepSeek that spends money (capped by the prepaid balance). A bearer token would affect every app, so it's its own change.
 
-## 11. Model IDs: `provider/model` (Phase 12)
+## 11. Model IDs: `provider/model` (Phase 12) ✅ Done 2026-11-02
 
 **Source**: [model-ids.md](model-ids.md). Bare IDs resolved first-match across providers, so a future collision (the same model through two providers) would silently shadow one. `provider/model` always works (the prefix is `owned_by`); a bare ID works when unique and is a 400 `ambiguous_model` when shared; `/v1/models` lists the ID that resolves. Done before #12 because the limits store keys by model.
 

@@ -1,6 +1,6 @@
 # Model IDs: `provider/model` (Phase 12)
 
-Give every model an ID that can't collide, before the usage-limits work (Phase 13, [usage-limits.md](usage-limits.md)) starts keying data by model. Decided 2026-11-02; built on branch `feat/model-ids`.
+Give every model an ID that can't collide, before the usage-limits work (Phase 13, [usage-limits.md](usage-limits.md)) starts keying data by model. Decided and built 2026-11-02 (branch `feat/model-ids`).
 
 ## Problem
 
@@ -21,10 +21,10 @@ No collision is possible today — the 36 production IDs are distinct, every Oll
 
 ## Work
 
-| # | Task |
-|---|---|
-| 66 | This doc, [usage-limits.md](usage-limits.md), backlog, progress |
-| 67 | Registry: one entry list with a listed ID per model; `lookupModel` (found / ambiguous / missing); `resolveModel` on top; `ResolvedModel.id` |
-| 68 | Routes: 400 `ambiguous_model` on chat and embeddings; the vision fallback re-resolves by listed ID |
-| 69 | Tests: qualified IDs per provider, a real collision (mock Ollama model named like a cloud model), community `user/model:tag` names, unknown prefixes, validation rows per listed ID |
-| 70 | Docs (CLAUDE.md, error spec, API description), PR, deploy, verify on the cluster |
+| # | Task | Status |
+|---|---|---|
+| 66 | This doc, [usage-limits.md](usage-limits.md), backlog, progress | ✅ |
+| 67 | Registry: one entry list with a listed ID per model; `lookupModel` (found / ambiguous / missing); `resolveModel` on top; `ResolvedModel.id`; `registry.ambiguous_models` warning | ✅ |
+| 68 | Routes: 400 `ambiguous_model` on chat and embeddings; credential re-resolves and the vision fallback go by the listed ID | ✅ |
+| 69 | Tests: qualified IDs per provider, a real collision (a mock Ollama model named `deepseek-flash`), community `user/model:tag` and `deepseek/coder:7b` names, unknown prefixes, the route 400 (317 fast pass) | ✅ |
+| 70 | Docs (CLAUDE.md, error spec, API description, schema descriptions), PR, deploy, verify on the cluster | see progress.md |

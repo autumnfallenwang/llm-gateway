@@ -19,7 +19,8 @@ const EmbeddingsUsageSchema = z.object({
 
 export const EmbeddingsRequestSchema = z.object({
   model: z.string().min(1).openapi({
-    description: "Embedding model ID. Currently must be an Ollama embedding model.",
+    description:
+      "Embedding model ID (bare, or 'ollama/model'). Currently must be an Ollama embedding model.",
     example: "bge-m3:latest",
   }),
   input: z.union([z.string(), z.array(z.string()).min(1).max(2048)]).openapi({
