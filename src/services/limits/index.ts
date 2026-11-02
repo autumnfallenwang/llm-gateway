@@ -49,13 +49,14 @@ export interface LimitsView {
   /** `owned_by`. */
   provider: string;
   plan: string | null;
-  status: LimitStatus | "unknown";
+  status: LimitStatus | "unknown" | "unavailable";
   /** The one line a chatbot shows. */
   available:
     | { kind: "percent"; percent_left: number; resets_at: string | null; binding: string }
     | { kind: "balance"; amount: number; currency: string }
     | { kind: "unlimited" }
-    | { kind: "unknown" };
+    | { kind: "unknown" }
+    | { kind: "unavailable"; reason: string };
   /** Every window that applies to the model (all of the family's, for a family). */
   windows: LimitWindow[];
   balance: { amount: number; currency: string } | null;
@@ -69,12 +70,17 @@ const CLAUDE_USAGE_URL = "https://api.anthropic.com/api/oauth/usage";
 const CODEX_USAGE_URL = "https://chatgpt.com/backend-api/wham/usage";
 const DEEPSEEK_BALANCE_URL = "https://api.deepseek.com/user/balance";
 
-const OWNED_BY_FAMILY: Record<string, Family | "ollama"> = {
+/** Each provider's `owned_by` — the name the API, model IDs and logs use for it. */
+const OWNED_BY: Record<ResolvedModel["provider"], string> = {
   anthropic: "anthropic",
-  "openai-codex": "codex",
+  codex: "openai-codex",
   deepseek: "deepseek",
   ollama: "ollama",
 };
+
+const OWNED_BY_FAMILY = Object.fromEntries(
+  Object.entries(OWNED_BY).map(([family, owner]) => [owner, family]),
+) as Record<string, ResolvedModel["provider"]>;
 
 const thresholds = (): Thresholds => ({
   warnPercent: LIMITS_WARN_PERCENT,
@@ -132,7 +138,10 @@ export function observeResponseHeaders(
     const data = HEADER_PARSERS[provider]?.(headers, thresholds());
     if (data) stateOf(provider as Family).observed = { data, at: Date.now() };
   } catch (err) {
-    log.debug({ event: "limits.observe_failed", provider, err }, "Couldn't read limit headers");
+    log.debug(
+      { event: "limits.observe_failed", provider: OWNED_BY[provider], err },
+      "Couldn't read limit headers",
+    );
   }
 }
 
@@ -143,7 +152,10 @@ export function observeStreamEvent(provider: ResolvedModel["provider"], data: un
     const limits = parseCodexEvent(data, thresholds());
     if (limits) stateOf("codex").observed = { data: limits, at: Date.now() };
   } catch (err) {
-    log.debug({ event: "limits.observe_failed", provider, err }, "Couldn't read a limits event");
+    log.debug(
+      { event: "limits.observe_failed", provider: OWNED_BY[provider], err },
+      "Couldn't read a limits event",
+    );
   }
 }
 
@@ -211,7 +223,7 @@ function refresh(family: Family): Promise<void> {
     } catch (err) {
       s.error = err instanceof Error ? err.message : String(err);
       log.warn(
-        { event: "limits.fetch_failed", provider: family, err_message: s.error },
+        { event: "limits.fetch_failed", provider: OWNED_BY[family], err_message: s.error },
         "Couldn't fetch account usage — serving the last known limits",
       );
     }
@@ -322,11 +334,30 @@ function view(family: Family, provider: string, model: string | null): LimitsVie
   };
 }
 
-/** A model's limits now, fetching its family's usage endpoint if the cached copy is old. */
-export async function limitsFor(resolved: ResolvedModel): Promise<LimitsView> {
-  if (resolved.provider === "ollama") return unlimited(resolved.id, resolved.model.provider);
-  await ensureFetched(resolved.provider);
-  return view(resolved.provider, resolved.model.provider, resolved.id);
+/** A model's last check, as `/v1/models` reports it (`POST /v1/models/validate`). */
+export interface ModelCheck {
+  status: "ok" | "error";
+  error?: string;
+}
+
+/**
+ * A model's limits now, fetching its family's usage endpoint if the cached copy is old.
+ * A model that failed its last check — not on the plan, say — is `unavailable` with the
+ * reason, however much of the account's allowance is left.
+ */
+export async function limitsFor(resolved: ResolvedModel, check?: ModelCheck): Promise<LimitsView> {
+  let limits: LimitsView;
+  if (resolved.provider === "ollama") limits = unlimited(resolved.id, resolved.model.provider);
+  else {
+    await ensureFetched(resolved.provider);
+    limits = view(resolved.provider, resolved.model.provider, resolved.id);
+  }
+  if (check?.status !== "error") return limits;
+  return {
+    ...limits,
+    status: "unavailable",
+    available: { kind: "unavailable", reason: check.error ?? "The model failed its last check" },
+  };
 }
 
 /** A model's limits from what's already cached, without fetching (for logging). */

@@ -21,6 +21,8 @@ const pkg = JSON.parse(readFileSync(join(import.meta.dirname, "..", "package.jso
 
 export const APP_NAME = "llm-gateway";
 export const APP_VERSION: string = pkg.version;
+/** The commit the image was built from (CI passes it as a build arg); null in dev. */
+export const APP_COMMIT: string | null = env.LLMGW_COMMIT || null;
 export const APP_DESCRIPTION = `Self-hosted OpenAI-compatible API gateway that routes requests to multiple LLM backends (Ollama, Anthropic, Codex) through a unified OpenAI-format API.
 
 ## Quick Start
@@ -59,7 +61,7 @@ Models are dynamic — they depend on which backends are configured. Call \`GET 
 
 ## Usage limits
 
-\`GET /v1/limits?model=<id>\` says how much of the model's allowance is left — subscriptions (Claude, GPT) as windows of percent used with reset times, DeepSeek as its prepaid balance, Ollama as unlimited — with one line to show in \`available\` and an overall \`status\` (\`ok\`, \`warning\`, \`exhausted\`, \`unknown\`). Without \`model\` it lists every family. The numbers are the whole account's, including use outside the gateway.
+\`GET /v1/limits?model=<id>\` says how much of the model's allowance is left — subscriptions (Claude, GPT) as windows of percent used with reset times, DeepSeek as its prepaid balance, Ollama as unlimited — with one line to show in \`available\` and an overall \`status\` (\`ok\`, \`warning\`, \`exhausted\`, \`unknown\`). A model \`/v1/models\` lists with \`status: "error"\` (a GPT model the ChatGPT plan lacks, say) is \`unavailable\`, with the reason. Without \`model\` it lists every family. The numbers are the whole account's, including use outside the gateway.
 
 ## Model IDs
 

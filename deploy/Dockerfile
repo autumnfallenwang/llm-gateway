@@ -11,5 +11,9 @@ RUN npm ci && apk del .build
 COPY tsconfig.json ./
 COPY src/ src/
 
+# The commit this image is built from (CI passes it); `GET /` reports it.
+ARG GIT_SHA=""
+ENV LLMGW_COMMIT=$GIT_SHA
+
 USER node
 CMD ["npm", "start"]

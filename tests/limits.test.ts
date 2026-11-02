@@ -162,6 +162,19 @@ describe("parsers", () => {
     ]);
   });
 
+  it("keeps a 5-hour window sent only in the older per-window objects", () => {
+    const limits = parseClaudeUsage(
+      { ...CLAUDE_USAGE, five_hour: { utilization: 61, resets_at: "2026-11-02T12:00:00Z" } },
+      T,
+    );
+    // limits[]'s weekly window isn't doubled by seven_day; the 5-hour one is added.
+    expect(limits.windows.map((w) => [w.scope, w.period, w.used_percent])).toEqual([
+      ["all models", "weekly", 43],
+      ["Fable", "weekly", 4],
+      ["all models", "5h", 61],
+    ]);
+  });
+
   it("reads Claude's response headers", () => {
     const limits = parseClaudeHeaders(CLAUDE_HEADERS, T);
     expect(limits?.status).toBe("ok");
@@ -287,6 +300,8 @@ const {
   resetLimits,
 } = await import("../src/services/limits/index");
 
+const { log } = await import("../src/lib/logger");
+
 const fetchMock = vi.fn<typeof fetch>();
 
 function respond(body: unknown, status = 200) {
@@ -379,6 +394,44 @@ describe("limits for a model", () => {
     const limits = peekLimits(model("codex", "gpt-6-luna"));
     expect(limits).toMatchObject({ plan: "go", source: "response", provider: "openai-codex" });
     expect(limits?.available).toMatchObject({ kind: "percent", percent_left: 100 });
+  });
+
+  it("calls a model that failed its last check unavailable, with the reason", async () => {
+    fetchMock.mockResolvedValueOnce(respond(CODEX_USAGE)); // one fetch; the second call is cached
+    const reason =
+      "Codex error: The 'gpt-6-sol' model is not supported when using Codex with a ChatGPT account.";
+    const limits = await limitsFor(model("codex", "gpt-6-sol"), { status: "error", error: reason });
+    expect(limits).toMatchObject({
+      model: "gpt-6-sol",
+      status: "unavailable",
+      available: { kind: "unavailable", reason },
+      plan: "go",
+    });
+    // The account's windows are still true, so they stay.
+    expect(limits.windows).toHaveLength(1);
+
+    const fine = await limitsFor(model("codex", "gpt-6-luna"), { status: "ok" });
+    expect(fine).toMatchObject({ status: "ok", available: { kind: "percent", percent_left: 100 } });
+  });
+
+  it("calls a local model that failed its last check unavailable", async () => {
+    const limits = await limitsFor(model("ollama", "qwen3:30b"), { status: "error" });
+    expect(limits).toMatchObject({
+      status: "unavailable",
+      available: { kind: "unavailable", reason: "The model failed its last check" },
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("logs a failed fetch under the provider's owned_by name", async () => {
+    const warn = vi.spyOn(log, "warn").mockImplementation(() => undefined);
+    fetchMock.mockResolvedValueOnce(respond({}, 503));
+    await limitsFor(model("codex", "gpt-6-luna"));
+    expect(warn).toHaveBeenCalledWith(
+      expect.objectContaining({ event: "limits.fetch_failed", provider: "openai-codex" }),
+      expect.any(String),
+    );
+    warn.mockRestore();
   });
 
   it("shows DeepSeek's balance", async () => {

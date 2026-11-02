@@ -52,6 +52,7 @@ jobs:
           context: .
           file: deploy/Dockerfile
           push: true
+          build-args: GIT_SHA=${{ github.sha }}
           tags: |
             ghcr.io/autumnfallenwang/llm-gateway:latest
             ghcr.io/autumnfallenwang/llm-gateway:${{ github.sha }}

@@ -72,7 +72,8 @@ GET /v1/limits?model=<id>          (no model → every family)
   "windows": [
     { "scope": "all models", "period": "weekly", "used_percent": 43, "resets_at": "…", "status": "ok" },
     { "scope": "Fable",      "period": "weekly", "used_percent": 4,  "resets_at": "…", "status": "ok" }
-  ],
+  ],                                                // status "unavailable" + available { "kind": "unavailable", "reason" }
+                                                    // when the model failed its last check (/v1/models status "error")
   "balance": null,                                  // { "amount": 9.96, "currency": "USD" } for DeepSeek
   "details": { },                                   // family-specific, raw, not guaranteed stable
   "as_of": "2026-11-02T07:06:13Z", "source": "response"
@@ -104,6 +105,12 @@ A limits store per provider account, keyed by (provider, model) — never the ba
 - **Logging:** every completion logs `completion.usage` — tokens, `cost_usd` (pi-ai's, from catalog prices; for subscriptions an API-price equivalent), and, from the cache without fetching, `limit_status`, `limit_percent_left` and `limit_window` (or `balance_left`).
 - **The endpoints are called with the gateway's own credentials**: its own Claude chain (refreshed first if due), the host Codex login (`originator: pi`, as pi-ai sends), the DeepSeek key.
 
+### Follow-ups (0.5.0)
+
+- **A model that failed its last check is `unavailable`.** `?model=gpt-6-sol` used to say `ok, 100% left` — true of the Go account, but the model isn't on the plan. Now `/v1/limits` reads the same validation result `/v1/models` shows: `status: "error"` there means `status: "unavailable"` and `available: { "kind": "unavailable", "reason": <status_detail> }` here, with the account's windows still listed. A model never validated (`unknown`) isn't affected. `POST /v1/models/validate` refreshes it.
+- **No 5-hour Claude window is right for this account.** Checked live 2026-11-02: the usage endpoint sends `five_hour: null` and `limits[]` holds only `weekly_all` (48%) and `weekly_scoped` Fable (6%); the headers' binding claim is `seven_day`. The parser now also takes a window from the older `five_hour` / `seven_day` objects when `limits[]` lacks it, so a 5-hour window sent only there would still show.
+- **Log lines:** `completion.usage` and `limits.*` carry the request's `req_id` (every line logged during a request does now, [structured-logging-spec.md](structured-logging-spec.md)) and name the provider by `owned_by` (`openai-codex`, not `codex`), as the API does.
+
 ## Work
 
 | # | Task | Status |
@@ -114,6 +121,7 @@ A limits store per provider account, keyed by (provider, model) — never the ba
 | 74 | Per-request logging: `completion.usage` with tokens, `cost_usd`, the binding window | ✅ |
 | 75 | Optional: a `limits` summary per model in `/v1/models` | not done — add if a model picker needs it |
 | 76 | Tests: 30 unit (parsers on the POC fixtures, store, views, route, hooks) + `npm run test:limits-poc` 5/5 live | ✅ |
+| 77 | Follow-ups: `unavailable` for a model that failed its check; Claude's older window fields as a fallback; `req_id` and `owned_by` on the log lines; 0.5.0 | ✅ |
 
 ## Decided (were open questions)
 

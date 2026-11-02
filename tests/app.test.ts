@@ -108,6 +108,24 @@ function post(path: string, body: unknown) {
   });
 }
 
+const OLLAMA_TEST_MODEL = {
+  id: "qwen3:30b",
+  model: {
+    id: "qwen3:30b",
+    name: "qwen3:30b",
+    api: "openai-completions" as const,
+    provider: "ollama",
+    baseUrl: "",
+    reasoning: false,
+    input: ["text" as const],
+    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+    contextWindow: 4096,
+    maxTokens: 4096,
+  },
+  provider: "ollama" as const,
+  capability: "chat" as const,
+};
+
 describe("Health check", () => {
   it("GET / returns status ok", async () => {
     const res = await app.request("/");
@@ -115,6 +133,9 @@ describe("Health check", () => {
     const json = await res.json();
     expect(json.status).toBe("ok");
     expect(json.name).toBe("llm-gateway");
+    const { APP_VERSION } = await import("../src/config");
+    expect(json.version).toBe(APP_VERSION);
+    expect(json).toHaveProperty("commit"); // the image's commit; null outside CI builds
   });
 });
 
@@ -336,6 +357,22 @@ describe("GET /v1/limits", () => {
       provider: "ollama",
       status: "ok",
       available: { kind: "unlimited" },
+    });
+  });
+
+  it("calls a model that failed its last check unavailable, as /v1/models does", async () => {
+    const { lookupModel } = await import("../src/services/registry");
+    const { readValidationReport } = await import("../src/services/validation");
+    vi.mocked(lookupModel).mockReturnValueOnce({ kind: "found", resolved: OLLAMA_TEST_MODEL });
+    vi.mocked(readValidationReport).mockResolvedValueOnce({
+      validatedAt: "2026-11-02T00:00:00.000Z",
+      models: { "qwen3:30b": { status: "error", error: "Ollama error: model failed to load" } },
+    });
+    const res = await app.request("/v1/limits?model=qwen3:30b");
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({
+      status: "unavailable",
+      available: { kind: "unavailable", reason: "Ollama error: model failed to load" },
     });
   });
 });
@@ -681,6 +718,30 @@ describe("Backend error responses", () => {
 });
 
 describe("Request access log middleware", () => {
+  it("runs each request inside its req_id, so a stream's usage line carries it", async () => {
+    const { requestContext } = await import("../src/lib/logger");
+    const { lookupModel } = await import("../src/services/registry");
+    vi.mocked(lookupModel).mockReturnValueOnce({
+      kind: "found",
+      resolved: { ...OLLAMA_TEST_MODEL, id: "test" },
+    });
+    const during: Record<string, string | undefined> = {};
+    logInfoMock.mockReset();
+    logInfoMock.mockImplementation((meta: { event?: string }) => {
+      if (meta?.event) during[meta.event] = requestContext.getStore()?.req_id;
+    });
+    try {
+      const res = await post("/v1/chat/completions", { ...VALID_BODY, stream: true });
+      await res.text(); // the usage line is written when the stream finishes
+      const access = findHttpRequestLog("/v1/chat/completions");
+      expect(access?.req_id).toEqual(expect.any(String));
+      expect(during["completion.usage"]).toBe(access?.req_id);
+      expect(requestContext.getStore()).toBeUndefined();
+    } finally {
+      logInfoMock.mockReset();
+    }
+  });
+
   function findHttpRequestLog(path: string): Record<string, unknown> | undefined {
     for (const call of logInfoMock.mock.calls) {
       const [meta] = call as [Record<string, unknown> | undefined];

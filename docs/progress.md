@@ -202,6 +202,7 @@ Backlog #12; [usage-limits.md](usage-limits.md). How much of each paid family's 
 | 73 | `GET /v1/limits[?model=]` | ✅ Done | Same model resolution as chat (bare or `owned_by/model`; 400 ambiguous, 404 unknown). `available` is the one line to show: `percent` (with `binding` and `resets_at`), `balance`, `unlimited` (Ollama) or `unknown`. `status` ok / warning (80%, $1, or the provider's own) / exhausted / unknown (no data, or stale after 10 min of failing fetches). |
 | 74 | Logging | ✅ Done | `completion.usage` per completion: tokens, `cost_usd`, the binding window or balance from the cache. |
 | 76 | Tests | ✅ Done | 30 new unit tests (parsers on the POC fixtures, merging, caching, single-flight, failure and staleness, per-model mapping, the route, the hooks); 348 fast pass. `npm run test:limits-poc` 5/5 live. |
+| 77 | Follow-ups (0.5.0) | ✅ Done | A model that failed its last check (`/v1/models` `status: "error"`, e.g. `gpt-6-sol` on Go) is `unavailable` with the reason instead of `ok`. Claude's older `five_hour`/`seven_day` objects fill in a window `limits[]` lacks (this account really has no 5-hour window: checked live). Every line logged during a request carries its `req_id` (AsyncLocalStorage + pino `mixin`), and `completion.usage`/`limits.*` name the provider by `owned_by`. Version 0.5.0, and `GET /` reports the image's `commit`. 8 new tests; 356 fast pass, `test:limits-poc` 5/5 live. |
 
 ## Phase 12: Model IDs — `provider/model`
 

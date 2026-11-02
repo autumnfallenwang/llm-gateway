@@ -34,6 +34,14 @@ const AvailableSchema = z
     z.object({
       kind: z.literal("unknown").openapi({ description: "No limit data could be fetched yet" }),
     }),
+    z.object({
+      kind: z.literal("unavailable").openapi({
+        description: 'The model failed its last check (`/v1/models` `status: "error"`)',
+      }),
+      reason: z.string().openapi({
+        description: "Why, as /v1/models' `status_detail` says (e.g. not on the ChatGPT plan)",
+      }),
+    }),
   ])
   .openapi({
     description: "The one line to show: percent left (subscriptions) or money left (prepaid)",
@@ -52,9 +60,9 @@ export const LimitsSchema = z
       .string()
       .nullable()
       .openapi({ description: "The account's plan, when the provider says (`go`, `prepaid`)" }),
-    status: z.enum(["ok", "warning", "exhausted", "unknown"]).openapi({
+    status: z.enum(["ok", "warning", "exhausted", "unknown", "unavailable"]).openapi({
       description:
-        "Worst of the windows that apply (and the provider's own verdict); `unknown` when no data, or it's stale",
+        "Worst of the windows that apply (and the provider's own verdict); `unknown` when no data, or it's stale; `unavailable` when the model failed its last check, however much allowance is left",
     }),
     available: AvailableSchema,
     windows: z.array(WindowSchema).openapi({
