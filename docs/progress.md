@@ -11,7 +11,7 @@
 | 5 | Completion service | ✅ Done | `src/services/completion.ts` — OpenAI ↔ pi-ai translation, Codex system prompt fallback |
 | 6 | Routes | ✅ Done | `src/routes/{chat,models,validate}.ts` — OpenAPI route defs with request examples |
 | 7 | App + server wiring | ✅ Done | All handlers wired: chat completions, models list (with validation filtering), model validation |
-| 8 | Tests | ✅ Done | 20 test files (incl. the opt-in live `codex-go.poc`, `deepseek.poc` and `limits.poc`), 356 fast tests |
+| 8 | Tests | ✅ Done | 20 test files (incl. the opt-in live `codex-go.poc`, `deepseek.poc` and `limits.poc`), 369 fast tests |
 | 9 | Model validation | ✅ Done | `src/services/validation.ts` — tests every model with real completion, persists report via the SQLite `model_validation` table (Phase 8 / task 40) |
 | 10 | Streaming support | ✅ Done | SSE streaming via `stream: true` — all four backends (Ollama, Anthropic, Codex, DeepSeek) |
 
@@ -40,7 +40,7 @@
 - `ImageLoadError` returns 400 `invalid_request_error` (not 500) in both streaming and non-streaming paths
 - Ollama `num_ctx` injection: configurable via `OLLAMA_NUM_CTX` env var (default 32768), replaces Ollama's wasteful ~4096 default
 - SQLite-backed state: `src/lib/db.ts` opens `LLMGW_DB_PATH` at startup and runs schema migration. Tables: `credentials_chain` (provider PK), `model_validation` (model PK), `meta` (validation batch ISO). WAL journal.
-- 356 unit tests passing (fast), 0 lint errors, 0 lint warnings
+- 369 unit tests passing (fast), 0 lint errors, 0 lint warnings
 - `npm run test:fast` for dev iteration (~2s), `npm test` for full e2e validation against live Ollama, `npm run test:codex-poc` for a live check of the ChatGPT login (20/20 on Go; on Pro Lite, which refuses no model, 19/19 with the refused-model test skipped), `npm run test:deepseek-poc` for DeepSeek (14/14)
 
 ## Post-Phase-8 cleanup (done in follow-up commits)
