@@ -26,9 +26,9 @@ On 2026-10-30 Anthropic renamed Max 20x to **Ultra** and dropped its **5-hour li
 
 Endpoint: `GET https://api.anthropic.com/api/oauth/usage` with the OAuth token and `anthropic-beta: oauth-2025-04-20` (undocumented; what the official clients use). The Fable scoped limit appears only here, not in headers.
 
-### GPT / Codex (ChatGPT Go)
+### GPT / Codex (ChatGPT Go; Pro Lite)
 
-Go has **one 30-day window** (the client calls it the "monthly usage limit"); Plus and Pro have a 5-hour primary and a weekly secondary. Over SSE the data is in headers; over WebSocket — pi-ai's default, so the gateway's path — only in the `codex.rate_limits` stream event.
+Go has **one 30-day window** (the client calls it the "monthly usage limit"); Plus and Pro have a 5-hour primary and a weekly secondary. Pro Lite (`plan_type: "prolite"`, tried on the host 2026-11-04) has **one weekly window**, as the primary (`limit_window_seconds: 604800`, `secondary_window: null`): checked live on the endpoint, and the gateway reports it as `weekly · all models` with no change. So, as with Claude, windows must be read, never assumed. Over SSE the data is in headers; over WebSocket — pi-ai's default, so the gateway's path — only in the `codex.rate_limits` stream event.
 
 | Field | Meaning | Source | Seen |
 |---|---|---|---|

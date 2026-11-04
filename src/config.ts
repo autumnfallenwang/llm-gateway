@@ -116,8 +116,9 @@ export const CODEX_CREDENTIALS_PATH =
 /**
  * Whether to load Codex credentials and register Codex models. Set `CODEX_ENABLED=false` on a
  * host with no ChatGPT login, so the Codex models don't surface as validation errors. The
- * login is any ChatGPT plan that includes Codex; Go gets gpt-6-luna, gpt-5.6-terra and
- * gpt-5.6-luna (2026-11-01).
+ * login is any ChatGPT plan that includes Codex, and the plan decides which models answer:
+ * Go gets gpt-6-luna, gpt-5.6-terra and gpt-5.6-luna (2026-11-01); Pro Lite gets all seven
+ * (2026-11-04).
  */
 export const CODEX_ENABLED = (env.CODEX_ENABLED ?? "true").toLowerCase() !== "false";
 

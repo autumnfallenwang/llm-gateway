@@ -1,6 +1,7 @@
 /**
- * Live proof-of-concept: does a ChatGPT Go subscription work through pi-ai's
- * `openai-codex` backend, and through the gateway on top of it?
+ * Live proof-of-concept: does the host's ChatGPT subscription work through pi-ai's
+ * `openai-codex` backend, and through the gateway on top of it? Written for a Go plan and
+ * also run against Pro Lite (2026-11-04); the file keeps its name for the docs that cite it.
  *
  * Opt-in. It makes ~35 real requests and spends the account's Codex quota:
  *
@@ -8,9 +9,11 @@
  *
  * It reads the Codex CLI login at CODEX_CREDENTIALS_PATH (default ~/.codex/auth.json;
  * `codex login` writes it). CODEX_POC_MODEL picks the model the feature tests use; the
- * default is one Go accepted when this was written (2026-11-01: gpt-5.6-luna,
- * gpt-5.6-terra, gpt-6-luna; the other catalog models answer "not supported when using
- * Codex with a ChatGPT account", which the gateway returns as a 404).
+ * default is one every plan so far accepts. Which models the plan accepts depends on the
+ * plan (2026-11-01, Go: gpt-5.6-luna, gpt-5.6-terra, gpt-6-luna; 2026-11-04, Pro Lite:
+ * all seven). A refused one answers "not supported when using Codex with a ChatGPT
+ * account", which the gateway returns as a 404; with a plan that refuses none, the 404
+ * test is skipped.
  *
  * It runs Codex-only: Anthropic, DeepSeek and Ollama point at nothing before the gateway
  * modules load, so it never refreshes the host's Claude login, spends DeepSeek balance, or
@@ -23,8 +26,9 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 const RUN = process.env.CODEX_POC === "1";
 const POC_MODEL = process.env.CODEX_POC_MODEL ?? "gpt-6-luna";
-// A catalog model the Go plan refuses, for the error-path test.
-const REFUSED_MODEL = process.env.CODEX_POC_REFUSED_MODEL ?? "gpt-6-sol";
+// A catalog model the plan refuses, for the error-path test; by default the first one the
+// probe finds refused.
+const REFUSED_MODEL = process.env.CODEX_POC_REFUSED_MODEL;
 // The backend's answer for a model the ChatGPT plan doesn't include.
 const NOT_ON_PLAN = /not supported when using Codex with a ChatGPT account/i;
 
@@ -85,7 +89,7 @@ function jwtClaims(token: string): Record<string, unknown> {
   return JSON.parse(Buffer.from(payload, "base64url").toString("utf-8"));
 }
 
-describe.skipIf(!RUN)("ChatGPT Go subscription via Codex", () => {
+describe.skipIf(!RUN)("ChatGPT subscription via Codex", () => {
   beforeAll(async () => {
     // src/config.ts reads these at import time, so set them before any gateway import.
     process.env.ANTHROPIC_SEED_PATH = "/nonexistent";
@@ -406,9 +410,14 @@ describe.skipIf(!RUN)("ChatGPT Go subscription via Codex", () => {
       expect(json.choices[0].message.content).toMatch(/red/i);
     });
 
-    it("returns an OpenAI error for a model the plan refuses", { timeout: 120_000 }, async () => {
+    it("returns an OpenAI error for a model the plan refuses", {
+      timeout: 120_000,
+    }, async (ctx) => {
+      const refused = REFUSED_MODEL ?? [...planAccepts].find(([, accepted]) => !accepted)?.[0];
+      // Pro Lite answers every catalog model, so there's nothing to be refused.
+      if (!refused) ctx.skip();
       const res = await chat({
-        model: REFUSED_MODEL,
+        model: refused,
         messages: [{ role: "user", content: "Reply with exactly: pong" }],
       });
       const json = await res.json();
