@@ -13,6 +13,8 @@ import { type ServerType, serve } from "@hono/node-server";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 const RUN = process.env.LIMITS_POC === "1";
+/** The window lengths ChatGPT plans have had. */
+const GPT_PERIOD = /^(5h|weekly|monthly)$/;
 
 /** The POC's findings are its point, so print them. */
 function report(data: unknown) {
@@ -76,13 +78,19 @@ describe.skipIf(!RUN)("GET /v1/limits, live", () => {
     expect(byProvider.anthropic).toBeUndefined();
   });
 
-  it("gives a GPT model its Go plan's monthly window", { timeout: 60_000 }, async () => {
+  // The windows depend on the plan (Go: one monthly; Pro Lite: one weekly; Plus and Pro: 5h
+  // plus weekly), so read them rather than expect one.
+  it("gives a GPT model its plan's account-wide windows", { timeout: 60_000 }, async () => {
     const { status, json } = await limits("gpt-6-luna");
     expect(status).toBe(200);
     report(json);
-    expect(json).toMatchObject({ model: "gpt-6-luna", provider: "openai-codex", plan: "go" });
-    expect(json.windows[0]).toMatchObject({ scope: "all models", period: "monthly" });
-    expect(json.available.binding).toBe("monthly · all models");
+    expect(json).toMatchObject({ model: "gpt-6-luna", provider: "openai-codex" });
+    expect(json.plan).toEqual(expect.any(String));
+    expect(json.windows.length).toBeGreaterThan(0);
+    for (const w of json.windows) {
+      expect(w).toMatchObject({ scope: "all models", period: expect.stringMatching(GPT_PERIOD) });
+    }
+    expect(json.available.binding).toMatch(/ · all models$/);
     expect(Date.parse(json.as_of)).toBeGreaterThan(Date.now() - 120_000);
   });
 
@@ -92,7 +100,7 @@ describe.skipIf(!RUN)("GET /v1/limits, live", () => {
     expect((await chat("openai-codex/gpt-6-luna")).status).toBe(200);
     const { json } = await limits("openai-codex/gpt-6-luna");
     expect(json.source).toBe("response");
-    expect(json.windows[0]?.period).toBe("monthly");
+    expect(json.windows[0]?.period).toMatch(GPT_PERIOD);
   });
 
   it("gives a DeepSeek model the prepaid balance, before and after a request", {

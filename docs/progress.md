@@ -11,7 +11,7 @@
 | 5 | Completion service | ✅ Done | `src/services/completion.ts` — OpenAI ↔ pi-ai translation, Codex system prompt fallback |
 | 6 | Routes | ✅ Done | `src/routes/{chat,models,validate}.ts` — OpenAPI route defs with request examples |
 | 7 | App + server wiring | ✅ Done | All handlers wired: chat completions, models list (with validation filtering), model validation |
-| 8 | Tests | ✅ Done | 20 test files (incl. the opt-in live `codex-go.poc`, `deepseek.poc` and `limits.poc`), 348 fast tests |
+| 8 | Tests | ✅ Done | 20 test files (incl. the opt-in live `codex-go.poc`, `deepseek.poc` and `limits.poc`), 356 fast tests |
 | 9 | Model validation | ✅ Done | `src/services/validation.ts` — tests every model with real completion, persists report via the SQLite `model_validation` table (Phase 8 / task 40) |
 | 10 | Streaming support | ✅ Done | SSE streaming via `stream: true` — all four backends (Ollama, Anthropic, Codex, DeepSeek) |
 
@@ -23,7 +23,7 @@
 - `POST /v1/chat/completions` with `tools` → OpenAI function calling on Claude, GPT (Codex) and Ollama models (`tool_calls` out, `tool` messages back in), streaming included; `tool_choice` honoured per backend
 - `reasoning_effort` (`none`…`max`) on Claude, GPT and DeepSeek models, moved to the nearest level each model has
 - DeepSeek's metered API (`deepseek-flash`, `deepseek-v4-pro`) with the key in `~/.deepseek/api_key`; thinking off unless `reasoning_effort`; an empty prepaid balance is 429 `insufficient_quota`
-- GPT models through a ChatGPT login (Go plan: `gpt-6-luna`, `gpt-5.6-terra`, `gpt-5.6-luna`); a model the plan lacks is a 404 `model_not_found`; `temperature` is dropped for them (the backend rejects it)
+- GPT models through a ChatGPT login: Pro Lite since 2026-11-04, which answers all 7 (`gpt-6.1-sol`, `gpt-6-sol`, `gpt-6-astra`, `gpt-6-luna`, `gpt-5.6-sol`, `gpt-5.6-terra`, `gpt-5.6-luna`; Go answered only `gpt-6-luna`, `gpt-5.6-terra` and `gpt-5.6-luna`); a model the plan lacks is a 404 `model_not_found`; `temperature` is dropped for them (the backend rejects it)
 - Images for a text-only model: each described on its own by the family's vision model (`deepseek-flash` for `deepseek-v4-pro`), in the image's place, cached in SQLite so a conversation's images are described once; `/v1/models` says what each model reads (`input`)
 - Streaming usage: `stream_options.include_usage` ends the stream with a usage chunk
 - A Claude refusal (safety classifiers) answers 200 with `finish_reason: "content_filter"` + `message.refusal`
@@ -40,8 +40,8 @@
 - `ImageLoadError` returns 400 `invalid_request_error` (not 500) in both streaming and non-streaming paths
 - Ollama `num_ctx` injection: configurable via `OLLAMA_NUM_CTX` env var (default 32768), replaces Ollama's wasteful ~4096 default
 - SQLite-backed state: `src/lib/db.ts` opens `LLMGW_DB_PATH` at startup and runs schema migration. Tables: `credentials_chain` (provider PK), `model_validation` (model PK), `meta` (validation batch ISO). WAL journal.
-- 348 unit tests passing (fast), 0 lint errors, 0 lint warnings
-- `npm run test:fast` for dev iteration (~2s), `npm test` for full e2e validation against live Ollama, `npm run test:codex-poc` for a live check of the ChatGPT login (20/20), `npm run test:deepseek-poc` for DeepSeek (14/14)
+- 356 unit tests passing (fast), 0 lint errors, 0 lint warnings
+- `npm run test:fast` for dev iteration (~2s), `npm test` for full e2e validation against live Ollama, `npm run test:codex-poc` for a live check of the ChatGPT login (19/19 on Pro Lite, plus a refused-model test it skips when the plan refuses none), `npm run test:deepseek-poc` for DeepSeek (14/14)
 
 ## Post-Phase-8 cleanup (done in follow-up commits)
 
@@ -217,6 +217,7 @@ Backlog #12; [usage-limits.md](usage-limits.md). How much of each paid family's 
 | 74 | Logging | ✅ Done | `completion.usage` per completion: tokens, `cost_usd`, the binding window or balance from the cache. |
 | 76 | Tests | ✅ Done | 30 new unit tests (parsers on the POC fixtures, merging, caching, single-flight, failure and staleness, per-model mapping, the route, the hooks); 348 fast pass. `npm run test:limits-poc` 5/5 live. |
 | 77 | Follow-ups (0.5.0) | ✅ Done | A model that failed its last check (`/v1/models` `status: "error"`, e.g. `gpt-6-sol` on Go) is `unavailable` with the reason instead of `ok`. Claude's older `five_hour`/`seven_day` objects fill in a window `limits[]` lacks (this account really has no 5-hour window: checked live). Every line logged during a request carries its `req_id` (AsyncLocalStorage + pino `mixin`), and `completion.usage`/`limits.*` name the provider by `owned_by`. Version 0.5.0, and `GET /` reports the image's `commit`. 8 new tests; 356 fast pass, `test:limits-poc` 5/5 live. |
+| 78 | Codex login → Pro Lite | ✅ Done | 2026-11-04: `codex login` with the $100 Pro Lite account replaced `~/.codex/auth.json`; the pod re-read it within a minute (no restart, no chart change). Pro Lite answers all 7 GPT models (Go had 3) and has one weekly window; `POST /v1/models/validate` cleared the Go plan's 4 `error` statuses (36/36 `ok`). The chart comment, CLAUDE.md, config and the two live POCs no longer assume Go (the refused-model test skips when the plan refuses none). `test:codex-poc` 19/19 + 1 skipped, `test:limits-poc` 5/5. |
 
 ## Phase 12: Model IDs — `provider/model`
 

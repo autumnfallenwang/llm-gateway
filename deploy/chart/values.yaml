@@ -37,9 +37,11 @@ env:
   OLLAMA_BASE_URL: http://192.168.1.163:11434
   ANTHROPIC_SEED_PATH: /home/node/host-claude/.credentials.json
   CODEX_CREDENTIALS_PATH: /home/node/host-codex/auth.json
-  # GPT models via the host's ChatGPT login (a Go plan: gpt-6-luna, gpt-5.6-terra,
-  # gpt-5.6-luna). Read-only: the host's Codex client (VS Code ChatGPT extension)
-  # keeps auth.json refreshed and the gateway re-reads it when it changes. Set
+  # GPT models via the host's ChatGPT login; its plan decides which models answer
+  # (Pro Lite since 2026-11-04: all 7; Go had 3). Read-only: the host's Codex client
+  # (the `codex` CLI or the VS Code ChatGPT extension) keeps auth.json refreshed and
+  # the gateway re-reads it when it changes, so `codex login` to another account
+  # switches the gateway without a restart; then POST /v1/models/validate. Set
   # "false" if the host has no ChatGPT login, so the models don't show as errors.
   CODEX_ENABLED: "true"
   # DeepSeek's static API key (metered, prepaid). ~/.deepseek/api_key on the host is the
