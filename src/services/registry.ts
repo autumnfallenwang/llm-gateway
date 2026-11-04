@@ -127,6 +127,7 @@ export function listModels(): {
   created: number;
   owned_by: string;
   capability: Capability;
+  input: ("text" | "image")[];
   context_window?: number;
   max_tokens?: number;
 }[] {
@@ -136,6 +137,7 @@ export function listModels(): {
     created: 0,
     owned_by: model.provider,
     capability,
+    input: [...model.input],
     context_window: model.contextWindow,
     max_tokens: model.maxTokens,
   }));

@@ -103,12 +103,14 @@ function throwIfBackendError(result: AssistantMessage): void {
   throw new BackendError(msg, 500, "server_error", "server_error");
 }
 
+/** A message's text; separate text parts are kept apart by a blank line. */
 function extractTextContent(content: string | ContentPart[]): string {
   if (typeof content === "string") return content;
   return content
     .filter((p): p is { type: "text"; text: string } => p.type === "text")
     .map((p) => p.text)
-    .join("");
+    .filter((t) => t !== "")
+    .join("\n\n");
 }
 
 async function processImagePart(
@@ -456,11 +458,16 @@ function formatResponse(result: AssistantMessage, model: string): ChatCompletion
         finish_reason: refused ? "content_filter" : (STOP_REASON_MAP[result.stopReason] ?? "stop"),
       },
     ],
-    usage: {
-      prompt_tokens: result.usage.input,
-      completion_tokens: result.usage.output,
-      total_tokens: result.usage.totalTokens,
-    },
+    usage: toUsage(result),
+  };
+}
+
+/** OpenAI's usage object for a finished reply. */
+function toUsage(result: AssistantMessage): ChatCompletionResponse["usage"] {
+  return {
+    prompt_tokens: result.usage.input,
+    completion_tokens: result.usage.output,
+    total_tokens: result.usage.totalTokens,
   };
 }
 
@@ -483,6 +490,25 @@ export async function createCompletion(
   return formatResponse(result, body.model);
 }
 
+/** The first delta of a streamed tool call: its index, id and function name. */
+function toolCallStartDelta(event: unknown, index: number): Record<string, unknown> {
+  const { partial, contentIndex } = event as {
+    partial?: { content?: { id?: string; name?: string }[] };
+    contentIndex?: number;
+  };
+  const tc = partial?.content?.[contentIndex ?? 0];
+  return {
+    tool_calls: [
+      {
+        index,
+        id: tc?.id ?? "",
+        type: "function",
+        function: { name: tc?.name ?? "", arguments: "" },
+      },
+    ],
+  };
+}
+
 export async function* createStreamingCompletion(
   resolved: ResolvedModel,
   body: ChatCompletionRequest,
@@ -498,6 +524,9 @@ export async function* createStreamingCompletion(
 
   const id = `chatcmpl-${Date.now()}`;
   const created = Math.floor(Date.now() / 1000);
+  // OpenAI's stream_options.include_usage: every chunk carries `usage: null`, and one last
+  // chunk with no choices carries the whole request's usage, before [DONE].
+  const includeUsage = body.stream_options?.include_usage === true;
 
   function chunk(delta: Record<string, unknown>, finishReason: string | null): string {
     return JSON.stringify({
@@ -506,6 +535,18 @@ export async function* createStreamingCompletion(
       created,
       model: body.model,
       choices: [{ index: 0, delta, finish_reason: finishReason }],
+      ...(includeUsage && { usage: null }),
+    });
+  }
+
+  function usageChunk(result: AssistantMessage): string {
+    return JSON.stringify({
+      id,
+      object: "chat.completion.chunk",
+      created,
+      model: body.model,
+      choices: [],
+      usage: toUsage(result),
     });
   }
 
@@ -521,24 +562,7 @@ export async function* createStreamingCompletion(
       yield chunk({ reasoning: (event as { delta: string }).delta }, null);
     } else if (event.type === "toolcall_start") {
       toolCallIndex++;
-      const partial = (
-        event as { partial?: { content?: { id?: string; name?: string }[] }; contentIndex?: number }
-      ).partial;
-      const contentIndex = (event as { contentIndex?: number }).contentIndex ?? 0;
-      const tc = partial?.content?.[contentIndex] as { id?: string; name?: string } | undefined;
-      yield chunk(
-        {
-          tool_calls: [
-            {
-              index: toolCallIndex,
-              id: tc?.id ?? "",
-              type: "function",
-              function: { name: tc?.name ?? "", arguments: "" },
-            },
-          ],
-        },
-        null,
-      );
+      yield chunk(toolCallStartDelta(event, toolCallIndex), null);
     } else if (event.type === "toolcall_delta") {
       yield chunk(
         {
@@ -555,10 +579,12 @@ export async function* createStreamingCompletion(
       logUsage(resolved, event.message);
       const finishReason = STOP_REASON_MAP[event.reason] ?? "stop";
       yield chunk({}, finishReason);
+      if (includeUsage) yield usageChunk(event.message);
     } else if (event.type === "error") {
       if (isRefusal(event.error)) {
         logRefusal(event.error);
         yield chunk({ refusal: refusalText(event.error) }, "content_filter");
+        if (includeUsage) yield usageChunk(event.error);
         return;
       }
       throwIfBackendError(event.error);

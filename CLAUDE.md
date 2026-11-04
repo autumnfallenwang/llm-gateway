@@ -5,7 +5,7 @@ Self-hosted OpenAI-compatible API gateway. Routes requests to Ollama, Anthropic,
 Supports OpenAI tool calling (`tools`, `tool_choice`, `tool` messages) and `reasoning_effort`.
 `src/lib/pi.ts` is the only file that imports pi-ai (`@earendil-works/pi-ai`); everything else
 imports from it, so a pi-ai API change stays in one file. It also corrects pi-ai's catalog
-(`NO_TEMPERATURE`, `RETIRES`) and maps `reasoning_effort` per API (`reasoningOptions`).
+(`NO_TEMPERATURE`, `RETIRES`, `THINKING_LEVELS`) and maps `reasoning_effort` per API (`reasoningOptions`).
 
 Models are requested by bare ID or `owned_by/model` (`deepseek/deepseek-flash`); a bare ID two providers
 share is a 400 `ambiguous_model`. Key anything per-model by `ResolvedModel.id` (the listed ID), never the
@@ -86,9 +86,11 @@ Centralized in `src/config.ts`. Key env var overrides:
 | `VISION_FALLBACK_OLLAMA` | `qwen3-vl:8b` | Ollama family vision fallback model |
 | `VISION_FALLBACK_ANTHROPIC` | `claude-haiku-5-5` | Anthropic family vision fallback model |
 | `VISION_FALLBACK_OPENAI` | `gpt-6-luna` | OpenAI (Codex) family vision fallback model |
+| `VISION_FALLBACK_DEEPSEEK` | `deepseek-flash` | DeepSeek family vision fallback model (describes images for `deepseek-v4-pro`); `""` uses the general chain |
 | `VISION_FALLBACK_GENERAL` | `qwen3-vl:8b,claude-haiku-5-5,gpt-6-luna` | General fallback chain (comma-separated) |
 | `VISION_FALLBACK_MAX_DESCRIPTION_CHARS` | `1000` | Max chars for vision description |
 | `VISION_FALLBACK_TIMEOUT_MS` | `30000` | Vision fallback model timeout |
+| `VISION_FALLBACK_CACHE_DAYS` | `30` | Days a vision-fallback description stays cached in SQLite (one per image + message text + describer), so earlier turns' images aren't described again; `0` turns the cache off |
 
 ## Docs
 

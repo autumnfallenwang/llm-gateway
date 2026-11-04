@@ -14,7 +14,7 @@ DeepSeek is the gateway's first **metered** backend: a static API key paid per t
   | Model | Input | Context / output | $/MTok in / out (cache read) | Reasoning levels (pi-ai) |
   |---|---|---|---|---|
   | `deepseek-flash` | text, image | 1M / 384K | 0.30 / 1.20 (0.006) | low, high, max |
-  | `deepseek-v4-pro` | text | 1M / 384K | 1.32 / 3.96 (0.044) | high, max |
+  | `deepseek-v4-pro` | text | 1M / 384K | 1.32 / 3.96 (0.044) | high, max — but DeepSeek takes low too (see decision 4) |
 
 - **pi-ai's `deepseek` provider** runs on its `openai-completions` backend (the one Ollama already uses). It sends `thinking: {type: "disabled"}` unless given a reasoning level, then `thinking: {type: "enabled"}` plus `reasoning_effort`. It adds an empty `reasoning_content` to earlier assistant turns, which DeepSeek's thinking mode is documented to need — though DeepSeek accepted tool follow-ups without it in testing, even after dropping 553 characters of reasoning.
 - **Probe through pi-ai, all OK:** plain reply, `temperature`, tool round trips with thinking off and on (assistant turns rebuilt as the gateway rebuilds them, without reasoning), image on `deepseek-flash`, reasoning on `deepseek-v4-pro`, streaming.
@@ -26,9 +26,9 @@ DeepSeek is the gateway's first **metered** backend: a static API key paid per t
    - The key never refreshes, so the reason the other two are host files (host tools rewrite them) doesn't apply. It's a host file for consistency and one copy.
    - Rejected: a Kubernetes Secret (a second copy, made by hand outside GitOps, a restart to rotate); the key in chart values (git).
 3. **Access stays open on the LAN**, like every other model. The prepaid balance caps the worst case. A 402 becomes 429 `insufficient_quota` instead of a 500. Client authentication would be its own change, for every model.
-4. **Thinking is off by default.** Apps opt in with `reasoning_effort`, moved to the nearest level each model has (`low` on `deepseek-v4-pro` is `high`); `none` keeps it off.
+4. **Thinking is off by default.** Apps opt in with `reasoning_effort`, moved to the nearest level each model has; `none` keeps it off. *Corrected 2026-11-04:* DeepSeek's `reasoning_effort` is `none`/`low`/`high`/`max` on **both** models (it maps `minimal` to `low` and `medium`/`xhigh` to `high` itself), but pi-ai lists only `high`/`max` for `deepseek-v4-pro`, so `low` used to go out as `high`. `src/lib/pi.ts` (`THINKING_LEVELS`) adds `low`; `test:deepseek-poc` checks that `low` reaches DeepSeek.
 5. **Both models, IDs as DeepSeek lists them**, `owned_by: "deepseek"`.
-6. **Images:** `deepseek-flash` takes them directly; `deepseek-v4-pro` (text only) goes through the existing fallback chain, which starts with the local `qwen3-vl` — no paid DeepSeek fallback.
+6. **Images:** `deepseek-flash` takes them directly. `deepseek-v4-pro` (text only) has them described by `deepseek-flash` (`VISION_FALLBACK_DEEPSEEK`; changed 2026-11-04, from the general chain's local `qwen3-vl`): the same family, as Claude has Haiku and GPT has `gpt-6-luna`, well under a tenth of a cent per image, paid once per image with the description cache, and no 12 GB model loaded on the GPU. `VISION_FALLBACK_DEEPSEEK=""` goes back to the general chain.
 7. **No embeddings** (DeepSeek has none): `/v1/embeddings` answers 501 `provider_unsupported`, as for Claude and GPT.
 8. **Live tests are opt-in** (`npm run test:deepseek-poc`), so ordinary runs spend nothing. The only automatic spend is model validation, a few tokens per model.
 9. **Deploy order:** `~/.deepseek` must exist on the host before the merge — the chart mounts it as a hostPath `Directory`, and the pod won't start without it.

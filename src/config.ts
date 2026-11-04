@@ -69,11 +69,11 @@ Request a model by the \`id\` \`/v1/models\` lists, or as \`owned_by/model\` to 
 
 ## Streaming
 
-Set \`stream: true\` on chat completions to receive Server-Sent Events. Each event is \`data: {chunk_json}\\n\\n\` with object type \`chat.completion.chunk\`. The stream ends with \`data: [DONE]\\n\\n\`. OpenAI SDKs handle this automatically. Embeddings do not stream.
+Set \`stream: true\` on chat completions to receive Server-Sent Events. Each event is \`data: {chunk_json}\\n\\n\` with object type \`chat.completion.chunk\`. The stream ends with \`data: [DONE]\\n\\n\`. With \`stream_options: {include_usage: true}\`, one last chunk before \`[DONE]\` has no choices and the whole request's \`usage\` (every other chunk carries \`usage: null\`), as OpenAI does. OpenAI SDKs handle this automatically. Embeddings do not stream.
 
 ## Vision
 
-Send images via \`image_url\` content parts (HTTPS URLs or data URIs). Vision-capable models process images directly. Non-vision models automatically fall back to a vision model that describes the image as text.
+Send images via \`image_url\` content parts (HTTPS URLs or data URIs). Models whose \`/v1/models\` entry has \`input: ["text", "image"]\` read images themselves. For a text-only model, a vision model (of the same family where there is one) describes each image, and the description replaces the image where it was: \`[Image description: …]\`, or \`[Image 1 description: …]\`, \`[Image 2 description: …]\` for several. Descriptions are cached, so the images of earlier turns aren't described again.
 
 ## Reasoning and refusals
 
@@ -85,7 +85,7 @@ GPT models (\`owned_by: "openai-codex"\`) run on a ChatGPT login, so which ones 
 
 ## DeepSeek models
 
-DeepSeek models (\`owned_by: "deepseek"\`: \`deepseek-flash\`, which also reads images, and \`deepseek-v4-pro\`) are metered, paid from a prepaid balance; an empty balance returns 429 \`insufficient_quota\`. They don't think unless the request sets \`reasoning_effort\`, and a forced \`tool_choice\` turns thinking off (DeepSeek can't force a tool while thinking). Images sent to \`deepseek-v4-pro\` are described by the vision fallback.
+DeepSeek models (\`owned_by: "deepseek"\`: \`deepseek-flash\`, which also reads images, and \`deepseek-v4-pro\`) are metered, paid from a prepaid balance; an empty balance returns 429 \`insufficient_quota\`. They don't think unless the request sets \`reasoning_effort\`, and a forced \`tool_choice\` turns thinking off (DeepSeek can't force a tool while thinking). Images sent to \`deepseek-v4-pro\` are described by \`deepseek-flash\`.
 
 ## Embeddings
 
@@ -176,11 +176,17 @@ export const LIMITS_FETCH_TIMEOUT_MS = Number(env.LIMITS_FETCH_TIMEOUT_MS ?? 10_
 
 // ── Vision Fallback ──────────────────────────────────────────────────────
 
-/** Per-family preferred vision model (same-provider affinity) */
+/**
+ * Per-family preferred vision model (same-provider affinity). An empty value sends that
+ * family to the general chain. DeepSeek's is `deepseek-flash`, which reads images itself:
+ * `deepseek-v4-pro` (text only) then stays on the DeepSeek balance (well under a tenth of
+ * a cent per image, once per image with the cache) instead of loading qwen3-vl on the GPU.
+ */
 export const VISION_FALLBACK_FAMILY: Record<string, string> = {
   ollama: env.VISION_FALLBACK_OLLAMA ?? "qwen3-vl:8b",
   anthropic: env.VISION_FALLBACK_ANTHROPIC ?? "claude-haiku-5-5",
   openai: env.VISION_FALLBACK_OPENAI ?? "gpt-6-luna",
+  deepseek: env.VISION_FALLBACK_DEEPSEEK ?? "deepseek-flash",
 };
 
 /** General fallback chain if family model unavailable (comma-separated env override) */
@@ -192,6 +198,8 @@ export const VISION_FALLBACK_MAX_DESCRIPTION_CHARS = Number(
   env.VISION_FALLBACK_MAX_DESCRIPTION_CHARS ?? 1000,
 );
 export const VISION_FALLBACK_TIMEOUT_MS = Number(env.VISION_FALLBACK_TIMEOUT_MS ?? 30_000);
+/** Days a vision-fallback description stays cached (SQLite); 0 turns the cache off. */
+export const VISION_FALLBACK_CACHE_DAYS = Number(env.VISION_FALLBACK_CACHE_DAYS ?? 30);
 
 // ── Defaults ───────────────────────────────────────────────────────────────
 

@@ -145,9 +145,19 @@ describe("reasoningOptions", () => {
   // pi-ai's DeepSeek backend thinks exactly when given a level (`thinking: enabled`).
   it("gives DeepSeek a level, moved to the nearest one the model has", () => {
     expect(reasoningOptions(deepseek("deepseek-flash"), "low")).toEqual({ reasoningEffort: "low" });
-    // deepseek-v4-pro has only high and max; flash has no medium.
+    // pi-ai lists only high and max for deepseek-v4-pro, but DeepSeek takes low on both
+    // models (pi.ts THINKING_LEVELS); neither has medium, which DeepSeek itself maps to high.
     expect(reasoningOptions(deepseek("deepseek-v4-pro"), "low")).toEqual({
+      reasoningEffort: "low",
+    });
+    expect(reasoningOptions(deepseek("deepseek-v4-pro"), "minimal")).toEqual({
+      reasoningEffort: "low",
+    });
+    expect(reasoningOptions(deepseek("deepseek-v4-pro"), "medium")).toEqual({
       reasoningEffort: "high",
+    });
+    expect(reasoningOptions(deepseek("deepseek-v4-pro"), "max")).toEqual({
+      reasoningEffort: "max",
     });
     expect(reasoningOptions(deepseek("deepseek-flash"), "medium")).toEqual({
       reasoningEffort: "high",

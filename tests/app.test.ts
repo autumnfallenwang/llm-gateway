@@ -420,6 +420,8 @@ describe("GET /v1/models", () => {
     expect(model).toBeDefined();
     expect(model.context_window).toBe(8192);
     expect(model.max_tokens).toBe(2048);
+    // What the model reads itself, so apps know which take images.
+    expect(model.input).toEqual(["text"]);
   });
 
   it("enriches models with validation status from report", async () => {

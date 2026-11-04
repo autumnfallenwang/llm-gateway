@@ -111,7 +111,7 @@ Notes:
 | `stream` | Optional (default false) | ✅ Supported | ✅ Streaming API | Must have | ✅ Supported |
 | `top_p` | Optional (default 1) | ✅ Supported | ❌ Not exposed | Should have | Ignored |
 | `stop` | Optional | ✅ Supported | ❌ Not exposed | Should have | Ignored |
-| `stream_options` | Optional | ✅ Supported | ❌ Not exposed | Should have | Ignored |
+| `stream_options` | Optional | ✅ Supported | ❌ Not exposed | Should have | ✅ `include_usage` (2026-11-04): a last chunk with no choices and the usage |
 | `frequency_penalty` | Optional (default 0) | ✅ Supported | ❌ Not exposed | Should have | Ignored |
 | `presence_penalty` | Optional (default 0) | ✅ Supported | ❌ Not exposed | Should have | Ignored |
 | `tools` | Optional | ✅ Supported | ✅ Via Context.tools | Nice to have | Ignored |
