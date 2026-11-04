@@ -768,7 +768,9 @@ describe("applyVisionFallback: each image on its own", () => {
     );
 
     expect(resolveModelMock.mock.calls[0]?.[0]).toBe("deepseek-flash");
-    expect((completeMock.mock.calls[0]?.[0] as { id: string }).id).toBe("deepseek-flash");
+    expect((completeMock.mock.calls[0]?.[0] as { id?: string } | undefined)?.id).toBe(
+      "deepseek-flash",
+    );
   });
 
   it("logs one vision.describe line: which model described, how many, what it cost", async () => {
