@@ -38,11 +38,12 @@ env:
   ANTHROPIC_SEED_PATH: /home/node/host-claude/.credentials.json
   CODEX_CREDENTIALS_PATH: /home/node/host-codex/auth.json
   # GPT models via the host's ChatGPT login; its plan decides which models answer
-  # (Pro Lite since 2026-11-04: all 7; Go had 3). Read-only: the host's Codex client
-  # (the `codex` CLI or the VS Code ChatGPT extension) keeps auth.json refreshed and
-  # the gateway re-reads it when it changes, so `codex login` to another account
-  # switches the gateway without a restart; then POST /v1/models/validate. Set
-  # "false" if the host has no ChatGPT login, so the models don't show as errors.
+  # (Go, the host's plan: 3; Pro Lite, tried 2026-11-04: all 7). Read-only: the
+  # host's Codex client (the `codex` CLI or the VS Code ChatGPT extension) keeps
+  # auth.json refreshed and the gateway re-reads it when it changes, so `codex login`
+  # to another account switches the gateway without a restart; then
+  # POST /v1/models/validate. Set "false" if the host has no ChatGPT login, so the
+  # models don't show as errors.
   CODEX_ENABLED: "true"
   # DeepSeek's static API key (metered, prepaid). ~/.deepseek/api_key on the host is the
   # key's single source of truth (~/.zshrc reads it too); no file, no DeepSeek models.

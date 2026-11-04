@@ -1,7 +1,7 @@
 /**
  * Live proof-of-concept: does the host's ChatGPT subscription work through pi-ai's
- * `openai-codex` backend, and through the gateway on top of it? Written for a Go plan,
- * now run against Pro Lite (the file keeps its name for the docs that cite it).
+ * `openai-codex` backend, and through the gateway on top of it? Written for a Go plan and
+ * also run against Pro Lite (2026-11-04); the file keeps its name for the docs that cite it.
  *
  * Opt-in. It makes ~35 real requests and spends the account's Codex quota:
  *
