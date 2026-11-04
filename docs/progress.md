@@ -24,6 +24,8 @@
 - `reasoning_effort` (`none`…`max`) on Claude, GPT and DeepSeek models, moved to the nearest level each model has
 - DeepSeek's metered API (`deepseek-flash`, `deepseek-v4-pro`) with the key in `~/.deepseek/api_key`; thinking off unless `reasoning_effort`; an empty prepaid balance is 429 `insufficient_quota`
 - GPT models through a ChatGPT login (Go plan: `gpt-6-luna`, `gpt-5.6-terra`, `gpt-5.6-luna`); a model the plan lacks is a 404 `model_not_found`; `temperature` is dropped for them (the backend rejects it)
+- Images for a text-only model: each described on its own by the family's vision model (`deepseek-flash` for `deepseek-v4-pro`), in the image's place, cached in SQLite so a conversation's images are described once; `/v1/models` says what each model reads (`input`)
+- Streaming usage: `stream_options.include_usage` ends the stream with a usage chunk
 - A Claude refusal (safety classifiers) answers 200 with `finish_reason: "content_filter"` + `message.refusal`
 - `POST /v1/chat/completions` with `stream: true` → SSE streaming with `chat.completion.chunk` objects, `data: [DONE]` sentinel
 - `GET /v1/models` → returns ALL models with `status` (`ok`/`error`/`unknown`), `status_detail`, `validated_at` fields; includes `context_window` and `max_tokens` per model
@@ -190,6 +192,18 @@ Migrate from 29 ad-hoc `console.log/warn/error` calls to JSON-per-line structure
 - Loki + Promtail + Grafana deployment as a separate `~/agentic/observability/` stack — multi-app concern, not specific to llmgw. _(Superseded by Phase 8 — observability stack is already running in the k3s cluster as `observability-loki` / `observability-grafana` / `observability-alloy`. Once llmgw lands in `namespace: llmgw`, Alloy scrapes pod stdout into Loki automatically with no app changes.)_
 - Prometheus metrics + dashboards — different problem (numbers vs events); add when we want trend graphs/alerts.
 - OpenTelemetry — overkill for a single-service gateway; revisit if multi-service tracing matters.
+
+## Phase 14: Consumer Feedback — Images, Streaming Usage, DeepSeek Effort (0.6.0)
+
+From homestorm, an app on the gateway (2026-11-04). Each item checked against the code and live first; one claim was wrong (Claude Haiku wasn't describing DeepSeek's images: the general chain's local `qwen3-vl:8b` was).
+
+| # | Task | Status | Notes |
+|---|------|--------|-------|
+| 79 | One description per image, in place | ✅ Done | `src/services/image/fallback.ts`: one vision call per image (the message's text for focus, "image N of M"), the description where the image was (`[Image N description: …]`), parts joined with a blank line (was `""`, also in `extractTextContent`). Up to 3 calls at once; a repeated image is described once. |
+| 80 | Description cache | ✅ Done | `image_descriptions` in `state.db`, keyed by image bytes + describer + message text (+ detail, place, prompt version), 30 days (`VISION_FALLBACK_CACHE_DAYS`). Turn 2 onwards re-reads the stored text: live, the same two-image message took 1.2 s instead of 2.2 s, with no describe call. Failed descriptions aren't stored. |
+| 81 | DeepSeek family describer | ✅ Done | `VISION_FALLBACK_DEEPSEEK=deepseek-flash`: `deepseek-v4-pro`'s images stay on the DeepSeek balance instead of loading qwen3-vl on the GPU. One `vision.describe` log line per request says who described what. |
+| 82 | `/v1/models` `input` | ✅ Done | `["text"]` or `["text", "image"]`, from the catalog (Ollama: `/api/show` "vision"). |
+| 83 | Streaming usage + V4 Pro `low` | ✅ Done | `stream_options.include_usage` (OpenAI's shape: a last chunk with no choices and the usage, `usage: null` on the others). pi-ai lists only high/max for `deepseek-v4-pro`; DeepSeek takes low on both models, so `pi.ts` `THINKING_LEVELS` adds it — `low` used to go out as `high`. 13 new tests; 369 fast pass, `test:deepseek-poc` 17/17 live. Version 0.6.0. |
 
 ## Phase 13: Usage Limits — `GET /v1/limits`
 

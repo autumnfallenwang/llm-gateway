@@ -26,6 +26,12 @@ export interface AppDb {
   /** Adds or replaces these models' rows, leaving the rest of the report as it is. */
   mergeValidationResults(models: ValidateResponse["models"], validatedAt: string): void;
 
+  /** A cached vision-fallback description, if one was stored at or after `since` (ms). */
+  readImageDescription(key: string, since: number): string | undefined;
+  writeImageDescription(key: string, model: string, description: string): void;
+  /** Drops descriptions stored before `before` (ms); returns how many went. */
+  pruneImageDescriptions(before: number): number;
+
   raw: Database.Database;
   close(): void;
 }
@@ -69,6 +75,17 @@ const SCHEMA = `
     key   TEXT PRIMARY KEY,
     value TEXT NOT NULL
   );
+
+  -- Vision-fallback descriptions, keyed by a hash of the image, the describing model and
+  -- the message's text (services/image/fallback.ts), so a conversation's images are
+  -- described once rather than on every turn.
+  CREATE TABLE IF NOT EXISTS image_descriptions (
+    key         TEXT PRIMARY KEY,
+    model       TEXT NOT NULL,
+    description TEXT NOT NULL,
+    created_at  INTEGER NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS image_descriptions_created_at ON image_descriptions (created_at);
 `;
 
 const META_VALIDATION_BATCH_ISO = "validation.batch_iso";
@@ -96,6 +113,16 @@ function makeAppDb(db: Database.Database): AppDb {
        error = excluded.error, embedding_dim = excluded.embedding_dim,
        validated_at = excluded.validated_at`,
   );
+
+  const readDescriptionStmt = db.prepare(
+    "SELECT description FROM image_descriptions WHERE key = ? AND created_at >= ?",
+  );
+  const writeDescriptionStmt = db.prepare(
+    `INSERT INTO image_descriptions (key, model, description, created_at) VALUES (?, ?, ?, ?)
+     ON CONFLICT(key) DO UPDATE SET model = excluded.model, description = excluded.description,
+       created_at = excluded.created_at`,
+  );
+  const pruneDescriptionsStmt = db.prepare("DELETE FROM image_descriptions WHERE created_at < ?");
 
   const readMetaStmt = db.prepare("SELECT value FROM meta WHERE key = ?");
   const writeMetaStmt = db.prepare(
@@ -190,6 +217,19 @@ function makeAppDb(db: Database.Database): AppDb {
       writeTx(report);
     },
 
+    readImageDescription(key, since) {
+      const row = readDescriptionStmt.get(key, since) as { description: string } | undefined;
+      return row?.description;
+    },
+
+    writeImageDescription(key, model, description) {
+      writeDescriptionStmt.run(key, model, description, Date.now());
+    },
+
+    pruneImageDescriptions(before) {
+      return pruneDescriptionsStmt.run(before).changes;
+    },
+
     raw: db,
     close() {
       db.close();
@@ -209,7 +249,8 @@ export function openDb(path: string): AppDb {
 
 let current: AppDb | undefined;
 
-export function setDb(db: AppDb): void {
+/** Installs the process-wide DB; `undefined` removes it (tests). */
+export function setDb(db: AppDb | undefined): void {
   current = db;
 }
 

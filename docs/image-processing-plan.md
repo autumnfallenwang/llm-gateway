@@ -318,47 +318,50 @@ When the target model doesn't support images, route through an intermediate visi
 1. **Select vision model** (family-first + general fallback):
    - **Family match**: pick the vision model for the target model's provider family (same-provider affinity, lower latency, consistent billing)
    - **General fallback**: if the family model is unavailable, try models from a general fallback chain
-   - Default family models: ollama → `llava`, anthropic → `claude-haiku-4-5`, openai → `gpt-4o-mini`
-   - Default general chain: `llava` → `claude-haiku-4-5` → `gpt-4o-mini`
+   - Default family models: ollama → `qwen3-vl:8b`, anthropic → `claude-haiku-5-5`, openai (Codex) → `gpt-6-luna`, deepseek → `deepseek-flash`
+   - Default general chain: `qwen3-vl:8b` → `claude-haiku-5-5` → `gpt-6-luna`
 
-2. **Build vision request:**
-   - Use the user's original text as the vision prompt (not a generic "Describe the image")
-   - This produces a description relevant to what the user actually asked
-   - Send image + user text to the vision model
-   - Example: user asks "What's this error?" → vision model sees the image with that context → describes the error specifically
+2. **Describe each image on its own** (2026-11-04, from homestorm's feedback; before, one call described all of a message's images and the result went first):
+   - One call per image: the message's text (so the description focuses on what the user asks), `Describe image N of M in it.` when there are several, then the image.
+   - Up to 3 calls at once per request; the same image with the same text is described once.
+   - Example: user asks "What's this error?" → the vision model sees the screenshot with that question → describes the error specifically.
 
-3. **Get text description back**
+3. **Cache the description** in SQLite (`image_descriptions` in `state.db`), keyed by a SHA-256 of the image's bytes, the `detail`, the describing model, the image's place (N of M), the message's text and a prompt version. A conversation re-sends its earlier messages unchanged on every turn, so each image is described once: later turns cost no model call and read the same text. Entries last `VISION_FALLBACK_CACHE_DAYS` (30; 0 turns the cache off). A failed or empty description isn't stored.
 
-4. **Replace image parts in the message:**
-   - Remove `image_url` content parts
-   - Prepend the description as context:
+4. **Replace each image part where it was**, and join the message's parts with a blank line:
    ```
-   [Image Description]
-   The screenshot shows a terminal window with a Node.js error: "TypeError: Cannot read properties of undefined (reading 'map')" at line 42 of index.js.
+   Compare these.
 
-   User's original question: What's this error?
+   [Image 1 description: A bar chart of monthly sales, peaking in March at about 120 units.]
+
+   Which month is lowest?
+
+   [Image 2 description: A line chart of the same months; July is the lowest point.]
    ```
+   A message with one image gets `[Image description: …]`.
 
-5. **Forward text-only request** to the target non-vision model
+5. **Forward the text-only request** to the target model, and log one `vision.describe` line: the describing model, images, how many came from the cache, newly described, cost, time.
 
 6. **Return standard OpenAI response** (the client doesn't know a vision model was used)
 
-**Configuration** (in `src/config.ts`, all env-var overridable):
+**Configuration** (in `src/config.ts`, all env-var overridable; current defaults):
 
 ```typescript
-// Per-family preferred vision model (same-provider affinity)
+// Per-family preferred vision model (same-provider affinity); "" sends a family to the general chain
 VISION_FALLBACK_FAMILY: Record<string, string> = {
-  ollama: "llava",           // VISION_FALLBACK_OLLAMA
-  anthropic: "claude-haiku-4-5",  // VISION_FALLBACK_ANTHROPIC
-  openai: "gpt-4o-mini",    // VISION_FALLBACK_OPENAI
+  ollama: "qwen3-vl:8b",          // VISION_FALLBACK_OLLAMA
+  anthropic: "claude-haiku-5-5",  // VISION_FALLBACK_ANTHROPIC
+  openai: "gpt-6-luna",           // VISION_FALLBACK_OPENAI
+  deepseek: "deepseek-flash",     // VISION_FALLBACK_DEEPSEEK (2026-11-04)
 };
 
 // General fallback chain if family model unavailable
 // VISION_FALLBACK_GENERAL (comma-separated)
-VISION_FALLBACK_GENERAL: string[] = ["llava", "claude-haiku-4-5", "gpt-4o-mini"];
+VISION_FALLBACK_GENERAL: string[] = ["qwen3-vl:8b", "claude-haiku-5-5", "gpt-6-luna"];
 
 VISION_FALLBACK_MAX_DESCRIPTION_CHARS = 1000;  // VISION_FALLBACK_MAX_DESCRIPTION_CHARS
 VISION_FALLBACK_TIMEOUT_MS = 30_000;           // VISION_FALLBACK_TIMEOUT_MS
+VISION_FALLBACK_CACHE_DAYS = 30;               // VISION_FALLBACK_CACHE_DAYS
 ```
 
 **Selection logic:**

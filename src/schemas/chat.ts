@@ -139,6 +139,16 @@ export const ChatCompletionRequestSchema = z
       .optional()
       .default(false)
       .openapi({ description: "If true, returns Server-Sent Events stream. Defaults to false" }),
+    stream_options: z
+      .object({
+        include_usage: z.boolean().optional().openapi({
+          description:
+            "If true, the stream ends with one more chunk before [DONE]: no choices, and the whole request's usage. Every other chunk carries usage: null",
+        }),
+      })
+      .nullable()
+      .optional()
+      .openapi({ description: "Streaming options; only used when stream is true" }),
     tools: z
       .array(ToolSchema)
       .optional()

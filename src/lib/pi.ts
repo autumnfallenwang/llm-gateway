@@ -89,6 +89,14 @@ export function complete(
 // checked live 2026-11-01).
 const NO_TEMPERATURE = new Set(["claude-sonnet-5", "claude-fable-5"]);
 
+// Thinking levels pi-ai's catalog (1.4) marks unsupported (null) that the provider takes.
+// DeepSeek's reasoning_effort is none/low/high/max on both its models (api-docs.deepseek.com,
+// checked 2026-11-04; a `low` call to deepseek-v4-pro answered), but pi-ai lists only
+// high/max for V4 Pro, so `low` was moved up to `high` and never reached DeepSeek.
+const THINKING_LEVELS: Record<string, Record<string, string>> = {
+  "deepseek-v4-pro": { low: "low" },
+};
+
 // Anthropic's retirement dates (requests fail from that day on) for models pi-ai still lists.
 const RETIRES: Record<string, string> = {
   "claude-sonnet-4-5": "2026-11-30",
@@ -108,7 +116,12 @@ export function getModels(provider: "anthropic" | "openai-codex" | "deepseek"): 
       provider === "openai-codex" || NO_TEMPERATURE.has(m.id)
         ? ({ ...m, compat: { ...m.compat, supportsTemperature: false } } as Model<Api>)
         : m,
-    );
+    )
+    .map((m) => {
+      const levels = THINKING_LEVELS[m.id];
+      if (!levels) return m;
+      return { ...m, thinkingLevelMap: { ...m.thinkingLevelMap, ...levels } } as Model<Api>;
+    });
 }
 
 /** OpenAI's `reasoning_effort` levels, plus the `max` that Claude and Codex models have. */

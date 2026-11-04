@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { BackendError } from "../src/errors";
 import type { AssistantMessage, Context } from "../src/lib/pi";
+import type { ChatCompletionRequest } from "../src/routes/chat";
 
 const completeMock = vi.fn();
 const streamMock = vi.fn();
@@ -260,7 +261,8 @@ describe("createCompletion", () => {
     ]);
   });
 
-  it("extracts text from system message with array content", async () => {
+  // Separate parts are separate pieces of text: joined with "", sentences ran together.
+  it("extracts text from system message with array content, parts a blank line apart", async () => {
     completeMock.mockResolvedValue(makeAssistantMessage());
 
     await createCompletion(makeResolved(), {
@@ -269,8 +271,9 @@ describe("createCompletion", () => {
         {
           role: "system",
           content: [
-            { type: "text", text: "You are " },
-            { type: "text", text: "helpful" },
+            { type: "text", text: "You are helpful." },
+            { type: "text", text: "" },
+            { type: "text", text: "Answer briefly." },
           ],
         },
         { role: "user", content: "Hi" },
@@ -279,7 +282,7 @@ describe("createCompletion", () => {
     });
 
     const [, context]: [unknown, Context] = completeMock.mock.calls[0];
-    expect(context.systemPrompt).toBe("You are helpful");
+    expect(context.systemPrompt).toBe("You are helpful.\n\nAnswer briefly.");
   });
 
   it("extracts text from assistant message with array content", async () => {
@@ -292,8 +295,8 @@ describe("createCompletion", () => {
         {
           role: "assistant",
           content: [
-            { type: "text", text: "Hello " },
-            { type: "text", text: "there" },
+            { type: "text", text: "Hello there." },
+            { type: "text", text: "How can I help?" },
           ],
         },
         { role: "user", content: "How are you?" },
@@ -303,7 +306,9 @@ describe("createCompletion", () => {
 
     const [, context]: [unknown, Context] = completeMock.mock.calls[0];
     expect(context.messages[1].role).toBe("assistant");
-    expect(context.messages[1].content).toEqual([{ type: "text", text: "Hello there" }]);
+    expect(context.messages[1].content).toEqual([
+      { type: "text", text: "Hello there.\n\nHow can I help?" },
+    ]);
   });
 
   it("processes image_url parts into pi-ai ImageContent", async () => {
@@ -778,6 +783,57 @@ describe("refusals", () => {
     const last = chunks[chunks.length - 1].choices[0];
     expect(last.finish_reason).toBe("content_filter");
     expect(last.delta).toEqual({ refusal: "This request touches on a restricted topic." });
+  });
+
+  // ── stream_options.include_usage ─────────────────────────────────────────
+
+  type StreamChunk = {
+    choices: { delta: Record<string, unknown>; finish_reason: string | null }[];
+    usage?: unknown;
+  };
+
+  async function streamOf(body: Partial<ChatCompletionRequest>): Promise<StreamChunk[]> {
+    const reply = makeAssistantMessage();
+    streamMock.mockReturnValue({
+      // biome-ignore lint/suspicious/useAwait: async generator mirrors pi-ai's event stream
+      async *[Symbol.asyncIterator]() {
+        yield { type: "start", partial: reply };
+        yield { type: "text_delta", delta: "Hello", partial: reply };
+        yield { type: "done", reason: "stop", message: reply };
+      },
+    });
+    const chunks: StreamChunk[] = [];
+    for await (const data of createStreamingCompletion(makeResolved(), {
+      model: "test-model",
+      messages: [{ role: "user", content: "Hi" }],
+      stream: true,
+      ...body,
+    })) {
+      chunks.push(JSON.parse(data));
+    }
+    return chunks;
+  }
+
+  it("ends a stream with a usage chunk when stream_options.include_usage is set", async () => {
+    const chunks = await streamOf({ stream_options: { include_usage: true } });
+
+    const last = chunks[chunks.length - 1];
+    expect(last).toMatchObject({
+      object: "chat.completion.chunk",
+      choices: [],
+      usage: { prompt_tokens: 10, completion_tokens: 20, total_tokens: 30 },
+    });
+    // OpenAI's shape: every other chunk carries usage: null.
+    for (const c of chunks.slice(0, -1)) expect(c.usage).toBeNull();
+    expect(chunks[chunks.length - 2]?.choices[0]?.finish_reason).toBe("stop");
+  });
+
+  it("sends no usage in a stream unless asked", async () => {
+    for (const body of [{}, { stream_options: { include_usage: false } }]) {
+      const chunks = await streamOf(body);
+      expect(chunks.every((c) => !("usage" in c))).toBe(true);
+      expect(chunks[chunks.length - 1]?.choices[0]?.finish_reason).toBe("stop");
+    }
   });
 
   it("still throws for other backend errors", async () => {

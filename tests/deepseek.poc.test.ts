@@ -7,9 +7,9 @@
  *   npm run test:deepseek-poc
  *
  * Anthropic and Codex point at nothing, so it never refreshes the host's Claude login or
- * spends the ChatGPT plan. Ollama is the real local one, for the vision fallback that
- * describes images to deepseek-v4-pro; the suite never calls the validate route, so no
- * Ollama model is loaded except qwen3-vl for that one test.
+ * spends the ChatGPT plan. Ollama is the real local one, but no Ollama model is loaded: the
+ * suite never calls the validate route, and the vision fallback that describes images to
+ * deepseek-v4-pro uses deepseek-flash (VISION_FALLBACK_DEEPSEEK).
  */
 import { readFileSync } from "node:fs";
 import { type ServerType, serve } from "@hono/node-server";
@@ -48,6 +48,7 @@ describe.skipIf(!RUN)("DeepSeek API through the gateway", () => {
   let baseUrl: string;
   let apiKey: string;
   let redPngUri: string;
+  let bluePngUri: string;
   let catalogIds: string[];
   let validateSingleModel: typeof import("../src/services/validation.js").validateSingleModel;
   let resolveModel: typeof import("../src/services/registry.js").resolveModel;
@@ -82,6 +83,12 @@ describe.skipIf(!RUN)("DeepSeek API through the gateway", () => {
       .png()
       .toBuffer();
     redPngUri = `data:image/png;base64,${red.toString("base64")}`;
+    const blue = await sharp({
+      create: { width: 64, height: 64, channels: 3, background: { r: 0, g: 0, b: 255 } },
+    })
+      .png()
+      .toBuffer();
+    bluePngUri = `data:image/png;base64,${blue.toString("base64")}`;
   }, 30_000);
 
   afterAll(() => {
@@ -154,6 +161,26 @@ describe.skipIf(!RUN)("DeepSeek API through the gateway", () => {
     expect(chunks.map((c) => c.choices[0]?.delta?.content ?? "").join("")).toMatch(/pong/i);
   });
 
+  it("ends a stream with the usage when stream_options.include_usage is set", {
+    timeout: 120_000,
+  }, async () => {
+    const res = await post("/v1/chat/completions", {
+      model: FLASH,
+      messages: pong,
+      stream: true,
+      stream_options: { include_usage: true },
+    });
+    const data = (await res.text())
+      .split("\n")
+      .filter((l) => l.startsWith("data: "))
+      .map((l) => l.slice(6));
+    expect(data[data.length - 1]).toBe("[DONE]");
+    const last = JSON.parse(data[data.length - 2] ?? "{}");
+    report(last.usage);
+    expect(last.choices).toEqual([]);
+    expect(last.usage.total_tokens).toBeGreaterThan(0);
+  });
+
   it("takes temperature", { timeout: 120_000 }, async () => {
     const json = await chat({ temperature: 0.2, messages: pong });
     expect(json.choices[0].message.content).toMatch(/pong/i);
@@ -162,11 +189,32 @@ describe.skipIf(!RUN)("DeepSeek API through the gateway", () => {
   // ── Reasoning ───────────────────────────────────────────────────────────
 
   it("thinks only when asked, at the nearest level", { timeout: 180_000 }, async () => {
-    // deepseek-v4-pro has only high and max, so low becomes high.
     for (const reasoningEffort of [undefined, "none", "low", "max"]) {
       const json = await chat({ model: PRO, messages: math, reasoning_effort: reasoningEffort });
       expect(json.choices[0].message.content, String(reasoningEffort)).toMatch(/391/);
     }
+  });
+
+  // pi-ai's catalog lists only high/max for V4 Pro; DeepSeek takes low (pi.ts THINKING_LEVELS).
+  it("sends deepseek-v4-pro the low effort asked for, not high", { timeout: 120_000 }, async () => {
+    const { complete, reasoningOptions } = await import("../src/lib/pi.js");
+    const model = resolveModel(PRO)?.model;
+    if (!model) throw new Error(`${PRO} isn't registered`);
+    const sent: unknown[] = [];
+    const res = await complete(
+      model,
+      { messages: [{ role: "user", content: math[0]?.content ?? "", timestamp: Date.now() }] },
+      {
+        ...reasoningOptions(model, "low"),
+        apiKey,
+        onPayload: (payload: unknown) => {
+          const p = payload as { reasoning_effort?: string; thinking?: unknown };
+          sent.push(p.reasoning_effort, p.thinking);
+        },
+      },
+    );
+    expect(sent).toEqual(["low", { type: "enabled" }]);
+    expect(res.stopReason, res.errorMessage).toBe("stop");
   });
 
   it("streams the reasoning as delta.reasoning", { timeout: 120_000 }, async () => {
@@ -258,10 +306,41 @@ describe.skipIf(!RUN)("DeepSeek API through the gateway", () => {
 
   it("describes an image to the text-only deepseek-v4-pro via the fallback", {
     timeout: 180_000,
-  }, async (ctx) => {
-    if (!resolveModel("qwen3-vl:8b")) ctx.skip(); // the fallback chain's local first choice
+  }, async () => {
     const json = await chat({ model: PRO, messages: colourOf(redPngUri) });
     expect(json.choices[0].message.content).toMatch(/red/i);
+  });
+
+  // deepseek-flash describes each image on its own, in its place; the next turn re-sends the
+  // same message, and the descriptions come from the cache.
+  it("describes each of several images, once across turns", { timeout: 240_000 }, async () => {
+    const { getDb } = await import("../src/lib/db.js");
+    const stored = () =>
+      (getDb().raw.prepare("SELECT COUNT(*) AS n FROM image_descriptions").get() as { n: number })
+        .n;
+    const before = stored();
+    const messages = [
+      {
+        role: "user",
+        content: [
+          { type: "text", text: "Here are two images." },
+          { type: "image_url", image_url: { url: redPngUri } },
+          { type: "text", text: "And the second:" },
+          { type: "image_url", image_url: { url: bluePngUri } },
+          { type: "text", text: "Name image 1's colour, then image 2's, as two words." },
+        ],
+      },
+    ];
+    const first = await chat({ model: PRO, messages });
+    report(`two images, first turn: ${first.choices[0].message.content}`);
+    expect(first.choices[0].message.content).toMatch(/red[\s\S]*blue/i);
+    expect(stored()).toBe(before + 2);
+
+    const start = Date.now();
+    const again = await chat({ model: PRO, messages });
+    report(`same message again: ${Date.now() - start} ms, ${again.choices[0].message.content}`);
+    expect(again.choices[0].message.content).toMatch(/red[\s\S]*blue/i);
+    expect(stored()).toBe(before + 2);
   });
 
   // ── Edges ───────────────────────────────────────────────────────────────

@@ -1,9 +1,13 @@
+import { createHash } from "node:crypto";
 import {
+  VISION_FALLBACK_CACHE_DAYS,
   VISION_FALLBACK_FAMILY,
   VISION_FALLBACK_GENERAL,
   VISION_FALLBACK_MAX_DESCRIPTION_CHARS,
   VISION_FALLBACK_TIMEOUT_MS,
 } from "../../config.js";
+import { type AppDb, getDb } from "../../lib/db.js";
+import { log } from "../../lib/logger.js";
 import { complete, type Model, reasoningOptions } from "../../lib/pi.js";
 import type { ChatCompletionRequest } from "../../routes/chat.js";
 import type { ContentPart } from "../../schemas/chat.js";
@@ -28,15 +32,46 @@ const PROVIDER_TO_FAMILY: Record<string, string> = {
   ollama: "ollama",
   anthropic: "anthropic",
   codex: "openai",
+  deepseek: "deepseek",
 };
 
-// ── Vision system prompt ─────────────────────────────────────────────────
+// ── Vision prompt ────────────────────────────────────────────────────────
 
 const VISION_SYSTEM_PROMPT =
-  "Describe the image(s) in detail, focusing on what the user is asking about. Be factual and concise. Do not answer the user's question — just describe what is visible.";
+  "Describe the image in detail, focusing on what the user's message asks about. Be factual and concise. Do not answer the user's question — just describe what is visible.";
+
+/** Part of every cache key: bump it when the prompt or the way images are sent changes. */
+const PROMPT_VERSION = "2";
+
+/** Descriptions in flight at once for one request. */
+const DESCRIBE_CONCURRENCY = 3;
+
+const DAY_MS = 86_400_000;
+const PRUNE_EVERY_MS = 3_600_000;
+let lastPrune = 0;
+
+type ImagePart = Extract<ContentPart, { type: "image_url" }>;
+type TextPart = Extract<ContentPart, { type: "text" }>;
+
+interface Stats {
+  images: number;
+  cached: number;
+  described: number;
+  costUsd: number;
+}
 
 // ── Public API ───────────────────────────────────────────────────────────
 
+/**
+ * For a model that can't read images: replaces each image in a user message with a text
+ * description of it, written by a vision model of the same family (or the general chain),
+ * in the image's place. A message with several images gets one description per image,
+ * numbered; the message's parts are joined with blank lines.
+ *
+ * Descriptions are cached (SQLite) by the image's bytes, the describing model and the
+ * message's text. A conversation re-sends its earlier messages unchanged every turn, so each
+ * image is described once: later turns cost no model call and read the same text.
+ */
 export async function applyVisionFallback(
   body: ChatCompletionRequest,
   resolved: ResolvedModel,
@@ -52,31 +87,57 @@ export async function applyVisionFallback(
   }
   const visionResolved = await withFreshKey(selected);
 
-  const transformedMessages = await Promise.all(
+  const start = Date.now();
+  const stats: Stats = { images: 0, cached: 0, described: 0, costUsd: 0 };
+  const describe = describer(visionResolved, stats);
+
+  const messages = await Promise.all(
     body.messages.map(async (msg) => {
       if (msg.role !== "user" || typeof msg.content === "string") return msg;
+      const images = msg.content.filter((p): p is ImagePart => p.type === "image_url");
+      if (images.length === 0) return msg;
 
-      const imageParts = msg.content.filter(
-        (p): p is Extract<ContentPart, { type: "image_url" }> => p.type === "image_url",
+      const text = joinText(msg.content);
+      const parts = await Promise.all(
+        msg.content.map(async (part) => {
+          if (part.type === "text") return part.text;
+          const n = images.indexOf(part) + 1;
+          const description = await describe(part, text, n, images.length);
+          const label = images.length > 1 ? `Image ${n} description` : "Image description";
+          return `[${label}: ${description}]`;
+        }),
       );
-      if (imageParts.length === 0) return msg;
-
-      const originalText = msg.content
-        .filter((p): p is Extract<ContentPart, { type: "text" }> => p.type === "text")
-        .map((p) => p.text)
-        .join("");
-
-      const description = await describeImages(msg.content, visionResolved);
-      const replacementText = buildReplacementContent(description, originalText);
-
-      return { ...msg, content: replacementText };
+      return { ...msg, content: parts.filter((p) => p !== "").join("\n\n") };
     }),
   );
 
-  return { ...body, messages: transformedMessages };
+  log.info(
+    {
+      event: "vision.describe",
+      model: resolved.id,
+      describer: visionResolved.id,
+      images: stats.images,
+      cached: stats.cached,
+      described: stats.described,
+      cost_usd: Math.round(stats.costUsd * 1e6) / 1e6,
+      duration_ms: Date.now() - start,
+    },
+    "Images described for a text-only model",
+  );
+
+  return { ...body, messages };
 }
 
 // ── Internal helpers ─────────────────────────────────────────────────────
+
+/** The text parts of a message, joined so sentences in separate parts stay apart. */
+function joinText(content: ContentPart[]): string {
+  return content
+    .filter((p): p is TextPart => p.type === "text")
+    .map((p) => p.text)
+    .filter((t) => t !== "")
+    .join("\n\n");
+}
 
 /**
  * The chat route refreshes the requested model's credentials; a fallback model from
@@ -125,28 +186,116 @@ function selectVisionModel(targetProvider: string): ResolvedModel | undefined {
   return undefined;
 }
 
-async function describeImages(
-  contentParts: ContentPart[],
+/** The SQLite cache, or undefined when it's off or no DB is open (unit tests). */
+function cache(): AppDb | undefined {
+  if (VISION_FALLBACK_CACHE_DAYS <= 0) return undefined;
+  try {
+    return getDb();
+  } catch {
+    return undefined;
+  }
+}
+
+/** Runs at most `max` of the given tasks at once; a finished task hands its slot on. */
+function limiter(max: number) {
+  let active = 0;
+  const waiting: (() => void)[] = [];
+  return async <T>(task: () => Promise<T>): Promise<T> => {
+    if (active < max) active++;
+    else await new Promise<void>((resolve) => waiting.push(resolve));
+    try {
+      return await task();
+    } finally {
+      const next = waiting.shift();
+      if (next) next();
+      else active--;
+    }
+  };
+}
+
+/**
+ * One request's describe function: cached descriptions first, the same image (and text)
+ * described once within the request, and at most DESCRIBE_CONCURRENCY model calls at once.
+ */
+function describer(visionResolved: ResolvedModel, stats: Stats) {
+  const db = cache();
+  const inFlight = new Map<string, Promise<string>>();
+  const limit = limiter(DESCRIBE_CONCURRENCY);
+
+  return async (part: ImagePart, text: string, n: number, total: number): Promise<string> => {
+    stats.images++;
+    const loaded = await loadImage(part.image_url.url);
+    const detail = part.image_url.detail;
+    const key = createHash("sha256")
+      .update([PROMPT_VERSION, visionResolved.id, detail ?? "", `${n}/${total}`, text].join("\0"))
+      .update("\0")
+      .update(loaded.buffer)
+      .digest("hex");
+
+    const pending = inFlight.get(key);
+    if (pending) {
+      stats.cached++;
+      return pending;
+    }
+    const since = Date.now() - VISION_FALLBACK_CACHE_DAYS * DAY_MS;
+    const stored = readCached(db, key, since);
+    if (stored !== undefined) {
+      stats.cached++;
+      return stored;
+    }
+
+    const described = limit(async () => {
+      const processed = await preprocessImage(loaded, detail);
+      const result = await describeImage(visionResolved, processed, text, n, total);
+      stats.described++;
+      stats.costUsd += result.costUsd;
+      if (result.ok) writeCached(db, key, visionResolved.id, result.text);
+      return result.text;
+    });
+    inFlight.set(key, described);
+    return described;
+  };
+}
+
+function readCached(db: AppDb | undefined, key: string, since: number): string | undefined {
+  if (!db) return undefined;
+  try {
+    return db.readImageDescription(key, since);
+  } catch (err) {
+    log.warn({ event: "vision.cache_failed", err }, "Couldn't read the image description cache");
+    return undefined;
+  }
+}
+
+function writeCached(db: AppDb | undefined, key: string, model: string, text: string): void {
+  if (!db) return;
+  try {
+    db.writeImageDescription(key, model, text);
+    const now = Date.now();
+    if (now - lastPrune > PRUNE_EVERY_MS) {
+      lastPrune = now;
+      db.pruneImageDescriptions(now - VISION_FALLBACK_CACHE_DAYS * DAY_MS);
+    }
+  } catch (err) {
+    log.warn({ event: "vision.cache_failed", err }, "Couldn't write the image description cache");
+  }
+}
+
+/** Describes one image. `ok` is false when there's nothing worth caching. */
+async function describeImage(
   visionResolved: ResolvedModel,
-): Promise<string> {
-  const piContent: (
+  image: { buffer: Buffer; mime: string },
+  text: string,
+  n: number,
+  total: number,
+): Promise<{ text: string; ok: boolean; costUsd: number }> {
+  const content: (
     | { type: "text"; text: string }
     | { type: "image"; data: string; mimeType: string }
   )[] = [];
-
-  for (const part of contentParts) {
-    if (part.type === "text") {
-      piContent.push({ type: "text", text: part.text });
-    } else {
-      const loaded = await loadImage(part.image_url.url);
-      const processed = await preprocessImage(loaded, part.image_url.detail);
-      piContent.push({
-        type: "image",
-        data: processed.buffer.toString("base64"),
-        mimeType: processed.mime,
-      });
-    }
-  }
+  if (text) content.push({ type: "text", text: `The user's message:\n\n${text}` });
+  if (total > 1) content.push({ type: "text", text: `Describe image ${n} of ${total} in it.` });
+  content.push({ type: "image", data: image.buffer.toString("base64"), mimeType: image.mime });
 
   let result: Awaited<ReturnType<typeof complete>>;
   try {
@@ -154,7 +303,7 @@ async function describeImages(
       visionResolved.model as Model<string>,
       {
         systemPrompt: VISION_SYSTEM_PROMPT,
-        messages: [{ role: "user", content: piContent, timestamp: Date.now() }],
+        messages: [{ role: "user", content, timestamp: Date.now() }],
       },
       {
         // A description needs no reasoning; it would only slow the fallback down.
@@ -170,22 +319,26 @@ async function describeImages(
     );
   }
 
-  const text = result.content
+  const costUsd = result.usage?.cost?.total ?? 0;
+  if (result.stopReason === "error") {
+    log.warn(
+      { event: "vision.describe_failed", describer: visionResolved.id, error: result.errorMessage },
+      "Vision fallback model failed to describe an image",
+    );
+    return { text: "(No description available)", ok: false, costUsd };
+  }
+
+  const description = result.content
     .filter((c): c is { type: "text"; text: string } => c.type === "text")
     .map((c) => c.text)
     .join("");
-
-  if (!text) return "(No description available)";
-
-  if (text.length > VISION_FALLBACK_MAX_DESCRIPTION_CHARS) {
-    return `${text.slice(0, VISION_FALLBACK_MAX_DESCRIPTION_CHARS)}...`;
+  if (!description) return { text: "(No description available)", ok: false, costUsd };
+  if (description.length > VISION_FALLBACK_MAX_DESCRIPTION_CHARS) {
+    return {
+      text: `${description.slice(0, VISION_FALLBACK_MAX_DESCRIPTION_CHARS)}...`,
+      ok: true,
+      costUsd,
+    };
   }
-
-  return text;
-}
-
-function buildReplacementContent(description: string, originalText: string): string {
-  const parts = [`[Image description: ${description}]`];
-  if (originalText) parts.push(originalText);
-  return parts.join("\n\n");
+  return { text: description, ok: true, costUsd };
 }

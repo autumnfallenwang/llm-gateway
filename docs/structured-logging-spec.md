@@ -173,7 +173,7 @@ log.error({ event: "auth.file.read_failed", path, err }, "Failed to read Anthrop
 | Auth | `src/services/auth.ts` | ~12 | `auth.*` |
 | Registry | `src/services/registry.ts`, `src/lib/ollama.ts` | ~3 | `registry.*`, `ollama.*` |
 | Validation | `src/services/validation.ts` | ~4 | `validation.*` |
-| Vision fallback | `src/services/image/fallback.ts` | ~2 | `vision_fallback.*` |
+| Vision fallback | `src/services/image/fallback.ts` | 3 | `vision.*`: `vision.describe` (one per request: `describer`, `images`, `cached`, `described`, `cost_usd`, `duration_ms`), `vision.describe_failed`, `vision.cache_failed` |
 | Other | various | ~6 | per-subsystem |
 
 ## Hono request middleware (new)

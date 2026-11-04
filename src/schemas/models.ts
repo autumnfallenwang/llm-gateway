@@ -18,6 +18,14 @@ export const ModelObjectSchema = z.object({
     description:
       "Which inference endpoint serves this model: 'chat' for /v1/chat/completions, 'embedding' for /v1/embeddings",
   }),
+  input: z
+    .array(z.enum(["text", "image"]))
+    .optional()
+    .openapi({
+      description:
+        "What the model reads itself: ['text'] or ['text', 'image']. A text-only chat model still accepts images: the gateway has a vision model describe each one in its place first",
+      example: ["text", "image"],
+    }),
   context_window: z
     .number()
     .int()

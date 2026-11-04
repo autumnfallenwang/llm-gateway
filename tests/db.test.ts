@@ -20,7 +20,12 @@ describe("openDb", () => {
       .all() as { name: string }[];
     const names = rows.map((r) => r.name).filter((n) => !n.startsWith("sqlite_"));
     expect(names).toEqual(
-      expect.arrayContaining(["credentials_chain", "meta", "model_validation"]),
+      expect.arrayContaining([
+        "credentials_chain",
+        "image_descriptions",
+        "meta",
+        "model_validation",
+      ]),
     );
   });
 });
@@ -138,5 +143,27 @@ describe("validation report", () => {
       status: "ok",
       validatedAt: "2026-10-22T05:00:00.000Z",
     });
+  });
+});
+
+// ── Image descriptions (vision-fallback cache) ──────────────────────────────
+
+describe("image descriptions", () => {
+  it("round-trips a description, newest write winning", () => {
+    db.writeImageDescription("k1", "claude-haiku-5-5", "a cat");
+    db.writeImageDescription("k1", "claude-haiku-5-5", "a cat on a table");
+    expect(db.readImageDescription("k1", 0)).toBe("a cat on a table");
+    expect(db.readImageDescription("other", 0)).toBeUndefined();
+  });
+
+  it("reads only entries stored at or after `since`, and prunes older ones", () => {
+    db.writeImageDescription("old", "m", "old one");
+    db.raw.prepare("UPDATE image_descriptions SET created_at = 1000 WHERE key = 'old'").run();
+    db.writeImageDescription("new", "m", "new one");
+
+    expect(db.readImageDescription("old", 2000)).toBeUndefined();
+    expect(db.readImageDescription("new", 2000)).toBe("new one");
+    expect(db.pruneImageDescriptions(2000)).toBe(1);
+    expect(db.readImageDescription("old", 0)).toBeUndefined();
   });
 });
