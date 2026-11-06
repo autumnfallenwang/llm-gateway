@@ -52,7 +52,7 @@ Common ops (no project-specific CLI needed):
 - `kubectl rollout restart deploy/llmgw -n llmgw` — restart pod
 - `kubectl get app llmgw -n argocd` — sync state
 - `gh workflow run build.yml` — force rebuild without a code change
-- `POST http://llmgw.arch.internal/v1/models/validate` — reload the registry (picks up new `ollama pull` models / new provider IDs since boot) + re-run validation for **every** model (loads each Ollama model on the GPU). A restart validates just the models with no result yet
+- `POST http://llmgw.llmgw.svc.cluster.local/v1/models/validate` — reload the registry (picks up new `ollama pull` models / new provider IDs since boot) + re-run validation for **every** model (loads each Ollama model on the GPU). A restart validates just the models with no result yet
 
 Dependency upkeep is automated via `.github/dependabot.yml` (weekly PRs for npm +
 Docker base + GHA actions; pi-ai grouped separately so new model IDs land in
@@ -65,6 +65,7 @@ Centralized in `src/config.ts`. Key env var overrides:
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `LLM_GATEWAY_PORT` | `51277` | Server port |
+| `LLMGW_ALLOWED_HOSTS` | `llmgw.llmgw.svc.cluster.local,localhost,127.0.0.1,[::1]` | The host names the gateway answers to; anything else gets a 403. Web pages can only call it from its own address. See `src/lib/request-guard.ts`. |
 | `LOG_LEVEL` | `info` | pino log level (`trace`/`debug`/`info`/`warn`/`error`/`fatal`). Bump to `debug` for verbose troubleshooting. |
 | `LLMGW_DB_PATH` | `~/.llm-gateway/state.db` | SQLite path for the credential chain + model validation report. |
 | `OLLAMA_BASE_URL` | `http://localhost:11434` | Ollama API base URL |

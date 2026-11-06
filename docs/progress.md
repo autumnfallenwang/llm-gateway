@@ -11,7 +11,7 @@
 | 5 | Completion service | ✅ Done | `src/services/completion.ts` — OpenAI ↔ pi-ai translation, Codex system prompt fallback |
 | 6 | Routes | ✅ Done | `src/routes/{chat,models,validate}.ts` — OpenAPI route defs with request examples |
 | 7 | App + server wiring | ✅ Done | All handlers wired: chat completions, models list (with validation filtering), model validation |
-| 8 | Tests | ✅ Done | 20 test files (incl. the opt-in live `codex-go.poc`, `deepseek.poc` and `limits.poc`), 348 fast tests |
+| 8 | Tests | ✅ Done | 20 test files (incl. the opt-in live `codex-go.poc`, `deepseek.poc` and `limits.poc`), 394 fast tests |
 | 9 | Model validation | ✅ Done | `src/services/validation.ts` — tests every model with real completion, persists report via the SQLite `model_validation` table (Phase 8 / task 40) |
 | 10 | Streaming support | ✅ Done | SSE streaming via `stream: true` — all four backends (Ollama, Anthropic, Codex, DeepSeek) |
 
@@ -192,6 +192,17 @@ Migrate from 29 ad-hoc `console.log/warn/error` calls to JSON-per-line structure
 - Loki + Promtail + Grafana deployment as a separate `~/agentic/observability/` stack — multi-app concern, not specific to llmgw. _(Superseded by Phase 8 — observability stack is already running in the k3s cluster as `observability-loki` / `observability-grafana` / `observability-alloy`. Once llmgw lands in `namespace: llmgw`, Alloy scrapes pod stdout into Loki automatically with no app changes.)_
 - Prometheus metrics + dashboards — different problem (numbers vs events); add when we want trend graphs/alerts.
 - OpenTelemetry — overkill for a single-service gateway; revisit if multi-service tracing matters.
+
+## Phase 15: Reachable Only From Arch (0.7.0)
+
+The gateway has no login and spends real allowance, and nothing outside arch needs it: homecal, homenews and homestorm all call it inside the cluster. So it's being taken off the network.
+
+- **Host check:** it answers only to `LLMGW_ALLOWED_HOSTS`; anything else gets a 403 `host_not_allowed`. This stops DNS rebinding, where a web page points its own domain at the gateway to look same-origin. `GET /` is exempt, because Kubernetes probes send the pod's IP as Host.
+- **Web pages:** open CORS (`Access-Control-Allow-Origin: *`) is gone. Any page could call the gateway before. Now a request with an `Origin` other than the gateway's own address gets a 403 `origin_not_allowed`. Same-origin still works, so the Swagger UI's "Try it out" does too. Programs send no `Origin`, so apps aren't affected.
+- **The short name stops working:** `http://llmgw.llmgw` gets a 403. Every app moved to `http://llmgw.llmgw.svc.cluster.local` first.
+- **Names:** the docs, the OpenAPI `servers` and the examples use the full name.
+- **Still to come:** removing the Ingress, so other devices can't reach it at all. `llmgw.arch.internal` stays allowed until then. See mcpgw's plan.
+- **Checked:** 394 fast tests. Full suite: everything passes except the 8 Anthropic e2e cases, which need a Claude login the dev run deliberately doesn't have.
 
 ## Phase 14: Consumer Feedback — Images, Streaming Usage, DeepSeek Effort (0.6.0)
 

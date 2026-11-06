@@ -8,6 +8,17 @@ const env = process.env;
 
 export const LLM_GATEWAY_PORT = Number(env.LLM_GATEWAY_PORT ?? 51277);
 
+/**
+ * The host names this gateway answers to. Anything else gets a 403 (see lib/request-guard.ts). The chart lists what the
+ * cluster uses; the default also covers `npm run dev` and the local test suites.
+ */
+export const LLMGW_ALLOWED_HOSTS = (
+  env.LLMGW_ALLOWED_HOSTS ?? "llmgw.llmgw.svc.cluster.local,localhost,127.0.0.1,[::1]"
+)
+  .split(",")
+  .map((h) => h.trim())
+  .filter(Boolean);
+
 // ── Logging ────────────────────────────────────────────────────────────────
 
 /** Minimum log level emitted to stdout. Set to "debug" for verbose troubleshooting. */
@@ -27,15 +38,15 @@ export const APP_DESCRIPTION = `Self-hosted OpenAI-compatible API gateway that r
 
 ## Quick Start
 
-Use any OpenAI-compatible SDK with \`baseURL\` pointed at this gateway. No API key is required — authentication to upstream providers is handled server-side.
+Use any OpenAI-compatible SDK with \`baseURL\` pointed at this gateway. No API key is required — authentication to upstream providers is handled server-side. It answers only to the host names it's served under, and web pages can only call it from its own address.
 
-The gateway is deployed at \`http://llmgw.arch.internal\` (Traefik ingress on the home k3s cluster). For local dev runs use \`http://localhost:${LLM_GATEWAY_PORT}\` instead.
+The gateway runs on the home k3s cluster at \`http://llmgw.llmgw.svc.cluster.local\`, reachable from inside the cluster and from arch, whose \`/etc/hosts\` points that name at the Service. For local dev runs use \`http://localhost:${LLM_GATEWAY_PORT}\` instead.
 
 ### Chat completions
 
 \`\`\`python
 from openai import OpenAI
-client = OpenAI(base_url="http://llmgw.arch.internal/v1", api_key="unused")
+client = OpenAI(base_url="http://llmgw.llmgw.svc.cluster.local/v1", api_key="unused")
 response = client.chat.completions.create(
     model="qwen3:30b",  # or claude-haiku-5-5, gpt-6-luna
     messages=[{"role": "user", "content": "Hello!"}],

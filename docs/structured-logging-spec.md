@@ -249,7 +249,7 @@ kubectl exec -n llmgw deploy/llmgw -- sh -c 'env | grep LOG_LEVEL'
 # (expect default 'info' or whatever the chart's values set)
 
 # 3. Per-request log shows up
-curl -X POST http://llmgw.arch.internal/v1/chat/completions \
+curl -X POST http://llmgw.llmgw.svc.cluster.local/v1/chat/completions \
   -H 'Content-Type: application/json' \
   -d '{"model":"qwen3:30b","messages":[{"role":"user","content":"ping"}],"max_tokens":4}'
 kubectl logs -n llmgw deploy/llmgw --tail=3
