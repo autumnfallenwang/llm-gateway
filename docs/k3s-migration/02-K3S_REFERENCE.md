@@ -91,7 +91,7 @@ arch-infra/
 | Namespace | Component | Purpose | Access |
 |---|---|---|---|
 | argocd | Argo CD | GitOps CD | http://argocd.arch.internal |
-| observability | Loki | Log store | http://loki.arch.internal (HTTP API) |
+| observability | Loki | Log store | http://loki.observability.svc.cluster.local:3100 (HTTP API) |
 | observability | Grafana | UI for logs/metrics | http://grafana.arch.internal |
 | observability | Alloy (DaemonSet) | Log shipper, scrapes all pod logs | (no UI) |
 | kube-system | Traefik | Ingress controller | host :80 / :443 (LoadBalancer) |
@@ -167,7 +167,7 @@ http://argocd.arch.internal                     # admin / <your reset password>
 http://grafana.arch.internal                    # admin / g12jaCS8nuRJFTf1f8KMefk4uRKfDpz3J97ulYBO (reset)
 
 # Loki HTTP API (curl-friendly)
-curl -sG http://loki.arch.internal/loki/api/v1/query_range \
+curl -sG http://loki.observability.svc.cluster.local:3100/loki/api/v1/query_range \
   --data-urlencode 'query={namespace="argocd"}' \
   --data-urlencode "start=$(date -u -d '-10 min' +%s)000000000" \
   --data-urlencode "end=$(date -u +%s)000000000" \
@@ -271,7 +271,7 @@ For each host-resident dependency the pod needs:
    - Whatever the app's `/v1/models`-equivalent surface is
    - Real end-to-end request through the Ingress
    - `kubectl logs -n <app> deploy/<app>` for boot log sanity
-   - Loki: `curl -sG http://loki.arch.internal/loki/api/v1/query_range --data-urlencode 'query={namespace="<app>"} | json' --data-urlencode "start=$(date -u -d '-5 min' +%s)000000000" --data-urlencode "end=$(date -u +%s)000000000"`
+   - Loki: `curl -sG http://loki.observability.svc.cluster.local:3100/loki/api/v1/query_range --data-urlencode 'query={namespace="<app>"} | json' --data-urlencode "start=$(date -u -d '-5 min' +%s)000000000" --data-urlencode "end=$(date -u +%s)000000000"`
 7. Stop the legacy deploy (docker compose down, etc.); confirm host ports freed.
 8. Retain the legacy `deploy/compose.yaml` (or equivalent) for ≥2-3 days as a rollback option before deleting.
 
@@ -325,7 +325,7 @@ A working example to pattern the next app after. All paths/commands real and liv
 kubectl logs -n llmgw deploy/llmgw -f
 
 # Loki history (all pods across rolls, 30d retention)
-curl -sG http://loki.arch.internal/loki/api/v1/query_range \
+curl -sG http://loki.observability.svc.cluster.local:3100/loki/api/v1/query_range \
   --data-urlencode 'query={namespace="llmgw"} | json | event="http.request"' \
   --data-urlencode "start=$(date -u -d '-30 min' +%s)000000000" \
   --data-urlencode "end=$(date -u +%s)000000000"

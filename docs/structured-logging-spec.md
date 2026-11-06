@@ -256,7 +256,7 @@ kubectl logs -n llmgw deploy/llmgw --tail=3
 # expect: one line with event=http.request, status=200, latency_ms=...
 
 # 4. Loki end-to-end (Alloy ships from the pod via the cluster's observability stack):
-curl -sG http://loki.arch.internal/loki/api/v1/query_range \
+curl -sG http://loki.observability.svc.cluster.local:3100/loki/api/v1/query_range \
   --data-urlencode 'query={namespace="llmgw"} | json | event="http.request"' \
   --data-urlencode "start=$(date -u -d '-10 min' +%s)000000000" \
   --data-urlencode "end=$(date -u +%s)000000000"
