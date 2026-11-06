@@ -6,6 +6,9 @@ metadata:
     {{- include "llmgw.labels" . | nindent 4 }}
 spec:
   type: ClusterIP
+  {{- with .Values.service.clusterIP }}
+  clusterIP: {{ . }}
+  {{- end }}
   ports:
     - port: {{ .Values.service.port }}
       targetPort: http

@@ -201,7 +201,7 @@ The gateway has no login and spends real allowance, and nothing outside arch nee
 - **Web pages:** open CORS (`Access-Control-Allow-Origin: *`) is gone. Any page could call the gateway before. Now a request with an `Origin` other than the gateway's own address gets a 403 `origin_not_allowed`. Same-origin still works, so the Swagger UI's "Try it out" does too. Programs send no `Origin`, so apps aren't affected.
 - **The short name stops working:** `http://llmgw.llmgw` gets a 403. Every app moved to `http://llmgw.llmgw.svc.cluster.local` first.
 - **Names:** the docs, the OpenAPI `servers` and the examples use the full name.
-- **Still to come:** removing the Ingress, so other devices can't reach it at all. `llmgw.arch.internal` stays allowed until then. See mcpgw's plan.
+- **No Ingress:** other devices can't reach it. Service IP pinned at `10.43.151.52`, and `/etc/hosts` on arch points the full name there, so `http://llmgw.llmgw.svc.cluster.local/docs` works in a browser on arch. `llmgw.arch.internal` is refused. Reasons and alternatives: [mcpgw's ADR 0008](https://github.com/autumnfallenwang/mcpgw/blob/main/docs/adr/0008-only-arch-and-the-cluster-no-auth.md).
 - **Checked:** 394 fast tests. Full suite: everything passes except the 8 Anthropic e2e cases, which need a Claude login the dev run deliberately doesn't have.
 
 ## Phase 14: Consumer Feedback — Images, Streaming Usage, DeepSeek Effort (0.6.0)

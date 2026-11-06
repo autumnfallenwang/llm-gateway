@@ -14,9 +14,14 @@ replicaCount: 1
 service:
   port: 80
   targetPort: 51277
+  # Pinned, because /etc/hosts on arch points llmgw.llmgw.svc.cluster.local here.
+  clusterIP: 10.43.151.52
 
+# Off: the gateway is reachable only from inside the cluster and from arch. Nothing else needs it, it has no login, and
+# it spends real allowance. Turning this on brings back http://llmgw.arch.internal for the whole home network, and that
+# name would need adding to LLMGW_ALLOWED_HOSTS. See mcpgw's ADR 0008.
 ingress:
-  enabled: true
+  enabled: false
   className: traefik
   host: llmgw.arch.internal
 
@@ -31,7 +36,7 @@ persistence:
 env:
   LLM_GATEWAY_PORT: "51277"
   # The names callers use. Anything else gets a 403 (src/lib/request-guard.ts).
-  LLMGW_ALLOWED_HOSTS: llmgw.llmgw.svc.cluster.local,llmgw.arch.internal
+  LLMGW_ALLOWED_HOSTS: llmgw.llmgw.svc.cluster.local
   # Direct host IP: the cluster's ArgoCD installation excludes both Endpoints
   # and EndpointSlice from sync (UI clutter reduction default), so a manual
   # Service+Endpoints redirection silently drops on every sync. Single-host

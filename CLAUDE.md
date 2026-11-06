@@ -58,6 +58,8 @@ Dependency upkeep is automated via `.github/dependabot.yml` (weekly PRs for npm 
 Docker base + GHA actions; pi-ai grouped separately so new model IDs land in
 one focused PR).
 
+**Reachable only from the cluster and arch:** no Ingress, by design. Apps use `http://llmgw.llmgw.svc.cluster.local`; on arch, `/etc/hosts` points that name at the pinned Service IP (`10.43.151.52`).
+
 ## Config
 
 Centralized in `src/config.ts`. Key env var overrides:
