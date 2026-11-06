@@ -255,8 +255,10 @@ curl -X POST http://llmgw.llmgw.svc.cluster.local/v1/chat/completions \
 kubectl logs -n llmgw deploy/llmgw --tail=3
 # expect: one line with event=http.request, status=200, latency_ms=...
 
-# 4. Loki end-to-end (Alloy ships from the pod via the cluster's observability stack):
-curl -sG http://loki.observability.svc.cluster.local:3100/loki/api/v1/query_range \
+# 4. Loki end-to-end (Alloy ships from the pod via the cluster's observability stack).
+# Loki is only reachable inside the cluster, so forward its port first:
+kubectl -n observability port-forward svc/loki 3100:3100 &
+curl -sG http://localhost:3100/loki/api/v1/query_range \
   --data-urlencode 'query={namespace="llmgw"} | json | event="http.request"' \
   --data-urlencode "start=$(date -u -d '-10 min' +%s)000000000" \
   --data-urlencode "end=$(date -u +%s)000000000"
