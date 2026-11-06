@@ -839,7 +839,8 @@ describe("POST /v1/models/validate", () => {
 
 describe("who the gateway answers to", () => {
   const OK_HOST = "llmgw.llmgw.svc.cluster.local";
-  const get = (path: string, headers: Record<string, string>) => app.request(path, { headers });
+  const fetchWith = (path: string, headers: Record<string, string>) =>
+    app.request(path, { headers });
 
   it.each([
     OK_HOST,
@@ -871,12 +872,12 @@ describe("who the gateway answers to", () => {
     for (const path of ["/v1/models", "/v1/limits", "/docs", "/openapi.json"]) {
       expect((await fetchWith(path, { host: "evil.example" })).status, path).toBe(403);
     }
-    const post = await app.request("/v1/chat/completions", {
+    const chat = await app.request("/v1/chat/completions", {
       method: "POST",
       headers: { host: "evil.example", "content-type": "application/json" },
       body: JSON.stringify({ model: "test-model", messages: [{ role: "user", content: "hi" }] }),
     });
-    expect(post.status).toBe(403);
+    expect(chat.status).toBe(403);
   });
 
   it("answers a Kubernetes probe, which sends the pod's IP as its host", async () => {
