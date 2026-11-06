@@ -836,3 +836,97 @@ describe("POST /v1/models/validate", () => {
     expect(validateAllModels).toHaveBeenCalledTimes(1);
   });
 });
+
+describe("who the gateway answers to", () => {
+  const OK_HOST = "llmgw.llmgw.svc.cluster.local";
+  const fetchWith = (path: string, headers: Record<string, string>) =>
+    app.request(path, { headers });
+
+  it.each([
+    OK_HOST,
+    `${OK_HOST}:80`,
+    "LLMGW.llmgw.SVC.cluster.local",
+    "localhost",
+    "localhost:51277",
+    "127.0.0.1:51277",
+  ])("answers to %s", async (host) => {
+    expect((await fetchWith("/v1/models", { host })).status).toBe(200);
+  });
+
+  it.each([
+    "evil.example",
+    "llmgw.llmgw",
+    "llmgw.llmgw.svc",
+    `${OK_HOST}.`,
+    `${OK_HOST}.evil.example`,
+    "10.43.151.52",
+    "192.168.1.163",
+    "not a host",
+  ])("refuses the host %s", async (host) => {
+    const res = await fetchWith("/v1/models", { host });
+    expect(res.status).toBe(403);
+    expect((await res.json()).error.code).toBe("host_not_allowed");
+  });
+
+  it("guards every route that does anything", async () => {
+    for (const path of ["/v1/models", "/v1/limits", "/docs", "/openapi.json"]) {
+      expect((await fetchWith(path, { host: "evil.example" })).status, path).toBe(403);
+    }
+    const chat = await app.request("/v1/chat/completions", {
+      method: "POST",
+      headers: { host: "evil.example", "content-type": "application/json" },
+      body: JSON.stringify({ model: "test-model", messages: [{ role: "user", content: "hi" }] }),
+    });
+    expect(chat.status).toBe(403);
+  });
+
+  it("answers a Kubernetes probe, which sends the pod's IP as its host", async () => {
+    const res = await fetchWith("/", { host: "10.42.0.37:51277" });
+    expect(res.status).toBe(200);
+    expect((await res.json()).status).toBe("ok");
+  });
+
+  it("refuses a web page from anywhere else, with no CORS headers", async () => {
+    const res = await fetchWith("/v1/models", { host: OK_HOST, origin: "https://evil.example" });
+    expect(res.status).toBe(403);
+    expect((await res.json()).error.code).toBe("origin_not_allowed");
+    expect(res.headers.get("access-control-allow-origin")).toBeNull();
+  });
+
+  it("refuses a browser's preflight from anywhere else", async () => {
+    const res = await app.request("/v1/chat/completions", {
+      method: "OPTIONS",
+      headers: {
+        host: OK_HOST,
+        origin: "https://evil.example",
+        "access-control-request-method": "POST",
+      },
+    });
+    expect(res.status).toBe(403);
+    expect(res.headers.get("access-control-allow-origin")).toBeNull();
+  });
+
+  it.each(["null", "not a url", `http://${OK_HOST}:8080`, `http://${OK_HOST}.evil.example`])(
+    "refuses the origin %s",
+    async (origin) => {
+      expect((await fetchWith("/v1/models", { host: OK_HOST, origin })).status).toBe(403);
+    },
+  );
+
+  it("lets the Swagger UI call the gateway from its own address", async () => {
+    const res = await fetchWith("/v1/models", { host: OK_HOST, origin: `http://${OK_HOST}` });
+    expect(res.status).toBe(200);
+  });
+
+  it("serves /docs on the gateway's own name, listing that name as the server", async () => {
+    expect((await fetchWith("/docs", { host: OK_HOST })).status).toBe(200);
+    const spec = await (await fetchWith("/openapi.json", { host: OK_HOST })).json();
+    expect(spec.servers[0].url).toBe(`http://${OK_HOST}`);
+  });
+
+  it("doesn't need a browser's headers: an app sends only its host", async () => {
+    const res = await fetchWith("/v1/models", { host: OK_HOST });
+    expect(res.status).toBe(200);
+    expect(res.headers.get("access-control-allow-origin")).toBeNull();
+  });
+});

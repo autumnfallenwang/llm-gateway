@@ -1,10 +1,17 @@
 import { swaggerUI } from "@hono/swagger-ui";
 import { OpenAPIHono } from "@hono/zod-openapi";
-import { cors } from "hono/cors";
 import { streamSSE } from "hono/streaming";
-import { APP_COMMIT, APP_DESCRIPTION, APP_NAME, APP_VERSION, LLM_GATEWAY_PORT } from "./config";
+import {
+  APP_COMMIT,
+  APP_DESCRIPTION,
+  APP_NAME,
+  APP_VERSION,
+  LLM_GATEWAY_PORT,
+  LLMGW_ALLOWED_HOSTS,
+} from "./config";
 import { BackendError } from "./errors";
 import { log, requestContext } from "./lib/logger";
+import { requestGuard } from "./lib/request-guard";
 import { chatCompletionRoute } from "./routes/chat";
 import { embeddingsRoute } from "./routes/embeddings";
 import { limitsRoute } from "./routes/limits";
@@ -42,8 +49,6 @@ const app = new OpenAPIHono<{ Variables: AppVariables }>({
   },
 });
 
-app.use("/*", cors());
-
 // Request access log: one structured line per request (event="http.request") with
 // req_id, method, path, status, latency_ms. Skips the Swagger / openapi / health
 // noise to keep logs focused on real API traffic. The request runs inside
@@ -67,6 +72,9 @@ app.use("*", async (c, next) => {
     "request handled",
   );
 });
+
+// After the request log, so a refusal shows up there too.
+app.use("*", requestGuard(LLMGW_ALLOWED_HOSTS));
 
 function modelNotFound(model: string) {
   return {
@@ -392,7 +400,10 @@ app.doc("/openapi.json", {
     description: APP_DESCRIPTION,
   },
   servers: [
-    { url: "http://llmgw.arch.internal", description: "Cluster (k3s, Traefik ingress)" },
+    {
+      url: "http://llmgw.llmgw.svc.cluster.local",
+      description: "Cluster (from a pod, or from arch)",
+    },
     { url: `http://localhost:${LLM_GATEWAY_PORT}`, description: "Local dev (npm run dev)" },
   ],
   tags: [

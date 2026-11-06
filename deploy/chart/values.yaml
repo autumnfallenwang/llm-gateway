@@ -30,6 +30,8 @@ persistence:
 # new config knobs — the deployment template iterates over this map.
 env:
   LLM_GATEWAY_PORT: "51277"
+  # The names callers use. Anything else gets a 403 (src/lib/request-guard.ts).
+  LLMGW_ALLOWED_HOSTS: llmgw.llmgw.svc.cluster.local,llmgw.arch.internal
   # Direct host IP: the cluster's ArgoCD installation excludes both Endpoints
   # and EndpointSlice from sync (UI clutter reduction default), so a manual
   # Service+Endpoints redirection silently drops on every sync. Single-host
