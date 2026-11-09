@@ -203,7 +203,7 @@ From homestorm's first full meeting test on the cluster (2026-11-08): every mess
 | 84 | `cost_usd` in `usage` | ✅ Done | `toUsage()` in `src/services/completion.ts` adds `cost_usd`, the same number as the `completion.usage` log line (pi-ai's, from list prices, to a millionth of a dollar), so it's in a plain response and in a stream's usage chunk. Not OpenAI's field; clients that don't know it ignore it. Real spend for DeepSeek; for a subscription (Claude, GPT through ChatGPT) the API-price equivalent, so a caller should treat it as spend only for metered models. |
 | 85 | Request IDs, as mcpgw does | ✅ Done | The caller's `X-Request-Id`, if it looks like an ID (`[A-Za-z0-9._-]`, at most 64), is logged as `request_id` on every line of the request — `http.request`, `completion.usage`, `vision.describe`, errors. The gateway's own `req_id` goes back in the `X-Request-Id` response header (set after the handler, so streams carry it too). homestorm sends `homestorm-<uuid>` per seat turn and stores the returned ID. |
 
-- **Checked:** 400 fast tests (6 new), lint clean.
+- **Checked:** 400 fast tests (6 new), lint clean. Deployed as `85f306c` (#53). Live, a homestorm DeepSeek Flash turn showed `$0.0017`, and its `completion.usage` line carried homestorm's `request_id`.
 
 ## Phase 15: Reachable Only From Arch (0.7.0)
 
