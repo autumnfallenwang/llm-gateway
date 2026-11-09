@@ -121,4 +121,14 @@ describe("req_id on every line of a request", () => {
     expect(lines[1]?.req_id).toBe("mine");
     expect(JSON.stringify(lines[1]).match(/req_id/g)).toHaveLength(1);
   });
+
+  it("adds the caller's request_id too, when it sent one", () => {
+    const { log: testLog, lines } = capture();
+    requestContext.run({ req_id: "req-3", request_id: "homestorm-turn-1" }, () =>
+      testLog.info({ event: "completion.usage" }, "x"),
+    );
+    requestContext.run({ req_id: "req-4" }, () => testLog.info({ event: "completion.usage" }, "x"));
+    expect(lines[0]).toMatchObject({ req_id: "req-3", request_id: "homestorm-turn-1" });
+    expect(lines[1]).not.toHaveProperty("request_id");
+  });
 });

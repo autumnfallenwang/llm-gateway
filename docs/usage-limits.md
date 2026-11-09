@@ -102,7 +102,7 @@ A limits store per provider account, keyed by (provider, model) — never the ba
 - **Merging:** the endpoint's data is the base; a newer response's windows replace the matching (scope, period) ones and its verdict wins, while windows only the endpoint knows (Claude's Fable-scoped one) are kept. `source` says which was newest.
 - **Without `?model=`:** one entry per registered family, account-wide — every window listed, `available` bound by the account-wide ones only. Ollama is `{ "kind": "unlimited" }`, with no fetch.
 - **Claude's `plan` is null:** none of its sources name the plan.
-- **Logging:** every completion logs `completion.usage` — tokens, `cost_usd` (pi-ai's, from catalog prices; for subscriptions an API-price equivalent), and, from the cache without fetching, `limit_status`, `limit_percent_left` and `limit_window` (or `balance_left`).
+- **Logging:** every completion logs `completion.usage` — tokens, `cost_usd` (pi-ai's, from catalog prices; for subscriptions an API-price equivalent; also returned in the response's `usage` since 0.8.0), and, from the cache without fetching, `limit_status`, `limit_percent_left` and `limit_window` (or `balance_left`).
 - **The endpoints are called with the gateway's own credentials**: its own Claude chain (refreshed first if due), the host Codex login (`originator: pi`, as pi-ai sends), the DeepSeek key.
 
 ### Follow-ups (0.5.0)

@@ -53,17 +53,26 @@ const app = new OpenAPIHono<{ Variables: AppVariables }>({
 // req_id, method, path, status, latency_ms. Skips the Swagger / openapi / health
 // noise to keep logs focused on real API traffic. The request runs inside
 // requestContext, so every line logged while it's handled carries the same req_id.
+// As in mcpgw: the caller's X-Request-Id is logged as request_id, and the gateway's
+// own req_id goes back in the X-Request-Id response header.
 const REQUEST_LOG_SKIP = new Set(["/", "/docs", "/openapi.json"]);
+/** A caller's value reaches the logs only if it looks like an ID, never as free text. */
+const REQUEST_ID = /^[A-Za-z0-9._-]{1,64}$/;
 app.use("*", async (c, next) => {
   const start = Date.now();
   const reqId = crypto.randomUUID();
+  const incoming = c.req.header("x-request-id");
+  const requestId = incoming && REQUEST_ID.test(incoming) ? incoming : undefined;
   c.set("req_id", reqId);
-  await requestContext.run({ req_id: reqId }, next);
+  await requestContext.run({ req_id: reqId, ...(requestId && { request_id: requestId }) }, next);
+  // After next(): a stream's Response is made by its handler, so a header set before wouldn't reach it.
+  c.res.headers.set("X-Request-Id", reqId);
   if (REQUEST_LOG_SKIP.has(c.req.path)) return;
   log.info(
     {
       event: "http.request",
       req_id: reqId,
+      ...(requestId && { request_id: requestId }),
       method: c.req.method,
       path: c.req.path,
       status: c.res.status,

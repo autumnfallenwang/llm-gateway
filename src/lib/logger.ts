@@ -16,7 +16,12 @@ import { APP_NAME, APP_VERSION, LOG_LEVEL } from "../config.js";
  */
 
 /** The request being handled; app.ts's request middleware runs each request inside it. */
-export const requestContext = new AsyncLocalStorage<{ req_id: string }>();
+export const requestContext = new AsyncLocalStorage<{
+  /** The gateway's own ID for the request, returned in the X-Request-Id response header. */
+  req_id: string;
+  /** The caller's ID for this work, from its X-Request-Id header (homestorm sends one per turn). */
+  request_id?: string;
+}>();
 
 export const LOG_OPTIONS: LoggerOptions = {
   level: LOG_LEVEL,
@@ -24,10 +29,14 @@ export const LOG_OPTIONS: LoggerOptions = {
   timestamp: pino.stdTimeFunctions.isoTime,
   // Any line logged during a request — a completion's usage or error, a limits fetch, even
   // the usage line a stream writes after the handler returned — carries the request's
-  // req_id, so it matches that request's http.request line.
+  // req_id, so it matches that request's http.request line, and the caller's request_id,
+  // so the caller's own log finds it.
   mixin: () => {
     const ctx = requestContext.getStore();
-    return ctx ? { req_id: ctx.req_id } : {};
+    if (!ctx) return {};
+    return ctx.request_id
+      ? { req_id: ctx.req_id, request_id: ctx.request_id }
+      : { req_id: ctx.req_id };
   },
 };
 

@@ -11,7 +11,7 @@
 | 5 | Completion service | ✅ Done | `src/services/completion.ts` — OpenAI ↔ pi-ai translation, Codex system prompt fallback |
 | 6 | Routes | ✅ Done | `src/routes/{chat,models,validate}.ts` — OpenAPI route defs with request examples |
 | 7 | App + server wiring | ✅ Done | All handlers wired: chat completions, models list (with validation filtering), model validation |
-| 8 | Tests | ✅ Done | 20 test files (incl. the opt-in live `codex-go.poc`, `deepseek.poc` and `limits.poc`), 394 fast tests |
+| 8 | Tests | ✅ Done | 20 test files (incl. the opt-in live `codex-go.poc`, `deepseek.poc` and `limits.poc`), 400 fast tests |
 | 9 | Model validation | ✅ Done | `src/services/validation.ts` — tests every model with real completion, persists report via the SQLite `model_validation` table (Phase 8 / task 40) |
 | 10 | Streaming support | ✅ Done | SSE streaming via `stream: true` — all four backends (Ollama, Anthropic, Codex, DeepSeek) |
 
@@ -25,7 +25,8 @@
 - DeepSeek's metered API (`deepseek-flash`, `deepseek-v4-pro`) with the key in `~/.deepseek/api_key`; thinking off unless `reasoning_effort`; an empty prepaid balance is 429 `insufficient_quota`
 - GPT models through a ChatGPT login (Go plan: `gpt-6-luna`, `gpt-5.6-terra`, `gpt-5.6-luna`); a model the plan lacks is a 404 `model_not_found`; `temperature` is dropped for them (the backend rejects it)
 - Images for a text-only model: each described on its own by the family's vision model (`deepseek-flash` for `deepseek-v4-pro`), in the image's place, cached in SQLite so a conversation's images are described once; `/v1/models` says what each model reads (`input`)
-- Streaming usage: `stream_options.include_usage` ends the stream with a usage chunk
+- Streaming usage: `stream_options.include_usage` ends the stream with a usage chunk; `usage` also carries the gateway's `cost_usd`, streamed or not
+- Request IDs: a caller's `X-Request-Id` is logged as `request_id` on every line of its request; the gateway's own `req_id` comes back in the `X-Request-Id` response header
 - A Claude refusal (safety classifiers) answers 200 with `finish_reason: "content_filter"` + `message.refusal`
 - `POST /v1/chat/completions` with `stream: true` → SSE streaming with `chat.completion.chunk` objects, `data: [DONE]` sentinel
 - `GET /v1/models` → returns ALL models with `status` (`ok`/`error`/`unknown`), `status_detail`, `validated_at` fields; includes `context_window` and `max_tokens` per model
@@ -192,6 +193,17 @@ Migrate from 29 ad-hoc `console.log/warn/error` calls to JSON-per-line structure
 - Loki + Promtail + Grafana deployment as a separate `~/agentic/observability/` stack — multi-app concern, not specific to llmgw. _(Superseded by Phase 8 — observability stack is already running in the k3s cluster as `observability-loki` / `observability-grafana` / `observability-alloy`. Once llmgw lands in `namespace: llmgw`, Alloy scrapes pod stdout into Loki automatically with no app changes.)_
 - Prometheus metrics + dashboards — different problem (numbers vs events); add when we want trend graphs/alerts.
 - OpenTelemetry — overkill for a single-service gateway; revisit if multi-service tracing matters.
+
+## Phase 16: Cost and Request IDs for Callers (0.8.0)
+
+From homestorm's first full meeting test on the cluster (2026-11-08): every message's cost was empty, and its log lines couldn't be matched to the gateway's. homestorm already reads both; the gateway didn't send them.
+
+| # | Task | Status | Notes |
+|---|------|--------|-------|
+| 84 | `cost_usd` in `usage` | ✅ Done | `toUsage()` in `src/services/completion.ts` adds `cost_usd`, the same number as the `completion.usage` log line (pi-ai's, from list prices, to a millionth of a dollar), so it's in a plain response and in a stream's usage chunk. Not OpenAI's field; clients that don't know it ignore it. Real spend for DeepSeek; for a subscription (Claude, GPT through ChatGPT) the API-price equivalent, so a caller should treat it as spend only for metered models. |
+| 85 | Request IDs, as mcpgw does | ✅ Done | The caller's `X-Request-Id`, if it looks like an ID (`[A-Za-z0-9._-]`, at most 64), is logged as `request_id` on every line of the request — `http.request`, `completion.usage`, `vision.describe`, errors. The gateway's own `req_id` goes back in the `X-Request-Id` response header (set after the handler, so streams carry it too). homestorm sends `homestorm-<uuid>` per seat turn and stores the returned ID. |
+
+- **Checked:** 400 fast tests (6 new), lint clean.
 
 ## Phase 15: Reachable Only From Arch (0.7.0)
 
