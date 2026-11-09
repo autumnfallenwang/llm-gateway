@@ -408,7 +408,7 @@ function logUsage(resolved: ResolvedModel, result: AssistantMessage): void {
       input_tokens: result.usage?.input,
       output_tokens: result.usage?.output,
       cache_read_tokens: result.usage?.cacheRead,
-      cost_usd: Math.round((result.usage?.cost?.total ?? 0) * 1e6) / 1e6,
+      cost_usd: costUsd(result),
       ...(limits && { limit_status: limits.status }),
       ...(window && { limit_percent_left: window.percent_left, limit_window: window.binding }),
       ...(limits?.available.kind === "balance" && { balance_left: limits.available.amount }),
@@ -462,12 +462,21 @@ function formatResponse(result: AssistantMessage, model: string): ChatCompletion
   };
 }
 
-/** OpenAI's usage object for a finished reply. */
+/**
+ * pi-ai's cost from the catalog's list prices, to a millionth of a dollar. Real spend for a metered
+ * API (DeepSeek); for a subscription it's the API-price equivalent (docs/usage-limits.md).
+ */
+function costUsd(result: AssistantMessage): number {
+  return Math.round((result.usage?.cost?.total ?? 0) * 1e6) / 1e6;
+}
+
+/** OpenAI's usage object for a finished reply, plus the gateway's `cost_usd`. */
 function toUsage(result: AssistantMessage): ChatCompletionResponse["usage"] {
   return {
     prompt_tokens: result.usage.input,
     completion_tokens: result.usage.output,
     total_tokens: result.usage.totalTokens,
+    cost_usd: costUsd(result),
   };
 }
 

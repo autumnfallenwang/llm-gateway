@@ -227,7 +227,7 @@ services:
 - **No log rotation logic in app.** Docker handles it via the size cap above.
 - **No HTTP/Slack/email transports.** Promtail ships to Loki; alerting is Grafana's job (later).
 - **No request body logging by default.** Bodies can contain prompts/PII; logging them is opt-in via `LOG_LEVEL=debug` only, and only for the request middleware (handler-level body logs stay out of scope).
-- **No correlation IDs from upstream.** `req_id` is generated server-side per-request. No `X-Request-Id` header propagation yet.
+- **Correlation IDs from upstream (0.8.0):** `req_id` is still generated server-side per request and returned in the `X-Request-Id` response header. A caller's own `X-Request-Id`, if it looks like an ID (`[A-Za-z0-9._-]`, at most 64 characters), is logged as `request_id` on every line of that request, as mcpgw does; anything else is dropped, never logged as free text.
 - **No metrics.** That's Prometheus territory; separate phase if/when we build dashboards.
 
 ## Testing

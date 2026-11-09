@@ -803,6 +803,58 @@ describe("Request access log middleware", () => {
     expect(ids).toHaveLength(2);
     expect(ids[0]).not.toBe(ids[1]);
   });
+
+  function postWithId(id: string) {
+    return app.request("/v1/chat/completions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Request-Id": id },
+      body: JSON.stringify(VALID_BODY),
+    });
+  }
+
+  it("returns its req_id in the X-Request-Id header", async () => {
+    logInfoMock.mockClear();
+    const res = await post("/v1/chat/completions", VALID_BODY);
+    expect(res.headers.get("x-request-id")).toBe(
+      findHttpRequestLog("/v1/chat/completions")?.req_id,
+    );
+  });
+
+  it("logs the caller's X-Request-Id as request_id, on every line of the request", async () => {
+    const { requestContext } = await import("../src/lib/logger");
+    const { lookupModel } = await import("../src/services/registry");
+    vi.mocked(lookupModel).mockReturnValueOnce({
+      kind: "found",
+      resolved: { ...OLLAMA_TEST_MODEL, id: "test" },
+    });
+    let duringUsage: string | undefined;
+    logInfoMock.mockReset();
+    logInfoMock.mockImplementation((meta: { event?: string }) => {
+      if (meta?.event === "completion.usage") duringUsage = requestContext.getStore()?.request_id;
+    });
+    try {
+      const res = await app.request("/v1/chat/completions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Request-Id": "homestorm-turn-1" },
+        body: JSON.stringify({ ...VALID_BODY, stream: true }),
+      });
+      await res.text();
+      const access = findHttpRequestLog("/v1/chat/completions");
+      expect(access?.request_id).toBe("homestorm-turn-1");
+      expect(res.headers.get("x-request-id")).toBe(access?.req_id); // its own ID, not the caller's
+      expect(duringUsage).toBe("homestorm-turn-1");
+    } finally {
+      logInfoMock.mockReset();
+    }
+  });
+
+  it("drops a caller's X-Request-Id that doesn't look like an ID", async () => {
+    for (const id of ["two words", "x".repeat(65), "a/b", '"quoted"']) {
+      logInfoMock.mockClear();
+      await postWithId(id);
+      expect(findHttpRequestLog("/v1/chat/completions")).not.toHaveProperty("request_id");
+    }
+  });
 });
 
 describe("POST /v1/models/validate", () => {

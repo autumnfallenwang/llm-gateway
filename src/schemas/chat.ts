@@ -217,6 +217,11 @@ const USAGE_SCHEMA = z.object({
     .number()
     .int()
     .openapi({ description: "Sum of prompt_tokens and completion_tokens" }),
+  cost_usd: z.number().openapi({
+    description:
+      "The gateway's addition, not OpenAI's: what the request cost in USD at the model's list price, to a millionth of a dollar. Real spend for a metered API (DeepSeek); for a subscription (Claude, GPT through ChatGPT) the API-price equivalent, not a charge; 0 for Ollama.",
+    example: 0.000392,
+  }),
 });
 
 export const ChatCompletionResponseSchema = z.object({

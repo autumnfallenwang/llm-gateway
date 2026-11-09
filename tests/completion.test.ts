@@ -79,6 +79,18 @@ function makeAssistantMessage(overrides?: Partial<AssistantMessage>): AssistantM
   };
 }
 
+/** A reply's usage with a cost that needs rounding, as pi-ai works it out from list prices. */
+function costlyUsage(): AssistantMessage["usage"] {
+  return {
+    input: 10,
+    output: 20,
+    cacheRead: 0,
+    cacheWrite: 0,
+    totalTokens: 30,
+    cost: { input: 0.01, output: 0.0023456789, cacheRead: 0, cacheWrite: 0, total: 0.0123456789 },
+  };
+}
+
 function setupImageMocks() {
   loadImageMock.mockResolvedValue({ buffer: Buffer.from("fake"), mime: "image/jpeg" });
   preprocessImageMock.mockResolvedValue({
@@ -202,6 +214,19 @@ describe("createCompletion", () => {
     expect(response.usage.prompt_tokens).toBe(10);
     expect(response.usage.completion_tokens).toBe(20);
     expect(response.usage.total_tokens).toBe(30);
+    expect(response.usage.cost_usd).toBe(0);
+  });
+
+  it("reports the cost in usage, to a millionth of a dollar", async () => {
+    completeMock.mockResolvedValue(makeAssistantMessage({ usage: costlyUsage() }));
+
+    const response = await createCompletion(makeResolved(), {
+      model: "my-model",
+      messages: [{ role: "user", content: "Hi" }],
+      stream: false,
+    });
+
+    expect(response.usage.cost_usd).toBe(0.012346);
   });
 
   it("maps stopReason correctly", async () => {
@@ -792,8 +817,10 @@ describe("refusals", () => {
     usage?: unknown;
   };
 
-  async function streamOf(body: Partial<ChatCompletionRequest>): Promise<StreamChunk[]> {
-    const reply = makeAssistantMessage();
+  async function streamOf(
+    body: Partial<ChatCompletionRequest>,
+    reply: AssistantMessage = makeAssistantMessage(),
+  ): Promise<StreamChunk[]> {
     streamMock.mockReturnValue({
       // biome-ignore lint/suspicious/useAwait: async generator mirrors pi-ai's event stream
       async *[Symbol.asyncIterator]() {
@@ -821,11 +848,19 @@ describe("refusals", () => {
     expect(last).toMatchObject({
       object: "chat.completion.chunk",
       choices: [],
-      usage: { prompt_tokens: 10, completion_tokens: 20, total_tokens: 30 },
+      usage: { prompt_tokens: 10, completion_tokens: 20, total_tokens: 30, cost_usd: 0 },
     });
     // OpenAI's shape: every other chunk carries usage: null.
     for (const c of chunks.slice(0, -1)) expect(c.usage).toBeNull();
     expect(chunks[chunks.length - 2]?.choices[0]?.finish_reason).toBe("stop");
+  });
+
+  it("puts the cost in a stream's usage chunk", async () => {
+    const chunks = await streamOf(
+      { stream_options: { include_usage: true } },
+      makeAssistantMessage({ usage: costlyUsage() }),
+    );
+    expect(chunks[chunks.length - 1]?.usage).toMatchObject({ cost_usd: 0.012346 });
   });
 
   it("sends no usage in a stream unless asked", async () => {
