@@ -136,7 +136,7 @@
 
 **Watch**:
 - When pi-ai's bundled `@anthropic-ai/sdk` reaches 1.x (now 0.129.0; latest 1.3.0), requests move to API version `2026-10-21`, which rejects `temperature`/`top_p`/`top_k` on every model. Re-check temperature handling on that bump.
-- `NO_TEMPERATURE` in `src/lib/pi.ts` is still needed: pi-ai 1.4 hasn't fixed `claude-sonnet-5` / `claude-fable-5`.
+- `NO_TEMPERATURE` in `src/lib/pi.ts` is still needed for `claude-fable-5`: pi-ai 1.5.1 fixed `claude-sonnet-5`, but 1.6 still doesn't flag Fable 5 (2026-11-23). pi-ai 1.6 still bundles `@anthropic-ai/sdk` 0.129.0.
 
 **Resolution** (all 11 items, plus one found while fixing them):
 - Item 2 went with (a): `ensureCodexFresh()` in `services/auth.ts` re-reads `auth.json` when its mtime changes — on each Codex request, before validation, and before the validate route reloads the registry (so a login that appears after boot registers its models).

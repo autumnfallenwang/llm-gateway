@@ -87,6 +87,23 @@ describe("temperature", () => {
     const options = anthropicStream.mock.calls[0]?.[2] as { temperature?: number };
     expect(options.temperature).toBe(0.2);
   });
+
+  // Fable 5.2 answered with temperature 0.5, checked live 2026-11-23.
+  it("keeps it for claude-fable-5-2", () => {
+    stream(claude("claude-fable-5-2"), context, { apiKey: "k", temperature: 0.2 });
+    const options = anthropicStream.mock.calls[0]?.[2] as { temperature?: number };
+    expect(options.temperature).toBe(0.2);
+  });
+});
+
+// pi-ai 1.6 sends Codex `maxTokens` as `max_output_tokens` (1.4 dropped it); the backend
+// stopped gpt-6-luna at 20 tokens with stopReason "length", checked live 2026-11-23.
+describe("max_tokens on Codex", () => {
+  it("reaches pi-ai's Codex backend", () => {
+    stream(gpt("gpt-6-luna"), { messages: [] }, { apiKey: "k", maxTokens: 20 });
+    const options = codexStream.mock.calls[0]?.[2] as { maxTokens?: number };
+    expect(options.maxTokens).toBe(20);
+  });
 });
 
 describe("reasoningOptions", () => {
