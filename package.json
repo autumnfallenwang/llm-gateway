@@ -21,7 +21,7 @@
     "@hono/node-server": "^2.1.5",
     "@hono/swagger-ui": "^0.6.2",
     "@hono/zod-openapi": "^1.6.3",
-    "better-sqlite3": "^13.0.3",
+    "better-sqlite3": "^13.2.0",
     "hono": "^4.13.16",
     "pino": "^10.4.0",
     "pino-pretty": "^13.2.0",
