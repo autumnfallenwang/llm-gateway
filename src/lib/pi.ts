@@ -83,14 +83,15 @@ export function complete(
   return stream(model, context, options).result();
 }
 
-// Anthropic rejects a non-default temperature on these ("`temperature` is deprecated for
-// this model", checked live 2026-10-21), but pi-ai's catalog (1.3, still 1.4) doesn't flag
-// them. The Codex backend rejects it on every model ("Unsupported parameter: temperature",
-// checked live 2026-11-01).
-const NO_TEMPERATURE = new Set(["claude-sonnet-5", "claude-fable-5"]);
+// Anthropic rejects a non-default temperature on this one ("`temperature` is deprecated for
+// this model", checked live 2026-10-21), but pi-ai's catalog (1.3, still 1.6) doesn't flag
+// it. pi-ai 1.5.1 flags claude-sonnet-5 itself; Fable 5.1 and 5.2 take a temperature (5.2
+// checked live 2026-11-23). The Codex backend rejects it on every model ("Unsupported
+// parameter: temperature", checked live 2026-11-01).
+const NO_TEMPERATURE = new Set(["claude-fable-5"]);
 
-// Thinking levels pi-ai's catalog (1.4) marks unsupported (null) that the provider takes.
-// DeepSeek's reasoning_effort is none/low/high/max on both its models (api-docs.deepseek.com,
+// Thinking levels pi-ai's catalog (1.4, still 1.6) marks unsupported (null) that the provider
+// takes. DeepSeek's reasoning_effort is none/low/high/max on both its models (api-docs.deepseek.com,
 // checked 2026-11-04; a `low` call to deepseek-v4-pro answered), but pi-ai lists only
 // high/max for V4 Pro, so `low` was moved up to `high` and never reached DeepSeek.
 const THINKING_LEVELS: Record<string, Record<string, string>> = {

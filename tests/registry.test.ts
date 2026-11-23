@@ -173,6 +173,7 @@ describe("loadRegistry", () => {
       "claude-sonnet-5-5",
       "claude-haiku-5-5",
       "claude-fable-5-1",
+      "claude-fable-5-2",
     ]) {
       expect(anthropicIds).toContain(id);
     }
@@ -190,6 +191,10 @@ describe("loadRegistry", () => {
     const models = listModels();
     const codexIds = models.filter((m) => m.owned_by === "openai-codex").map((m) => m.id);
     expect(codexIds.length).toBeGreaterThan(0);
+    // pi-ai 1.5 and 1.6 added these; Codex's own /models lists all three (2026-11-23).
+    for (const id of ["gpt-6.1-terra", "gpt-6.2-sol", "gpt-6.2-astra"]) {
+      expect(codexIds).toContain(id);
+    }
   });
 
   it("skips Anthropic models when no key", async () => {

@@ -92,7 +92,7 @@ Send images via \`image_url\` content parts (HTTPS URLs or data URIs). Models wh
 
 ## GPT models
 
-GPT models (\`owned_by: "openai-codex"\`) run on a ChatGPT login, so which ones answer depends on its plan. \`/v1/models\` lists the others with \`status: "error"\` and the reason, and a request for one returns 404 \`model_not_found\`. They take no \`temperature\` (the gateway drops it) and no output limit (\`max_tokens\` is ignored).
+GPT models (\`owned_by: "openai-codex"\`) run on a ChatGPT login, so which ones answer depends on its plan. \`/v1/models\` lists the others with \`status: "error"\` and the reason, and a request for one returns 404 \`model_not_found\`. They take no \`temperature\` (the gateway drops it). \`max_tokens\` caps the output, reasoning included, and is raised to 16 if lower.
 
 ## DeepSeek models
 

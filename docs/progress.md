@@ -11,7 +11,7 @@
 | 5 | Completion service | ✅ Done | `src/services/completion.ts` — OpenAI ↔ pi-ai translation, Codex system prompt fallback |
 | 6 | Routes | ✅ Done | `src/routes/{chat,models,validate}.ts` — OpenAPI route defs with request examples |
 | 7 | App + server wiring | ✅ Done | All handlers wired: chat completions, models list (with validation filtering), model validation |
-| 8 | Tests | ✅ Done | 20 test files (incl. the opt-in live `codex-go.poc`, `deepseek.poc` and `limits.poc`), 400 fast tests |
+| 8 | Tests | ✅ Done | 20 test files (incl. the opt-in live `codex-go.poc`, `deepseek.poc` and `limits.poc`), 402 fast tests |
 | 9 | Model validation | ✅ Done | `src/services/validation.ts` — tests every model with real completion, persists report via the SQLite `model_validation` table (Phase 8 / task 40) |
 | 10 | Streaming support | ✅ Done | SSE streaming via `stream: true` — all four backends (Ollama, Anthropic, Codex, DeepSeek) |
 
@@ -23,7 +23,7 @@
 - `POST /v1/chat/completions` with `tools` → OpenAI function calling on Claude, GPT (Codex) and Ollama models (`tool_calls` out, `tool` messages back in), streaming included; `tool_choice` honoured per backend
 - `reasoning_effort` (`none`…`max`) on Claude, GPT and DeepSeek models, moved to the nearest level each model has
 - DeepSeek's metered API (`deepseek-flash`, `deepseek-v4-pro`) with the key in `~/.deepseek/api_key`; thinking off unless `reasoning_effort`; an empty prepaid balance is 429 `insufficient_quota`
-- GPT models through a ChatGPT login (Go plan: `gpt-6-luna`, `gpt-5.6-terra`, `gpt-5.6-luna`); a model the plan lacks is a 404 `model_not_found`; `temperature` is dropped for them (the backend rejects it)
+- GPT models through a ChatGPT login (Go plan: `gpt-6-luna`, `gpt-5.6-terra`, `gpt-5.6-luna`; Pro Lite: all 10, `gpt-6.2-sol` and `gpt-6.2-astra` included); a model the plan lacks is a 404 `model_not_found`; `temperature` is dropped for them (the backend rejects it); `max_tokens` caps the output
 - Images for a text-only model: each described on its own by the family's vision model (`deepseek-flash` for `deepseek-v4-pro`), in the image's place, cached in SQLite so a conversation's images are described once; `/v1/models` says what each model reads (`input`)
 - Streaming usage: `stream_options.include_usage` ends the stream with a usage chunk; `usage` also carries the gateway's `cost_usd`, streamed or not
 - Request IDs: a caller's `X-Request-Id` is logged as `request_id` on every line of its request; the gateway's own `req_id` comes back in the `X-Request-Id` response header
@@ -193,6 +193,18 @@ Migrate from 29 ad-hoc `console.log/warn/error` calls to JSON-per-line structure
 - Loki + Promtail + Grafana deployment as a separate `~/agentic/observability/` stack — multi-app concern, not specific to llmgw. _(Superseded by Phase 8 — observability stack is already running in the k3s cluster as `observability-loki` / `observability-grafana` / `observability-alloy`. Once llmgw lands in `namespace: llmgw`, Alloy scrapes pod stdout into Loki automatically with no app changes.)_
 - Prometheus metrics + dashboards — different problem (numbers vs events); add when we want trend graphs/alerts.
 - OpenTelemetry — overkill for a single-service gateway; revisit if multi-service tracing matters.
+
+## Phase 17: New Models — pi-ai 1.6 (0.9.0)
+
+A check of each paid family on 2026-11-23: what the provider's own model list offers, against pi-ai's catalog. The gateway registers whatever pi-ai's catalog lists, so new models arrive with a pi-ai bump. 1.6.0 replaces Dependabot's 1.5.0 (#54).
+
+| # | Task | Status | Notes |
+|---|------|--------|-------|
+| 86 | New model IDs | ✅ Done | pi-ai 1.4.0 → 1.6.0 adds `claude-fable-5-2` (1.5.1), `gpt-6.1-terra` (1.5.0), `gpt-6.2-sol` and `gpt-6.2-astra` (1.6.0). The providers' own lists match: Anthropic `/v1/models` (newest: Fable 5.2, 2026-11-09), Codex `/backend-api/codex/models` (plus two hidden IDs, `gpt-reserve` and `codex-auto-review`, left out), DeepSeek `/models` (still only `deepseek-flash` and `deepseek-v4-pro`). All four are vision models, so no fallback changes. |
+| 87 | Catalog corrections | ✅ Done | pi-ai 1.5.1 flags `claude-sonnet-5` as refusing temperature, so `NO_TEMPERATURE` keeps only `claude-fable-5`. Fable 5.2 answered with a temperature (live), so it isn't added. `THINKING_LEVELS` (V4 Pro `low`) and `RETIRES` (Sonnet 4.5, 2026-11-30) are still needed. |
+| 88 | Codex `max_tokens` | ✅ Done | pi-ai 1.6 sends it as `max_output_tokens` (at least 16); 1.4 dropped it. Live, `gpt-6-luna` stopped at 20 tokens with `length`. The OpenAPI description no longer says it's ignored. The 32-token validation probe still answers on every GPT model. |
+
+- **Checked:** 402 fast tests (2 new), lint and `tsc` clean. Live, 2026-11-23: `claude-fable-5-2` answered with and without a temperature (called directly with the host's current Claude token, never refreshed). `test:codex-poc` 19/20: the login is on Pro Lite now, where every model answers, so the refused-model 404 test has nothing to refuse (#50 makes it skip); the gateway's own validation reported all 10 GPT models `ok`. `test:deepseek-poc` 16/17: the two-image test got "Red, indigo." and then "Red, white." for red + blue. The describer's request to DeepSeek is byte-identical on pi-ai 1.4 and 1.6 (captured offline), so that's the model's answer, not the bump. Full suite with `ANTHROPIC_SEED_PATH=/nonexistent`: 493 pass; the 8 Claude e2e cases 404 with no Claude login, and the first Ollama request timed out on a cold load (passes on rerun).
 
 ## Phase 16: Cost and Request IDs for Callers (0.8.0)
 
